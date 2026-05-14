@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         String     @default("worker")
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+
+  auditLogs    AuditLog[]
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  action     String
+  model      String
+  recordId   String
+
+  oldValue   Json?
+  newValue   Json?
+
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}

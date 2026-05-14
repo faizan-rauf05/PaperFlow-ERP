@@ -1,0 +1,18 @@
+import { Geist, Geist_Mono } from 'next/font/google'
+import './globals.css'
+
+const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
+
+export const metadata = {
+  title: 'PaperFlow ERP - Paper Bag Manufacturing',
+  description: 'Enterprise Resource Planning and Manufacturing Execution System for Paper Bag Production',
+}
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
+      <body className="font-sans antialiased bg-background">{children}</body>
+    </html>
+  )
+}
