@@ -3,12 +3,22 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+function getDatabaseUrl() {
+  const databaseUrl = process.env.DATABASE_URL;
+  const prismaUrl = process.env.PRISMA_URL;
+  if (prismaUrl && (!databaseUrl || databaseUrl.startsWith("prisma+"))) {
+    return prismaUrl;
+  }
+  return databaseUrl || prismaUrl || "";
+}
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
+    seed: "node prisma/seed.js",
   },
   datasource: {
-    url: "postgresql://neondb_owner:npg_GCk5nugiL8AD@ep-cold-violet-aqyk1wgn-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
+    url: getDatabaseUrl(),
   },
 });

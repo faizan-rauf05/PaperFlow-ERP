@@ -15,8 +15,9 @@ import {
   Settings,
   FileText
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 // KPI data
 const kpiData = [
@@ -147,8 +148,7 @@ const alerts = [
 
 function KPICard({ title, value, unit, icon: Icon, color, showBadge }) {
   return (
-    <Card className="relative overflow-hidden">
-      <CardContent className="p-5">
+    <div className="dashboard-panel p-5">
         <div className="flex items-start justify-between">
           <div className="space-y-2">
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
@@ -162,12 +162,11 @@ function KPICard({ title, value, unit, icon: Icon, color, showBadge }) {
             </div>
             <p className="text-xs text-muted-foreground">{unit}</p>
           </div>
-          <div className={`p-3 rounded-lg bg-muted/50 ${color}`}>
+          <div className={cn('dashboard-kpi-icon', color)}>
             <Icon className="h-6 w-6" />
           </div>
         </div>
-      </CardContent>
-    </Card>
+    </div>
   )
 }
 
@@ -234,7 +233,7 @@ export default function AdminDashboard() {
       {/* Two-column section: Activity + Alerts */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Recent Activity Feed */}
-        <Card>
+        <div className="dashboard-panel">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg font-semibold flex items-center gap-2">
               <Clock className="h-5 w-5 text-muted-foreground" />
@@ -248,10 +247,10 @@ export default function AdminDashboard() {
               ))}
             </div>
           </CardContent>
-        </Card>
+        </div>
 
         {/* Alerts Feed */}
-        <Card>
+        <div className="dashboard-panel">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg font-semibold flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -268,7 +267,7 @@ export default function AdminDashboard() {
               ))}
             </div>
           </CardContent>
-        </Card>
+        </div>
       </div>
     </div>
   )
