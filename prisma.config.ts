@@ -19,6 +19,6 @@ export default defineConfig({
     seed: "node prisma/seed.js",
   },
   datasource: {
-    url: "postgresql://neondb_owner:npg_qPtzu9VAbJ4Q@ep-odd-dew-aqneacy5.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require",
+    url: getDatabaseUrl(),
   },
 });
