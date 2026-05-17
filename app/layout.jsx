@@ -6,7 +6,7 @@ const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
 
 export const metadata = {
-  title: 'Paper_Flow ERP - Paper Bag Manufacturing',
+  title: 'PaperFlow ERP - Paper Bag Manufacturing',
   description: 'Enterprise Resource Planning and Manufacturing Execution System for Paper Bag Production',
 }
 
