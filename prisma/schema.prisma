@@ -6,33 +6,52 @@ datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id           String     @id @default(cuid())
-  name         String
-  email        String     @unique
-  passwordHash String
-  role         String     @default("worker")
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
+enum Role {
+  ADMIN
+  MANAGER
+  WORKER
+  SALES
+  FINANCE
+}
 
-  auditLogs    AuditLog[]
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String
+  role          Role      @default(WORKER)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  resetTokens   PasswordResetToken[]
+  auditLogs     AuditLog[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([token])
+  @@index([userId])
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  action     String
-  model      String
-  recordId   String
-
-  oldValue   Json?
-  newValue   Json?
-
-  ip         String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  model     String
+  recordId  String
+  oldValue  Json?
+  newValue  Json?
+  createdAt DateTime @default(now())
 
   @@index([userId])
+  @@index([model])
+  @@index([createdAt])
 }

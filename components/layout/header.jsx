@@ -23,9 +23,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { useSidebar } from './dashboard-shell'
 
-export function Header({ userName, userRole, onMenuClick, onToggleSidebar }) {
+export function Header({ userName, userRole, onMenuClick, onToggleSidebar, onLogout }) {
   const [searchQuery, setSearchQuery] = useState('')
   const { sidebarOpen } = useSidebar()
 
@@ -77,6 +78,8 @@ export function Header({ userName, userRole, onMenuClick, onToggleSidebar }) {
 
       {/* Right side */}
       <div className="flex items-center gap-2">
+        <ThemeToggle />
+
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -135,7 +138,10 @@ export function Header({ userName, userRole, onMenuClick, onToggleSidebar }) {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={() => onLogout?.()}
+            >
               <LogOut className="mr-2 h-4 w-4" />
               Log out
             </DropdownMenuItem>

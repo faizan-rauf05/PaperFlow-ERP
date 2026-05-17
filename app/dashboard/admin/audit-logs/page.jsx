@@ -38,7 +38,6 @@ const auditLogs = [
     action: "Created",
     module: "Users",
     recordId: "USR-0045",
-    ipAddress: "192.168.1.105",
   },
   {
     id: 2,
@@ -48,7 +47,6 @@ const auditLogs = [
     action: "Updated",
     module: "Production Orders",
     recordId: "PO-2024-0089",
-    ipAddress: "192.168.1.112",
   },
   {
     id: 3,
@@ -58,7 +56,6 @@ const auditLogs = [
     action: "Recorded Payment",
     module: "Invoices",
     recordId: "INV-2024-0156",
-    ipAddress: "192.168.1.108",
   },
   {
     id: 4,
@@ -68,7 +65,6 @@ const auditLogs = [
     action: "Created",
     module: "Quotations",
     recordId: "QT-2024-0234",
-    ipAddress: "10.0.0.45",
   },
   {
     id: 5,
@@ -78,7 +74,6 @@ const auditLogs = [
     action: "Submitted",
     module: "Stage Output",
     recordId: "STG-0892",
-    ipAddress: "192.168.1.150",
   },
   {
     id: 6,
@@ -88,7 +83,6 @@ const auditLogs = [
     action: "Deactivated",
     module: "Users",
     recordId: "USR-0032",
-    ipAddress: "192.168.1.105",
   },
   {
     id: 7,
@@ -98,7 +92,6 @@ const auditLogs = [
     action: "Approved",
     module: "Work Orders",
     recordId: "WO-2024-0067",
-    ipAddress: "192.168.1.112",
   },
   {
     id: 8,
@@ -108,7 +101,6 @@ const auditLogs = [
     action: "Generated",
     module: "Reports",
     recordId: "RPT-FIN-0045",
-    ipAddress: "192.168.1.108",
   },
   {
     id: 9,
@@ -118,7 +110,6 @@ const auditLogs = [
     action: "Updated",
     module: "Machines",
     recordId: "MCH-003",
-    ipAddress: "192.168.1.115",
   },
   {
     id: 10,
@@ -128,7 +119,6 @@ const auditLogs = [
     action: "Reset Password",
     module: "Users",
     recordId: "USR-0028",
-    ipAddress: "192.168.1.105",
   },
 ]
 
@@ -250,7 +240,6 @@ export default function AuditLogsPage() {
                 <TableHead className="font-semibold">Action</TableHead>
                 <TableHead className="font-semibold">Module</TableHead>
                 <TableHead className="font-semibold">Record ID</TableHead>
-                <TableHead className="font-semibold">IP Address</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -268,9 +257,6 @@ export default function AuditLogsPage() {
                   <TableCell>{log.action}</TableCell>
                   <TableCell>{log.module}</TableCell>
                   <TableCell className="font-mono text-sm">{log.recordId}</TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">
-                    {log.ipAddress}
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
