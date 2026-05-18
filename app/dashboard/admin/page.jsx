@@ -17,7 +17,11 @@ import {
   Bell,
   ChevronRight,
   Leaf,
-} from "lucide-react";
+  FileText
+} from 'lucide-react'
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 const kpiData = [
   {
@@ -222,45 +226,26 @@ function KPICard({
   urgent,
 }) {
   return (
-    <div
-      className={`relative rounded-2xl bg-gradient-to-br ${gradient} p-5 overflow-hidden group hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200`}
-    >
-      {/* Subtle decorative circle */}
-      <div className="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-white/30 pointer-events-none" />
-      <div className="absolute -right-2 -bottom-6 w-28 h-28 rounded-full bg-white/20 pointer-events-none" />
-
-      <div className="relative flex items-start justify-between">
-        <div className={`p-2.5 rounded-xl ${iconBg} shadow-sm`}>
-          <Icon className="h-5 w-5 text-white" strokeWidth={1.8} />
+    <div className="dashboard-panel p-5">
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <div className="flex items-baseline gap-1">
+              <span className="text-3xl font-bold tracking-tight">{value}</span>
+              {showBadge && parseInt(value) > 0 && (
+                <Badge variant="destructive" className="ml-2 text-xs">
+                  {value}
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">{unit}</p>
+          </div>
+          <div className={cn('dashboard-kpi-icon', color)}>
+            <Icon className="h-6 w-6" />
+          </div>
         </div>
-        {urgent && (
-          <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-100 border border-red-200 rounded-full px-2 py-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block" />
-            Alert
-          </span>
-        )}
-      </div>
-
-      <div className="relative mt-4">
-        <p className="text-xs font-medium text-gray-500 tracking-wide uppercase">
-          {title}
-        </p>
-        <p
-          className={`mt-1 text-3xl font-bold ${valueColor} leading-none tracking-tight`}
-        >
-          {value}
-        </p>
-        <div className="mt-2 flex items-center justify-between">
-          <p className="text-xs text-gray-500">{unit}</p>
-          <span
-            className={`text-xs font-semibold ${changeUp ? "text-emerald-600" : "text-red-500"}`}
-          >
-            {change}
-          </span>
-        </div>
-      </div>
     </div>
-  );
+  )
 }
 
 function ActivityItem({ user, initials, action, timestamp, color }) {
@@ -319,7 +304,7 @@ export default function AdminDashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-green-50/30 to-emerald-50/20 p-6 font-sans">
+    <div className="min-h-screen bg-linear-to-br from-gray-50 via-green-50/30 to-emerald-50/20 p-6 font-sans">
       {/* Top Header */}
       <div className="mb-8 flex items-start justify-between">
         <div>
@@ -347,31 +332,43 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* Summary Banner */}
-      <div className="mb-8 bg-gradient-to-r from-green-600 to-emerald-500 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4 shadow-lg shadow-green-200">
-        <div>
-          <p className="text-green-100 text-sm font-medium">
-            Daily Production Target
-          </p>
-          <p className="text-white text-2xl font-bold mt-0.5">82% Complete</p>
+      {/* Two-column section: Activity + Alerts */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Recent Activity Feed */}
+        <div className="dashboard-panel">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+              <Clock className="h-5 w-5 text-muted-foreground" />
+              Recent Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-0">
+              {recentActivity.map((activity) => (
+                <ActivityItem key={activity.id} {...activity} />
+              ))}
+            </div>
+          </CardContent>
         </div>
-        <div className="flex-1 min-w-48">
-          <div className="flex justify-between text-xs text-green-100 mb-1.5">
-            <span>24,850 bags done</span>
-            <span>30,000 target</span>
-          </div>
-          <div className="w-full bg-white/25 rounded-full h-2.5">
-            <div
-              className="bg-white rounded-full h-2.5 transition-all"
-              style={{ width: "82%" }}
-            />
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="text-green-100 text-xs">Est. completion</p>
-          <p className="text-white font-semibold text-sm mt-0.5">
-            6:40 PM today
-          </p>
+
+        {/* Alerts Feed */}
+        <div className="dashboard-panel">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Alerts
+              <Badge variant="secondary" className="ml-auto">
+                {alerts.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-3">
+              {alerts.map((alert) => (
+                <AlertItem key={alert.id} {...alert} />
+              ))}
+            </div>
+          </CardContent>
         </div>
       </div>
 
