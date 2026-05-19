@@ -17,8 +17,8 @@ export function Sidebar({ navigation, userRole, userName, isOpen, mobileOpen, on
   const pathname = usePathname()
 
   const roleLabels = {
-    admin: 'Administrator',
-    ADMIN: 'Administrator',
+    admin: 'Admin',
+    ADMIN: 'Admin',
     manager: 'Manager',
     MANAGER: 'Manager',
     worker: 'Worker',

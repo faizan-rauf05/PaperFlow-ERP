@@ -11,6 +11,7 @@ import {
   Loader2,
   Copy,
   Check,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +31,16 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -39,12 +50,108 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { toast } from 'sonner'
 import api, { getApiErrorMessage } from '@/lib/api/client'
-import { ROLE_BADGE_CLASS, ROLE_OPTIONS, getRoleLabel } from '@/lib/user-constants'
-import { formatDate } from '@/lib/utils'
-import { cn } from '@/lib/utils'
+import {
+  RESET_LINK_EXPIRY_LABEL,
+  ROLE_BADGE_CLASS,
+  ROLE_OPTIONS,
+  getRoleLabel,
+} from '@/lib/user-constants'
+import { formatDate, formatDateTime, cn } from '@/lib/utils'
 
 const emptyForm = { name: '', email: '', role: 'WORKER', isActive: true }
+
+function getConfirmConfig(type, user) {
+  switch (type) {
+    case 'toggle':
+      return {
+        title: user.isActive ? 'Deactivate user?' : 'Activate user?',
+        description: user.isActive
+          ? `${user.name} will no longer be able to sign in until reactivated.`
+          : `${user.name} will be able to sign in again.`,
+        actionLabel: user.isActive ? 'Deactivate' : 'Activate',
+        destructive: user.isActive,
+      }
+    case 'reset':
+      return {
+        title: 'Send password reset link?',
+        description: `A new setup link will be generated for ${user.name} (${user.email}). It expires in ${RESET_LINK_EXPIRY_LABEL}.`,
+        actionLabel: 'Send reset link',
+        destructive: false,
+      }
+    case 'delete':
+      return {
+        title: 'Delete user?',
+        description: `Permanently delete ${user.name} (${user.email})? This action cannot be undone.`,
+        actionLabel: 'Delete user',
+        destructive: true,
+      }
+    default:
+      return null
+  }
+}
+
+function RoleSelect({ value, onValueChange, id = 'role' }) {
+  const selected = ROLE_OPTIONS.find((r) => r.value === value)
+
+  return (
+    <div className="space-y-3">
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue placeholder="Select a role" />
+        </SelectTrigger>
+        <SelectContent className="max-h-[min(20rem,70vh)]">
+          {ROLE_OPTIONS.map((role) => (
+            <SelectItem
+              key={role.value}
+              value={role.value}
+              textValue={role.label}
+              className="py-2.5"
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <span
+                  className={cn(
+                    'inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
+                    ROLE_BADGE_CLASS[role.value],
+                  )}
+                >
+                  {role.label}
+                </span>
+                <span className="text-xs text-muted-foreground truncate">
+                  {role.description}
+                </span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {selected && (
+        <div
+          className="rounded-lg border border-primary/20 bg-primary/5 p-3.5 space-y-2"
+          aria-live="polite"
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Role preview
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold',
+                ROLE_BADGE_CLASS[selected.value],
+              )}
+            >
+              {selected.label}
+            </span>
+            <span className="text-xs font-mono text-muted-foreground">{selected.value}</span>
+          </div>
+          <p className="text-sm text-muted-foreground leading-relaxed">{selected.description}</p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function UsersPage() {
   const [users, setUsers] = useState([])
@@ -57,6 +164,9 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false)
   const [inviteLink, setInviteLink] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState(null)
+  const [confirmAction, setConfirmAction] = useState(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
 
   const fetchUsers = useCallback(async (search = '') => {
     setLoading(true)
@@ -66,7 +176,9 @@ export default function UsersPage() {
       const { data } = await api.get('/users', { params })
       setUsers(data.users || [])
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to load users'))
+      const message = getApiErrorMessage(err, 'Failed to load users')
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
@@ -74,6 +186,12 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers()
+    api
+      .get('/auth/session')
+      .then(({ data }) => {
+        if (data?.user?.id) setCurrentUserId(data.user.id)
+      })
+      .catch(() => {})
   }, [fetchUsers])
 
   useEffect(() => {
@@ -116,6 +234,9 @@ export default function UsersPage() {
           prev.map((u) => (u.id === editingUser.id ? data.user : u)),
         )
         setIsModalOpen(false)
+        toast.success('User updated', {
+          description: `${data.user.name} is now ${getRoleLabel(data.user.role)}.`,
+        })
       } else {
         const { data } = await api.post('/users', {
           name: formData.name,
@@ -124,34 +245,67 @@ export default function UsersPage() {
         })
         setUsers((prev) => [data.user, ...prev])
         setInviteLink(data.inviteLink || null)
+        toast.success('User created', {
+          description: `Invite link generated (expires in ${RESET_LINK_EXPIRY_LABEL}).`,
+        })
       }
       await fetchUsers(searchQuery.trim())
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to save user'))
+      const message = getApiErrorMessage(err, 'Failed to save user')
+      setError(message)
+      toast.error(message)
     } finally {
       setSaving(false)
     }
   }
 
   const toggleUserStatus = async (user) => {
-    try {
-      const { data } = await api.put(`/users/${user.id}`, {
-        isActive: !user.isActive,
-      })
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? data.user : u)))
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to update user status'))
-    }
+    const { data } = await api.put(`/users/${user.id}`, {
+      isActive: !user.isActive,
+    })
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? data.user : u)))
   }
 
   const handleResetPassword = async (user) => {
+    const { data } = await api.post(`/users/${user.id}/reset-password`)
+    setInviteLink(data.resetLink || null)
+    setEditingUser(user)
+    setIsModalOpen(true)
+  }
+
+  const handleDeleteUser = async (user) => {
+    await api.delete(`/users/${user.id}`)
+    setUsers((prev) => prev.filter((u) => u.id !== user.id))
+    await fetchUsers(searchQuery.trim())
+  }
+
+  const handleConfirm = async () => {
+    if (!confirmAction) return
+    const { type, user } = confirmAction
+    setConfirmLoading(true)
+    setError('')
     try {
-      const { data } = await api.post(`/users/${user.id}/reset-password`)
-      setInviteLink(data.resetLink || null)
-      setEditingUser(user)
-      setIsModalOpen(true)
+      if (type === 'toggle') {
+        await toggleUserStatus(user)
+        toast.success(user.isActive ? 'User deactivated' : 'User activated', {
+          description: user.name,
+        })
+      } else if (type === 'reset') {
+        await handleResetPassword(user)
+        toast.success('Password reset link generated', {
+          description: `Link expires in ${RESET_LINK_EXPIRY_LABEL}.`,
+        })
+      } else if (type === 'delete') {
+        await handleDeleteUser(user)
+        toast.success('User deleted', { description: user.name })
+      }
+      setConfirmAction(null)
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to send reset link'))
+      const message = getApiErrorMessage(err, 'Action failed')
+      setError(message)
+      toast.error(message)
+    } finally {
+      setConfirmLoading(false)
     }
   }
 
@@ -159,8 +313,13 @@ export default function UsersPage() {
     if (!inviteLink) return
     await navigator.clipboard.writeText(inviteLink)
     setCopied(true)
+    toast.success('Link copied to clipboard')
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const confirmConfig = confirmAction
+    ? getConfirmConfig(confirmAction.type, confirmAction.user)
+    : null
 
   return (
     <div className="space-y-6">
@@ -202,86 +361,122 @@ export default function UsersPage() {
             Loading users...
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                  <TableCell>
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-                        ROLE_BADGE_CLASS[user.role] || 'bg-muted text-foreground',
-                      )}
-                    >
-                      {getRoleLabel(user.role)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-                        user.isActive
-                          ? 'bg-primary/15 text-primary'
-                          : 'bg-muted text-muted-foreground',
-                      )}
-                    >
-                      {user.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(user.createdAt)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEditModal(user)}
-                        title="Edit user"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => toggleUserStatus(user)}
-                        title={user.isActive ? 'Deactivate' : 'Activate'}
-                      >
-                        {user.isActive ? (
-                          <ToggleRight className="h-4 w-4 text-primary" />
-                        ) : (
-                          <ToggleLeft className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleResetPassword(user)}
-                        title="Reset password"
-                      >
-                        <Key className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created At</TableHead>
+                  <TableHead>Updated At</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => {
+                  const isSelf = user.id === currentUserId
+                  return (
+                    <TableRow key={user.id}>
+                      <TableCell className="font-medium">{user.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                      <TableCell>
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                            ROLE_BADGE_CLASS[user.role] || 'bg-muted text-foreground',
+                          )}
+                        >
+                          {getRoleLabel(user.role)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                            user.isActive
+                              ? 'bg-primary/15 text-primary'
+                              : 'bg-muted text-muted-foreground',
+                          )}
+                        >
+                          {user.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {formatDate(user.createdAt)}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {formatDateTime(user.updatedAt)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => openEditModal(user)}
+                            title="Edit user"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={isSelf}
+                            onClick={() =>
+                              setConfirmAction({ type: 'toggle', user })
+                            }
+                            title={
+                              isSelf
+                                ? 'You cannot change your own status'
+                                : user.isActive
+                                  ? 'Deactivate'
+                                  : 'Activate'
+                            }
+                          >
+                            {user.isActive ? (
+                              <ToggleRight className="h-4 w-4 text-primary" />
+                            ) : (
+                              <ToggleLeft className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() =>
+                              setConfirmAction({ type: 'reset', user })
+                            }
+                            title="Reset password"
+                          >
+                            <Key className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            disabled={isSelf}
+                            onClick={() =>
+                              setConfirmAction({ type: 'delete', user })
+                            }
+                            title={
+                              isSelf
+                                ? 'You cannot delete your own account'
+                                : 'Delete user'
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
         )}
 
         {!loading && users.length === 0 && (
@@ -290,6 +485,43 @@ export default function UsersPage() {
           </p>
         )}
       </div>
+
+      <AlertDialog
+        open={Boolean(confirmAction)}
+        onOpenChange={(open) => {
+          if (!open && !confirmLoading) setConfirmAction(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmConfig?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmConfig?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={confirmLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={confirmLoading}
+              className={cn(
+                confirmConfig?.destructive &&
+                  'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+              )}
+              onClick={(e) => {
+                e.preventDefault()
+                handleConfirm()
+              }}
+            >
+              {confirmLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Please wait...
+                </>
+              ) : (
+                confirmConfig?.actionLabel
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={isModalOpen}
@@ -304,15 +536,17 @@ export default function UsersPage() {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>
-              {inviteLink && !editingUser
-                ? 'User created'
+              {inviteLink
+                ? editingUser
+                  ? 'Password reset link'
+                  : 'User created'
                 : editingUser
                   ? 'Edit user'
                   : 'Add new user'}
             </DialogTitle>
             {inviteLink && (
               <DialogDescription>
-                Share this invite link so they can set their password (expires in 48 hours).
+                Share this link so they can set their password (expires in {RESET_LINK_EXPIRY_LABEL}).
               </DialogDescription>
             )}
           </DialogHeader>
@@ -352,21 +586,11 @@ export default function UsersPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="role">Role</Label>
-                  <Select
+                  <RoleSelect
+                    id="role"
                     value={formData.role}
                     onValueChange={(value) => setFormData({ ...formData, role: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ROLE_OPTIONS.map((role) => (
-                        <SelectItem key={role.value} value={role.value}>
-                          {role.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  />
                 </div>
                 {editingUser && (
                   <div className="flex items-center justify-between">

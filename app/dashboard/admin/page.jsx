@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Factory,
   ShoppingCart,
@@ -13,11 +12,14 @@ import {
   Clock,
   Package,
   Settings,
-  FileText,
   Bell,
   ChevronRight,
   Leaf,
-} from "lucide-react";
+  FileText
+} from 'lucide-react'
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 const kpiData = [
   {
@@ -25,9 +27,9 @@ const kpiData = [
     value: "24,850",
     unit: "bags",
     icon: Factory,
-    gradient: "from-emerald-50 to-green-100",
+    gradient: "from-emerald-50/80 to-green-100/80 dark:from-emerald-950/40 dark:to-green-950/20",
     iconBg: "bg-green-600",
-    valueColor: "text-green-900",
+    valueColor: "text-green-900 dark:text-emerald-100",
     change: "+3.2%",
     changeUp: true,
   },
@@ -36,9 +38,9 @@ const kpiData = [
     value: "47",
     unit: "orders",
     icon: ShoppingCart,
-    gradient: "from-sky-50 to-blue-100",
+    gradient: "from-sky-50/80 to-blue-100/80 dark:from-sky-950/40 dark:to-blue-950/20",
     iconBg: "bg-blue-500",
-    valueColor: "text-blue-900",
+    valueColor: "text-blue-900 dark:text-sky-100",
     change: "+5 today",
     changeUp: true,
   },
@@ -47,9 +49,9 @@ const kpiData = [
     value: "2.4",
     unit: "percent",
     icon: Trash2,
-    gradient: "from-amber-50 to-orange-100",
+    gradient: "from-amber-50/80 to-orange-100/80 dark:from-amber-950/40 dark:to-orange-950/20",
     iconBg: "bg-amber-500",
-    valueColor: "text-amber-900",
+    valueColor: "text-amber-900 dark:text-amber-100",
     change: "-0.3%",
     changeUp: true,
   },
@@ -58,9 +60,9 @@ const kpiData = [
     value: "3",
     unit: "items",
     icon: AlertTriangle,
-    gradient: "from-red-50 to-rose-100",
+    gradient: "from-red-50/80 to-rose-100/80 dark:from-red-950/40 dark:to-rose-950/20",
     iconBg: "bg-red-500",
-    valueColor: "text-red-900",
+    valueColor: "text-red-900 dark:text-red-100",
     change: "Needs action",
     changeUp: false,
     urgent: true,
@@ -70,9 +72,9 @@ const kpiData = [
     value: "1,56,400",
     unit: "PKR",
     icon: Banknote,
-    gradient: "from-emerald-50 to-teal-100",
+    gradient: "from-emerald-50/80 to-teal-100/80 dark:from-emerald-950/40 dark:to-teal-950/20",
     iconBg: "bg-teal-600",
-    valueColor: "text-teal-900",
+    valueColor: "text-teal-900 dark:text-teal-100",
     change: "+12.5%",
     changeUp: true,
   },
@@ -81,9 +83,9 @@ const kpiData = [
     value: "94.2",
     unit: "% this week",
     icon: TrendingUp,
-    gradient: "from-violet-50 to-purple-100",
+    gradient: "from-violet-50/80 to-purple-100/80 dark:from-violet-950/40 dark:to-purple-950/20",
     iconBg: "bg-violet-600",
-    valueColor: "text-violet-900",
+    valueColor: "text-violet-900 dark:text-violet-100",
     change: "+1.8%",
     changeUp: true,
   },
@@ -92,9 +94,9 @@ const kpiData = [
     value: "42,800",
     unit: "PKR",
     icon: PiggyBank,
-    gradient: "from-green-50 to-emerald-100",
+    gradient: "from-green-50/80 to-emerald-100/80 dark:from-green-950/40 dark:to-emerald-950/20",
     iconBg: "bg-green-700",
-    valueColor: "text-green-900",
+    valueColor: "text-green-900 dark:text-green-100",
     change: "+8.1%",
     changeUp: true,
   },
@@ -103,9 +105,9 @@ const kpiData = [
     value: "38/45",
     unit: "workers present",
     icon: Users,
-    gradient: "from-blue-50 to-indigo-100",
+    gradient: "from-blue-50/80 to-indigo-100/80 dark:from-blue-950/40 dark:to-indigo-950/20",
     iconBg: "bg-indigo-500",
-    valueColor: "text-indigo-900",
+    valueColor: "text-indigo-900 dark:text-indigo-100",
     change: "84.4% present",
     changeUp: true,
   },
@@ -187,24 +189,24 @@ const alerts = [
 
 const alertStyles = {
   critical: {
-    wrap: "bg-red-50 border border-red-200",
-    icon: "text-red-500",
-    title: "text-red-800",
-    msg: "text-red-600",
+    wrap: "bg-red-50 border border-red-200 dark:bg-red-950/50 dark:border-red-900/60",
+    icon: "text-red-500 dark:text-red-400",
+    title: "text-red-800 dark:text-red-200",
+    msg: "text-red-600 dark:text-red-300",
     dot: "bg-red-500",
   },
   warning: {
-    wrap: "bg-amber-50 border border-amber-200",
-    icon: "text-amber-500",
-    title: "text-amber-800",
-    msg: "text-amber-600",
+    wrap: "bg-amber-50 border border-amber-200 dark:bg-amber-950/50 dark:border-amber-900/60",
+    icon: "text-amber-500 dark:text-amber-400",
+    title: "text-amber-800 dark:text-amber-200",
+    msg: "text-amber-600 dark:text-amber-300",
     dot: "bg-amber-500",
   },
   info: {
-    wrap: "bg-blue-50 border border-blue-200",
-    icon: "text-blue-500",
-    title: "text-blue-800",
-    msg: "text-blue-600",
+    wrap: "bg-blue-50 border border-blue-200 dark:bg-blue-950/50 dark:border-blue-900/60",
+    icon: "text-blue-500 dark:text-blue-400",
+    title: "text-blue-800 dark:text-blue-200",
+    msg: "text-blue-600 dark:text-blue-300",
     dot: "bg-blue-400",
   },
 };
@@ -222,41 +224,36 @@ function KPICard({
   urgent,
 }) {
   return (
-    <div
-      className={`relative rounded-2xl bg-gradient-to-br ${gradient} p-5 overflow-hidden group hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200`}
-    >
-      {/* Subtle decorative circle */}
-      <div className="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-white/30 pointer-events-none" />
-      <div className="absolute -right-2 -bottom-6 w-28 h-28 rounded-full bg-white/20 pointer-events-none" />
-
-      <div className="relative flex items-start justify-between">
-        <div className={`p-2.5 rounded-xl ${iconBg} shadow-sm`}>
-          <Icon className="h-5 w-5 text-white" strokeWidth={1.8} />
+    <div className={cn("dashboard-panel p-5 bg-linear-to-br", gradient)}>
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <div className="flex items-baseline gap-1">
+              <span className={cn("text-3xl font-bold tracking-tight", valueColor)}>
+                {value}
+              </span>
+              {urgent && parseInt(value, 10) > 0 && (
+                <Badge variant="destructive" className="text-xs">
+                  Action
+                </Badge>
+              )}
+            </div>
+          <p className="text-xs text-muted-foreground">{unit}</p>
+          {change && (
+            <p
+              className={cn(
+                "text-xs font-medium",
+                changeUp
+                  ? "text-green-600 dark:text-green-400"
+                  : "text-amber-600 dark:text-amber-400",
+              )}
+            >
+              {change}
+            </p>
+          )}
         </div>
-        {urgent && (
-          <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-100 border border-red-200 rounded-full px-2 py-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block" />
-            Alert
-          </span>
-        )}
-      </div>
-
-      <div className="relative mt-4">
-        <p className="text-xs font-medium text-gray-500 tracking-wide uppercase">
-          {title}
-        </p>
-        <p
-          className={`mt-1 text-3xl font-bold ${valueColor} leading-none tracking-tight`}
-        >
-          {value}
-        </p>
-        <div className="mt-2 flex items-center justify-between">
-          <p className="text-xs text-gray-500">{unit}</p>
-          <span
-            className={`text-xs font-semibold ${changeUp ? "text-emerald-600" : "text-red-500"}`}
-          >
-            {change}
-          </span>
+        <div className={cn("dashboard-kpi-icon text-white", iconBg)}>
+          <Icon className="h-6 w-6" />
         </div>
       </div>
     </div>
@@ -265,23 +262,23 @@ function KPICard({
 
 function ActivityItem({ user, initials, action, timestamp, color }) {
   return (
-    <div className="flex items-start gap-3 py-3 border-b border-gray-100 last:border-0 group hover:bg-gray-50/60 -mx-1 px-1 rounded-lg transition-colors">
+    <div className="flex items-start gap-3 py-3 border-b border-border last:border-0 group hover:bg-muted/50 -mx-1 px-1 rounded-lg transition-colors">
       <div
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${color}`}
       >
         {initials}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-800 leading-snug">
+        <p className="text-sm text-foreground leading-snug">
           <span className="font-semibold">{user}</span>{" "}
-          <span className="text-gray-500">{action}</span>
+          <span className="text-muted-foreground">{action}</span>
         </p>
-        <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
           <Clock className="h-3 w-3" />
           {timestamp}
         </p>
       </div>
-      <ChevronRight className="h-4 w-4 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 shrink-0" />
+      <ChevronRight className="h-4 w-4 text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 shrink-0" />
     </div>
   );
 }
@@ -319,110 +316,75 @@ export default function AdminDashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-green-50/30 to-emerald-50/20 p-6 font-sans">
+    <div className="space-y-8">
       {/* Top Header */}
-      <div className="mb-8 flex items-start justify-between">
+      <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <div className="p-1.5 bg-green-600 rounded-lg">
-              <Leaf className="h-4 w-4 text-white" />
+            <div className="p-1.5 bg-primary rounded-lg">
+              <Leaf className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-sm font-semibold text-green-700 tracking-wide uppercase">
+            <span className="text-sm font-semibold text-primary tracking-wide uppercase">
               PackFactory ERP
             </span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">
             Good morning, Admin
           </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {dateString} · {timeString} · Here's your factory overview
+          <p className="text-muted-foreground text-sm mt-1">
+            {dateString} · {timeString} · Here&apos;s your factory overview
           </p>
         </div>
       </div>
 
       {/* KPI Grid */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-8">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {kpiData.map((kpi) => (
           <KPICard key={kpi.title} {...kpi} />
         ))}
       </div>
 
-      {/* Summary Banner */}
-      <div className="mb-8 bg-gradient-to-r from-green-600 to-emerald-500 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4 shadow-lg shadow-green-200">
-        <div>
-          <p className="text-green-100 text-sm font-medium">
-            Daily Production Target
-          </p>
-          <p className="text-white text-2xl font-bold mt-0.5">82% Complete</p>
-        </div>
-        <div className="flex-1 min-w-48">
-          <div className="flex justify-between text-xs text-green-100 mb-1.5">
-            <span>24,850 bags done</span>
-            <span>30,000 target</span>
-          </div>
-          <div className="w-full bg-white/25 rounded-full h-2.5">
-            <div
-              className="bg-white rounded-full h-2.5 transition-all"
-              style={{ width: "82%" }}
-            />
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="text-green-100 text-xs">Est. completion</p>
-          <p className="text-white font-semibold text-sm mt-0.5">
-            6:40 PM today
-          </p>
-        </div>
-      </div>
-
-      {/* Two-column: Activity + Alerts */}
+      {/* Two-column section: Activity + Alerts */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Recent Activity */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-green-50 rounded-lg">
-                <Clock className="h-4 w-4 text-green-600" />
-              </div>
-              <h2 className="font-semibold text-gray-900">Recent Activity</h2>
+        {/* Recent Activity Feed */}
+        <div className="dashboard-panel">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+              <Clock className="h-5 w-5 text-muted-foreground" />
+              Recent Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-0">
+              {recentActivity.map((activity) => (
+                <ActivityItem key={activity.id} {...activity} />
+              ))}
             </div>
-            <button className="text-xs text-green-600 font-medium hover:text-green-700 flex items-center gap-1">
-              View all <ChevronRight className="h-3 w-3" />
-            </button>
-          </div>
-          <div className="px-4 py-2">
-            {recentActivity.map((a) => (
-              <ActivityItem key={a.id} {...a} />
-            ))}
-          </div>
+          </CardContent>
         </div>
 
-        {/* Alerts */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-amber-50 rounded-lg">
-                <AlertTriangle className="h-4 w-4 text-amber-500" />
-              </div>
-              <h2 className="font-semibold text-gray-900">Alerts</h2>
-              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-100 text-red-600 text-xs font-bold">
-                4
-              </span>
+        {/* Alerts Feed */}
+        <div className="dashboard-panel">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Alerts
+              <Badge variant="secondary" className="ml-auto">
+                {alerts.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-3">
+              {alerts.map((alert) => (
+                <AlertItem key={alert.id} {...alert} />
+              ))}
             </div>
-            <button className="text-xs text-green-600 font-medium hover:text-green-700 flex items-center gap-1">
-              Dismiss all <ChevronRight className="h-3 w-3" />
-            </button>
-          </div>
-          <div className="p-4 space-y-3">
-            {alerts.map((alert) => (
-              <AlertItem key={alert.id} {...alert} />
-            ))}
-          </div>
+          </CardContent>
         </div>
       </div>
 
-      {/* Footer */}
-      <p className="text-center text-xs text-gray-400 mt-8">
+      <p className="text-center text-xs text-muted-foreground">
         PackFactory ERP · Last synced just now · All times in PKT
       </p>
     </div>

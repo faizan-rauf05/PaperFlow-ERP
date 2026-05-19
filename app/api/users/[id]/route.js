@@ -163,16 +163,25 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    await prisma.user.update({
-      where: { id },
-      data: { isActive: false },
-    });
+    if (id === authResult.session.user.id) {
+      return NextResponse.json(
+        { error: "You cannot delete your own account" },
+        { status: 400 },
+      );
+    }
+
+    await prisma.user.delete({ where: { id } });
 
     await writeAuditLog({
       userId: authResult.session.user.id,
       action: ACTIONS.USER_DELETED,
       model: "User",
       recordId: id,
+      oldValue: {
+        name: existing.name,
+        email: existing.email,
+        role: existing.role,
+      },
     });
 
     return NextResponse.json({ success: true });

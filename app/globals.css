@@ -1,7 +1,17 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark {
+  &:is(.dark *) {
+    @slot;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    &:is(:root:not(.light) *) {
+      @slot;
+    }
+  }
+}
 
 :root {
   --background: oklch(0.985 0 0);
@@ -76,6 +86,44 @@
   --sidebar-accent-foreground: oklch(0.94 0 0);
   --sidebar-border: oklch(0.36 0.025 142.5);
   --sidebar-ring: oklch(0.62 0.17 142.5);
+}
+
+/* System theme: follow OS preference without a blocking script */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: oklch(0.22 0.012 142.5);
+    --foreground: oklch(0.94 0.01 142.5);
+    --card: oklch(0.28 0.018 142.5);
+    --card-foreground: oklch(0.94 0.01 142.5);
+    --popover: oklch(0.3 0.018 142.5);
+    --popover-foreground: oklch(0.94 0.01 142.5);
+    --primary: oklch(0.62 0.17 142.5);
+    --primary-foreground: oklch(0.98 0 0);
+    --secondary: oklch(0.38 0.02 247);
+    --secondary-foreground: oklch(0.94 0 0);
+    --muted: oklch(0.32 0.014 142.5);
+    --muted-foreground: oklch(0.72 0.02 142.5);
+    --accent: oklch(0.35 0.04 142.5);
+    --accent-foreground: oklch(0.94 0 0);
+    --destructive: oklch(0.6 0.22 27.325);
+    --destructive-foreground: oklch(0.98 0 0);
+    --border: oklch(0.38 0.02 142.5);
+    --input: oklch(0.34 0.018 142.5);
+    --ring: oklch(0.62 0.17 142.5);
+    --chart-1: oklch(0.62 0.17 142.5);
+    --chart-2: oklch(0.65 0.14 184.704);
+    --chart-3: oklch(0.45 0.02 247);
+    --chart-4: oklch(0.75 0.16 84.429);
+    --chart-5: oklch(0.72 0.15 70.08);
+    --sidebar: oklch(0.2 0.022 142.5);
+    --sidebar-foreground: oklch(0.94 0.01 142.5);
+    --sidebar-primary: oklch(0.62 0.17 142.5);
+    --sidebar-primary-foreground: oklch(0.98 0 0);
+    --sidebar-accent: oklch(0.3 0.03 142.5);
+    --sidebar-accent-foreground: oklch(0.94 0.01 142.5);
+    --sidebar-border: oklch(0.36 0.025 142.5);
+    --sidebar-ring: oklch(0.62 0.17 142.5);
+  }
 }
 
 @theme inline {
@@ -262,6 +310,16 @@
       0 1px 2px color-mix(in oklch, black 20%, transparent),
       0 8px 24px -8px color-mix(in oklch, var(--primary) 12%, transparent),
       0 16px 36px -12px color-mix(in oklch, black 30%, transparent);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light) .dashboard-panel {
+      border-color: color-mix(in oklch, var(--primary) 18%, var(--border));
+      box-shadow:
+        0 1px 2px color-mix(in oklch, black 20%, transparent),
+        0 8px 24px -8px color-mix(in oklch, var(--primary) 12%, transparent),
+        0 16px 36px -12px color-mix(in oklch, black 30%, transparent);
+    }
   }
 
   .dashboard-panel::before {
