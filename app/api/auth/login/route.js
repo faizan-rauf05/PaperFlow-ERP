@@ -28,6 +28,16 @@ export async function POST(request) {
 
     const validation = await validateCredentials(email, password);
     if (!validation.ok) {
+      if (validation.reason === "inactive_account") {
+        return NextResponse.json(
+          {
+            error:
+              "Your account has been deactivated. Please contact your administrator.",
+            code: "INACTIVE_ACCOUNT",
+          },
+          { status: 403 },
+        );
+      }
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 },

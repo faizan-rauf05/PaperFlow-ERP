@@ -1,19 +1,16 @@
 'use client'
 
 import { DashboardShell } from '@/components/layout'
-import { 
-  LayoutDashboard, 
-  Users, 
-  Package, 
+import {
+  LayoutDashboard,
+  Users,
   ClipboardList,
-  BarChart3,
-  Settings,
-  Sparkles
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard/admin', icon: LayoutDashboard },
   { name: 'Users', href: '/dashboard/admin/users', icon: Users },
+  { name: 'Audit Logs', href: '/dashboard/admin/audit-logs', icon: ClipboardList },
   // { name: 'Inventory', href: '/dashboard/admin/inventory', icon: Package },
   // { name: 'Production Orders', href: '/dashboard/admin/orders', icon: ClipboardList },
   // { name: 'Reports', href: '/dashboard/admin/reports', icon: BarChart3 },
