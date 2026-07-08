@@ -1,22 +1,15 @@
 'use client'
 
 import { DashboardShell } from '@/components/layout'
-import { 
-  LayoutDashboard, 
+import {
+  LayoutDashboard,
   ClipboardList,
-  Cog,
-  Trash2,
-  FileCheck,
-  Users
+  Warehouse,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard/manager', icon: LayoutDashboard },
-  // { name: 'Production Orders', href: '/dashboard/manager/production', icon: ClipboardList },
-  // { name: 'Machines', href: '/dashboard/manager/machines', icon: Cog },
-  // { name: 'Waste Reports', href: '/dashboard/manager/waste', icon: Trash2 },
-  // { name: 'QC Reports', href: '/dashboard/manager/quality', icon: FileCheck },
-  // { name: 'Attendance', href: '/dashboard/manager/attendance', icon: Users },
+  { name: 'Inventory', href: '/dashboard/manager/inventory', icon: Warehouse },
 ]
 
 export default function ManagerLayout({ children }) {

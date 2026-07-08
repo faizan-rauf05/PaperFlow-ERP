@@ -6,6 +6,8 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─── Auth (M1) ─────────────────────────────────────────────────────────────
+
 enum Role {
   ADMIN
   MANAGER
@@ -15,16 +17,20 @@ enum Role {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String
-  email         String    @unique
-  passwordHash  String
-  role          Role      @default(WORKER)
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  resetTokens   PasswordResetToken[]
-  auditLogs     AuditLog[]
+  id                   String                @id @default(cuid())
+  name                 String
+  email                String                @unique
+  passwordHash         String
+  role                 Role                  @default(WORKER)
+  isActive             Boolean               @default(true)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  resetTokens          PasswordResetToken[]
+  auditLogs            AuditLog[]
+  inventoryTransactions InventoryTransaction[]
+  productionStages     ProductionStage[]     @relation("StageWorker")
+  qcRecords            QCRecord[]
+  machineDowntimes     MachineDowntime[]
 }
 
 model PasswordResetToken {
@@ -54,4 +60,303 @@ model AuditLog {
   @@index([userId])
   @@index([model])
   @@index([createdAt])
+}
+
+// ─── Inventory (M2) ────────────────────────────────────────────────────────
+
+enum MaterialUnit {
+  KG
+  METER
+  BAG
+  CARTON
+  PCS
+}
+
+enum InventoryTransactionType {
+  STOCK_IN
+  STOCK_OUT
+  RETURN
+  WASTE
+  ADJUSTMENT
+}
+
+enum RollStatus {
+  AVAILABLE
+  IN_USE
+  FINISHED
+  WASTED
+}
+
+model Material {
+  id                 String              @id @default(cuid())
+  name               String
+  code               String              @unique
+  unit               MaterialUnit
+  minimumStock       Decimal             @default(0) @db.Decimal(14, 4)
+  kgPerMeter         Decimal?            @db.Decimal(14, 6)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  rolls              PaperRoll[]
+  transactions       InventoryTransaction[]
+  stageConsumptions  StageConsumption[]
+}
+
+model PaperRoll {
+  id                 String                 @id @default(cuid())
+  rollNo             String                 @unique
+  barcode            String                 @unique
+  materialId         String
+  material           Material               @relation(fields: [materialId], references: [id])
+  supplier           String?
+  batchLot           String?
+  gsm                Int?
+  widthMm            Decimal?               @db.Decimal(10, 2)
+  weightKg           Decimal                @db.Decimal(14, 4)
+  lengthM            Decimal                @db.Decimal(14, 4)
+  remainingLengthM   Decimal                @db.Decimal(14, 4)
+  remainingWeightKg  Decimal                @db.Decimal(14, 4)
+  receivedAt         DateTime               @default(now())
+  storageLocation    String?
+  status             RollStatus             @default(AVAILABLE)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  transactions       InventoryTransaction[]
+  productionStages   ProductionStage[]
+  qcRecords          QCRecord[]
+
+  @@index([materialId])
+  @@index([status])
+  @@index([barcode])
+}
+
+model InventoryTransaction {
+  id              String                   @id @default(cuid())
+  materialId      String
+  material        Material                 @relation(fields: [materialId], references: [id])
+  rollId          String?
+  roll            PaperRoll?               @relation(fields: [rollId], references: [id], onDelete: SetNull)
+  transactionType InventoryTransactionType
+  quantity        Decimal                  @db.Decimal(14, 4)
+  unit            MaterialUnit
+  referenceId     String?
+  remarks         String?
+  createdById     String?
+  createdBy       User?                    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime                 @default(now())
+
+  @@index([materialId])
+  @@index([rollId])
+  @@index([createdAt])
+}
+
+// ─── Machines (M2) ─────────────────────────────────────────────────────────
+
+enum MachineStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+  DOWN
+}
+
+model Machine {
+  id           String              @id @default(cuid())
+  name         String
+  machineCode  String              @unique
+  stageType    StageType
+  status       MachineStatus       @default(ACTIVE)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  downtimes    MachineDowntime[]
+  stages       ProductionStage[]
+  qcRecords    QCRecord[]
+}
+
+model MachineDowntime {
+  id          String    @id @default(cuid())
+  machineId   String
+  machine     Machine   @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  reason      String
+  startTime   DateTime
+  endTime     DateTime?
+  durationMin Int?
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([machineId])
+}
+
+// ─── Production (M2) ───────────────────────────────────────────────────────
+
+enum StageType {
+  RAW_MATERIAL
+  PRINTING
+  PRINT_QC
+  SLITTING
+  BAG_MAKING
+  HANDLE_MAKING
+  HANDLE_PASTING
+  FINAL_QC
+  PACKING
+  DISPATCH
+}
+
+enum StageStatus {
+  PENDING
+  READY
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ProductionOrderStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+model BagSpecification {
+  id                 String            @id @default(cuid())
+  name               String
+  code               String            @unique
+  bagWidthMm         Decimal?          @db.Decimal(10, 2)
+  repeatLengthMm     Decimal?          @db.Decimal(10, 2)
+  bagsPerMeter       Decimal?          @db.Decimal(14, 6)
+  handlesPerBag      Decimal           @default(2) @db.Decimal(8, 4)
+  sideGlueKgPerBag   Decimal?          @db.Decimal(14, 6)
+  bottomGlueKgPerBag Decimal?          @db.Decimal(14, 6)
+  description        String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  orders             ProductionOrder[]
+}
+
+model ProductionOrder {
+  id            String                @id @default(cuid())
+  orderNo       String                @unique
+  customer      String
+  bagSpecId     String
+  bagSpec       BagSpecification      @relation(fields: [bagSpecId], references: [id])
+  plannedQty    Decimal               @db.Decimal(14, 4)
+  status        ProductionOrderStatus @default(PENDING)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  stages        ProductionStage[]
+  yieldRecords  YieldRecord[]
+
+  @@index([status])
+}
+
+model ProductionStage {
+  id          String           @id @default(cuid())
+  orderId     String
+  order       ProductionOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stageType   StageType
+  sequence    Int
+  inputQty    Decimal?         @db.Decimal(14, 4)
+  outputQty   Decimal?         @db.Decimal(14, 4)
+  wasteQty    Decimal?         @db.Decimal(14, 4)
+  inputUnit   MaterialUnit?
+  outputUnit  MaterialUnit?
+  status      StageStatus      @default(PENDING)
+  startedAt   DateTime?
+  completedAt DateTime?
+  workerId    String?
+  worker      User?            @relation("StageWorker", fields: [workerId], references: [id], onDelete: SetNull)
+  machineId   String?
+  machine     Machine?         @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  rollId      String?
+  roll        PaperRoll?       @relation(fields: [rollId], references: [id], onDelete: SetNull)
+  locked      Boolean          @default(false)
+  remarks     String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  qcRecords    QCRecord[]
+  yieldRecord  YieldRecord?
+  consumptions StageConsumption[]
+
+  @@unique([orderId, sequence])
+  @@index([orderId])
+  @@index([workerId])
+  @@index([status])
+}
+
+enum ConsumptionKind {
+  GLUE_SIDE
+  GLUE_BOTTOM
+  HANDLE_ROPE
+}
+
+model DefectCategory {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  name        String
+  defectTypes DefectType[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model DefectType {
+  id          String          @id @default(cuid())
+  stageType   StageType
+  code        String
+  description String
+  categoryId  String?
+  category    DefectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  qcRecords   QCRecord[]
+
+  @@unique([stageType, code])
+}
+
+model QCRecord {
+  id           String          @id @default(cuid())
+  stageId      String
+  stage        ProductionStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  passedQty    Decimal         @db.Decimal(14, 4)
+  rejectedQty  Decimal         @default(0) @db.Decimal(14, 4)
+  defectTypeId String?
+  defectType   DefectType?     @relation(fields: [defectTypeId], references: [id], onDelete: SetNull)
+  photoUrl     String?
+  machineId    String?
+  machine      Machine?        @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  rollId       String?
+  roll         PaperRoll?      @relation(fields: [rollId], references: [id], onDelete: SetNull)
+  remarks      String?
+  createdById  String?
+  createdBy    User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime        @default(now())
+
+  @@index([stageId])
+}
+
+model StageConsumption {
+  id              String          @id @default(cuid())
+  stageId         String
+  stage           ProductionStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  materialId      String
+  material        Material        @relation(fields: [materialId], references: [id])
+  consumptionKind ConsumptionKind
+  plannedQty      Decimal         @db.Decimal(14, 4)
+  actualQty       Decimal         @db.Decimal(14, 4)
+  unit            MaterialUnit
+  variance        Decimal         @db.Decimal(14, 4)
+  createdAt       DateTime        @default(now())
+
+  @@unique([stageId, consumptionKind])
+  @@index([stageId])
+}
+
+model YieldRecord {
+  id            String           @id @default(cuid())
+  orderId       String
+  order         ProductionOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stageId       String           @unique
+  stage         ProductionStage  @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  expectedQty   Decimal          @db.Decimal(14, 4)
+  actualQty     Decimal          @db.Decimal(14, 4)
+  yieldPercent  Decimal          @db.Decimal(8, 4)
+  variance      Decimal          @db.Decimal(14, 4)
+  createdAt     DateTime         @default(now())
+
+  @@index([orderId])
 }
