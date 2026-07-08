@@ -41,6 +41,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { FormField, fieldClassName } from "@/components/ui/form-field";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -58,6 +59,8 @@ import {
   ROLE_OPTIONS,
   getRoleLabel,
 } from "@/lib/user-constants";
+import { userCreateSchema, userEditSchema } from "@/lib/validations/admin-forms";
+import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validations/form-utils";
 import { formatDate, formatDateTime, cn } from "@/lib/utils";
 
 const emptyForm = { name: "", email: "", role: "WORKER", isActive: true };
@@ -92,13 +95,13 @@ function getConfirmConfig(type, user) {
   }
 }
 
-function RoleSelect({ value, onValueChange, id = "role" }) {
+function RoleSelect({ value, onValueChange, id = "role", hasError }) {
   const selected = ROLE_OPTIONS.find((r) => r.value === value);
 
   return (
     <div className="space-y-3 min-w-0">
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger id={id} className="w-full">
+        <SelectTrigger id={id} className={cn("w-full", hasError && "border-destructive")}>
           <SelectValue placeholder="Select a role" />
         </SelectTrigger>
         <SelectContent className="max-h-[min(20rem,70vh)] w-(--radix-select-trigger-width)">
@@ -165,6 +168,7 @@ export default function UsersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [inviteLink, setInviteLink] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -205,9 +209,15 @@ export default function UsersPage() {
     return () => clearTimeout(timer);
   }, [searchQuery, fetchUsers]);
 
+  function patchFormData(field, value) {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormErrors((prev) => clearFieldError(prev, field));
+  }
+
   const openAddModal = () => {
     setEditingUser(null);
     setFormData(emptyForm);
+    setFormErrors({});
     setInviteLink(null);
     setIsModalOpen(true);
   };
@@ -220,20 +230,25 @@ export default function UsersPage() {
       role: user.role,
       isActive: user.isActive,
     });
+    setFormErrors({});
     setInviteLink(null);
     setIsModalOpen(true);
   };
 
   const handleSave = async () => {
+    const schema = editingUser ? userEditSchema : userCreateSchema;
+    const result = validateForm(schema, formData);
+    if (!result.success) {
+      setFormErrors(result.errors);
+      toast.error(firstErrorMessage(result.errors));
+      return;
+    }
+
     setSaving(true);
     setError("");
     try {
       if (editingUser) {
-        const { data } = await api.put(`/users/${editingUser.id}`, {
-          name: formData.name,
-          role: formData.role,
-          isActive: formData.isActive,
-        });
+        const { data } = await api.put(`/users/${editingUser.id}`, result.data);
         setUsers((prev) =>
           prev.map((u) => (u.id === editingUser.id ? data.user : u)),
         );
@@ -242,11 +257,7 @@ export default function UsersPage() {
           description: `${data.user.name} is now ${getRoleLabel(data.user.role)}.`,
         });
       } else {
-        const { data } = await api.post("/users", {
-          name: formData.name,
-          email: formData.email,
-          role: formData.role,
-        });
+        const { data } = await api.post("/users", result.data);
         setUsers((prev) => [data.user, ...prev]);
         setInviteLink(data.inviteLink || null);
         toast.success("User created", {
@@ -587,39 +598,32 @@ export default function UsersPage() {
           ) : (
             <>
               <div className="grid gap-4 py-2 min-w-0">
-                <div className="grid gap-2  min-w-0">
-                  <Label htmlFor="name">Full name</Label>
+                <FormField label="Full name" required error={formErrors.name}>
                   <Input
                     id="name"
                     value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                    className="w-full"
+                    onChange={(e) => patchFormData("name", e.target.value)}
+                    className={fieldClassName("w-full", !!formErrors.name)}
                   />
-                </div>
-                <div className="grid gap-2  min-w-0">
-                  <Label htmlFor="email">Email</Label>
+                </FormField>
+                <FormField label="Email" required error={formErrors.email}>
                   <Input
                     id="email"
                     type="email"
                     disabled={Boolean(editingUser)}
                     value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
+                    onChange={(e) => patchFormData("email", e.target.value)}
+                    className={fieldClassName("", !!formErrors.email)}
                   />
-                </div>
-                <div className="grid gap-2  min-w-0">
-                  <Label htmlFor="role">Role</Label>
+                </FormField>
+                <FormField label="Role" required error={formErrors.role}>
                   <RoleSelect
                     id="role"
                     value={formData.role}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, role: value })
-                    }
+                    hasError={!!formErrors.role}
+                    onValueChange={(value) => patchFormData("role", value)}
                   />
-                </div>
+                </FormField>
                 {editingUser && (
                   <div className="flex items-center justify-between">
                     <Label htmlFor="status">Active</Label>
