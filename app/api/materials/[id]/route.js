@@ -10,7 +10,9 @@ export async function PUT(request, { params }) {
   try {
     const authResult = await requireAdmin();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+      return NextResponse.json(authResult.error.body, {
+        status: authResult.error.status,
+      });
     }
 
     const { id } = await params;
@@ -38,7 +40,10 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Material code already exists" }, { status: 409 });
     }
     console.error("PUT /api/materials/[id] error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -46,11 +51,37 @@ export async function DELETE(_request, { params }) {
   try {
     const authResult = await requireAdmin();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+      return NextResponse.json(authResult.error.body, {
+        status: authResult.error.status,
+      });
     }
 
     const { id } = await params;
     const existing = await prisma.material.findUnique({ where: { id } });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Material not found" },
+        { status: 404 },
+      );
+    }
+
+    const count = await prisma.inventoryTransaction.count({
+      where: {
+        materialId: id,
+      },
+    });
+
+    if (count > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Cannot delete material because it has inventory transactions.",
+        },
+        { status: 400 },
+      );
+    }
+
     await prisma.material.delete({ where: { id } });
     await writeAuditLog({
       userId: authResult.session.user.id,
@@ -62,6 +93,9 @@ export async function DELETE(_request, { params }) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/materials/[id] error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
