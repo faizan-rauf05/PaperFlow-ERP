@@ -87,18 +87,48 @@ enum RollStatus {
   WASTED
 }
 
+enum MaterialType {
+  PAPER_ROLL
+  GLUE
+  INK
+  ROPE
+  TAPE
+  SPONGE
+  CARTON
+}
+
 model Material {
   id                 String              @id @default(cuid())
+  materialType       MaterialType
   name               String
   code               String              @unique
+  supplier           String?
   unit               MaterialUnit
   minimumStock       Decimal             @default(0) @db.Decimal(14, 4)
   kgPerMeter         Decimal?            @db.Decimal(14, 6)
+  paperType          String?
+  paperLengthM       Decimal?            @db.Decimal(14, 4)
+  paperWidthMm       Decimal?            @db.Decimal(10, 2)
+  gsm                Int?
+  glueType           String?
+  inkColor           String?
+  weightKg           Decimal?            @db.Decimal(14, 4)
+  ropeColor          String?
+  ropeLengthM        Decimal?            @db.Decimal(14, 4)
+  ropeWeightKg       Decimal?            @db.Decimal(14, 4)
+  tapeType           String?
+  sheetCount         Int?
+  cartonSize         String?
+  cartonLength       Decimal?            @db.Decimal(10, 2)
+  cartonWidth        Decimal?            @db.Decimal(10, 2)
+  cartonHeight       Decimal?            @db.Decimal(10, 2)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   rolls              PaperRoll[]
   transactions       InventoryTransaction[]
   stageConsumptions  StageConsumption[]
+
+  @@index([materialType])
 }
 
 model PaperRoll {
