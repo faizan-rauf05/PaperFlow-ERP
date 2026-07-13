@@ -92,7 +92,7 @@ enum MaterialType {
   GLUE
   INK
   ROPE
-  TAPE
+  KAPTON
   SPONGE
   CARTON
 }
@@ -103,7 +103,7 @@ model Material {
   name               String
   code               String              @unique
   supplier           String?
-  unit               MaterialUnit
+  unit               String
   minimumStock       Decimal             @default(0) @db.Decimal(14, 4)
   kgPerMeter         Decimal?            @db.Decimal(14, 6)
   paperType          String?
@@ -117,6 +117,7 @@ model Material {
   ropeLengthM        Decimal?            @db.Decimal(14, 4)
   ropeWeightKg       Decimal?            @db.Decimal(14, 4)
   tapeType           String?
+  size               String?
   sheetCount         Int?
   cartonSize         String?
   cartonLength       Decimal?            @db.Decimal(10, 2)
