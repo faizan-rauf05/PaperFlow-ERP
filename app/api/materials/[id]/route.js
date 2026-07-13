@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
+import { buildMaterialRecord } from "@/lib/material-code";
+import { materialSchema } from "@/lib/validations/admin-forms";
 
 export async function PUT(request, { params }) {
   try {
@@ -15,23 +17,28 @@ export async function PUT(request, { params }) {
 
     const { id } = await params;
     const body = await request.json();
-    const data = {};
-    if (body.name) data.name = body.name.trim();
-    if (body.code) data.code = body.code.trim().toUpperCase();
-    if (body.unit) data.unit = body.unit;
-    if (body.minimumStock !== undefined) data.minimumStock = body.minimumStock;
-    if (body.kgPerMeter !== undefined) data.kgPerMeter = body.kgPerMeter;
+    const parsed = materialSchema.safeParse(body);
+    if (!parsed.success) {
+      const message = parsed.error.errors[0]?.message ?? "Invalid material data";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
 
+    const data = buildMaterialRecord(parsed.data);
     const material = await prisma.material.update({ where: { id }, data });
+
     await writeAuditLog({
       userId: authResult.session.user.id,
       action: ACTIONS.MATERIAL_UPDATED,
       model: "Material",
       recordId: id,
-      newValue: data,
+      newValue: { code: material.code, name: material.name, materialType: material.materialType },
     });
+
     return NextResponse.json({ material: serializeModel(material) });
   } catch (error) {
+    if (error.code === "P2002") {
+      return NextResponse.json({ error: "Material code already exists" }, { status: 409 });
+    }
     console.error("PUT /api/materials/[id] error:", error);
     return NextResponse.json(
       { error: "Internal server error" },

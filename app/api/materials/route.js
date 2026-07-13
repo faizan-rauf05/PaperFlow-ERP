@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminOrManager } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
+import { buildMaterialRecord } from "@/lib/material-code";
+import { materialSchema } from "@/lib/validations/admin-forms";
 
 export async function GET() {
   try {
@@ -11,7 +13,7 @@ export async function GET() {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }
 
-    const materials = await prisma.material.findMany({ orderBy: { name: "asc" } });
+    const materials = await prisma.material.findMany({ orderBy: [{ materialType: "asc" }, { name: "asc" }] });
     return NextResponse.json({ materials: serializeModel(materials) });
   } catch (error) {
     console.error("GET /api/materials error:", error);
@@ -27,26 +29,21 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const name = body?.name?.trim();
-    const code = body?.code?.trim().toUpperCase();
-    const unit = body?.unit;
-    const minimumStock = body?.minimumStock ?? 0;
-    const kgPerMeter = body?.kgPerMeter ?? null;
-
-    if (!name || !code || !unit) {
-      return NextResponse.json({ error: "name, code, and unit are required" }, { status: 400 });
+    const parsed = materialSchema.safeParse(body);
+    if (!parsed.success) {
+      const message = parsed.error.errors[0]?.message ?? "Invalid material data";
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const material = await prisma.material.create({
-      data: { name, code, unit, minimumStock, kgPerMeter },
-    });
+    const data = buildMaterialRecord(parsed.data);
+    const material = await prisma.material.create({ data });
 
     await writeAuditLog({
       userId: authResult.session.user.id,
       action: ACTIONS.MATERIAL_CREATED,
       model: "Material",
       recordId: material.id,
-      newValue: { code, name, unit },
+      newValue: { code: material.code, name: material.name, materialType: material.materialType },
     });
 
     return NextResponse.json({ material: serializeModel(material) }, { status: 201 });
