@@ -107,6 +107,7 @@ export default function ManagerInventoryPage() {
         ))}
       </div>
 
+      {/* Temporarily hidden — rolls managed later via inventory
       <Card>
         <CardHeader><CardTitle>Paper Rolls</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">
@@ -119,6 +120,7 @@ export default function ManagerInventoryPage() {
           ))}
         </CardContent>
       </Card>
+      */}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, ArrowDownAZ, ArrowUpZA } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,15 +22,20 @@ import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { materialSchema } from "@/lib/validations/admin-forms";
 import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validations/form-utils";
-import { generateMaterialCode, getMaterialSummary, materialToFormValues } from "@/lib/material-code";
+import {
+  createCodeSuffix,
+  generateMaterialCode,
+  getMaterialSummary,
+  materialToFormValues,
+} from "@/lib/material-code";
 import {
   GLUE_TYPES,
   INK_COLORS,
+  KAPTON_TYPES,
   MATERIAL_TYPE_LABELS,
   MATERIAL_TYPES,
   PAPER_TYPES,
   ROPE_COLORS,
-  TAPE_TYPES,
 } from "@/lib/material-constants";
 import { cn } from "@/lib/utils";
 
@@ -38,10 +43,55 @@ function selectTriggerClass(hasError) {
   return cn("w-full", hasError && "border-destructive");
 }
 
+const SORT_OPTIONS = [
+  { value: "name", label: "Name" },
+  { value: "code", label: "Code" },
+  { value: "materialType", label: "Type" },
+  { value: "supplier", label: "Supplier" },
+  { value: "createdAt", label: "Newest" },
+];
+
+function compareMaterials(a, b, sortBy) {
+  if (sortBy === "createdAt") {
+    return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+  }
+  if (sortBy === "materialType") {
+    const av = (MATERIAL_TYPE_LABELS[a.materialType] ?? a.materialType ?? "").toString();
+    const bv = (MATERIAL_TYPE_LABELS[b.materialType] ?? b.materialType ?? "").toString();
+    return av.localeCompare(bv, undefined, { sensitivity: "base" });
+  }
+  const av = (a[sortBy] ?? "").toString();
+  const bv = (b[sortBy] ?? "").toString();
+  return av.localeCompare(bv, undefined, { sensitivity: "base", numeric: true });
+}
+
+function SortableHead({ label, column, sortBy, sortDir, onSort, className }) {
+  const active = sortBy === column;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={cn(
+          "inline-flex items-center gap-1 font-medium hover:text-foreground transition-colors",
+          active ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {label}
+        {active && (sortDir === "asc" ? <ArrowDownAZ className="h-3.5 w-3.5" /> : <ArrowUpZA className="h-3.5 w-3.5" />)}
+      </button>
+    </TableHead>
+  );
+}
+
 const emptyForm = {
   materialType: "",
+  name: "",
   supplier: "",
   code: "",
+  codeSuffix: "",
+  unit: "",
+  size: "",
   paperType: "",
   paperLengthM: "",
   paperWidthMm: "",
@@ -137,14 +187,22 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </div>
         </>
       );
-    case "TAPE":
+    case "KAPTON":
       return (
-        <FormField label="Tape Type" required error={errors.tapeType}>
-          <Select value={form.tapeType} onValueChange={(v) => patchForm("tapeType", v)}>
-            <SelectTrigger className={selectTriggerClass(!!errors.tapeType)}><SelectValue placeholder="Select tape type" /></SelectTrigger>
-            <SelectContent>{TAPE_TYPES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
-          </Select>
-        </FormField>
+        <>
+          <FormField label="Kapton Type" required error={errors.tapeType}>
+            <Select value={form.tapeType} onValueChange={(v) => patchForm("tapeType", v)}>
+              <SelectTrigger className={selectTriggerClass(!!errors.tapeType)}><SelectValue placeholder="Select Kapton type" /></SelectTrigger>
+              <SelectContent>{KAPTON_TYPES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </FormField>
+          <FormField label="Size" required error={errors.size}>
+            <Input className={fieldClassName("", !!errors.size)} value={form.size} onChange={(e) => patchForm("size", e.target.value)} placeholder="e.g. 25mm, Large" />
+          </FormField>
+          <FormField label="Unit" required error={errors.unit}>
+            <Input className={fieldClassName("", !!errors.unit)} value={form.unit} onChange={(e) => patchForm("unit", e.target.value)} placeholder="e.g. Roll, PCS, Meter" />
+          </FormField>
+        </>
       );
     case "SPONGE":
       return (
@@ -185,8 +243,32 @@ export default function MaterialsPage() {
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [sortBy, setSortBy] = useState("name");
+  const [sortDir, setSortDir] = useState("asc");
+  const [typeFilter, setTypeFilter] = useState("ALL");
 
   const previewCode = useMemo(() => generateMaterialCode(form), [form]);
+
+  const sortedMaterials = useMemo(() => {
+    const filtered = typeFilter === "ALL"
+      ? materials
+      : materials.filter((m) => m.materialType === typeFilter);
+    const list = [...filtered];
+    list.sort((a, b) => {
+      const result = compareMaterials(a, b, sortBy);
+      return sortDir === "asc" ? result : -result;
+    });
+    return list;
+  }, [materials, sortBy, sortDir, typeFilter]);
+
+  function handleSort(column) {
+    if (sortBy === column) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(column);
+      setSortDir(column === "createdAt" ? "desc" : "asc");
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -208,13 +290,19 @@ export default function MaterialsPage() {
   }
 
   function patchMaterialType(value) {
-    setForm({ ...emptyForm, materialType: value, supplier: form.supplier });
+    setForm({
+      ...emptyForm,
+      materialType: value,
+      name: form.name,
+      supplier: form.supplier,
+      codeSuffix: form.codeSuffix || createCodeSuffix(),
+    });
     setErrors({});
   }
 
   function openCreate() {
     setEditing(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, codeSuffix: createCodeSuffix() });
     setErrors({});
     setDialogOpen(true);
   }
@@ -269,32 +357,74 @@ export default function MaterialsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Materials</h1>
           <p className="text-muted-foreground">Define raw materials and supplies by type</p>
         </div>
-        <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" />Add Material</Button>
+        <Button onClick={openCreate} className="shrink-0"><Plus className="h-4 w-4 mr-2" />Add Material</Button>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground whitespace-nowrap">Type</span>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All types</SelectItem>
+              {MATERIAL_TYPES.map((type) => (
+                <SelectItem key={type} value={type}>{MATERIAL_TYPE_LABELS[type]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground whitespace-nowrap">Sort by</span>
+          <Select
+            value={sortBy}
+            onValueChange={(v) => {
+              setSortBy(v);
+              setSortDir(v === "createdAt" ? "desc" : "asc");
+            }}
+          >
+            <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground whitespace-nowrap">Order</span>
+          <Select value={sortDir} onValueChange={setSortDir}>
+            <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="asc">Ascending</SelectItem>
+              <SelectItem value="desc">Descending</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Code</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Name</TableHead>
+              <SortableHead label="Code" column="code" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortableHead label="Type" column="materialType" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortableHead label="Name" column="name" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
               <TableHead>Details</TableHead>
-              <TableHead>Supplier</TableHead>
+              <SortableHead label="Supplier" column="supplier" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow>
-            ) : materials.length === 0 ? (
+            ) : sortedMaterials.length === 0 ? (
               <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No materials yet</TableCell></TableRow>
-            ) : materials.map((m) => (
+            ) : sortedMaterials.map((m) => (
               <TableRow key={m.id}>
                 <TableCell className="font-mono text-sm">{m.code}</TableCell>
                 <TableCell>{MATERIAL_TYPE_LABELS[m.materialType] ?? m.materialType}</TableCell>
@@ -330,6 +460,10 @@ export default function MaterialsPage() {
 
             {hasType && (
               <>
+                <FormField label="Name" required error={errors.name}>
+                  <Input className={fieldClassName("", !!errors.name)} value={form.name} onChange={(e) => patchForm("name", e.target.value)} placeholder="Material name" />
+                </FormField>
+
                 <FormField label="Supplier" error={errors.supplier}>
                   <Input className={fieldClassName("", !!errors.supplier)} value={form.supplier} onChange={(e) => patchForm("supplier", e.target.value)} placeholder="Supplier name" />
                 </FormField>

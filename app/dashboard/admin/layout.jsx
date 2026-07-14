@@ -6,7 +6,7 @@ import {
   Users,
   ClipboardList,
   Package,
-  ScrollText,
+  // ScrollText, // unused while Rolls nav is hidden
   Warehouse,
   Cog,
   Factory,
@@ -22,7 +22,8 @@ const navigation = [
     icon: ClipboardList,
   },
   { name: "Materials", href: "/dashboard/admin/materials", icon: Package },
-  { name: "Rolls", href: "/dashboard/admin/rolls", icon: ScrollText },
+  // Temporarily hidden — re-enable when rolls module is wired back in
+  // { name: "Rolls", href: "/dashboard/admin/rolls", icon: ScrollText },
   { name: "Inventory", href: "/dashboard/admin/inventory", icon: Warehouse },
   { name: "Machines", href: "/dashboard/admin/machines", icon: Cog },
   { name: "Production", href: "/dashboard/admin/production", icon: Factory },
