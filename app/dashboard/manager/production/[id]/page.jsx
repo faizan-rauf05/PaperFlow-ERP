@@ -3,27 +3,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Lock, Unlock, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { getStageLabel } from "@/lib/production-constants";
+import {
+  getOrderCurrentStageBadges,
+  getStageTypeColor,
+  ORDER_STATUS_COLORS,
+} from "@/lib/order-progress";
 import { cn } from "@/lib/utils";
-
-const STAGE_STATUS = {
-  PENDING: "bg-muted text-muted-foreground",
-  READY: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  IN_PROGRESS: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
-  COMPLETED: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-};
 
 export default function ManagerProductionDetailPage() {
   const { id } = useParams();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [unlocking, setUnlocking] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,19 +36,6 @@ export default function ManagerProductionDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function handleUnlock(stageId) {
-    setUnlocking(stageId);
-    try {
-      await api.post(`/production/orders/${id}/stages/${stageId}/unlock`);
-      toast.success("Stage unlocked");
-      load();
-    } catch (e) {
-      toast.error(getApiErrorMessage(e));
-    } finally {
-      setUnlocking(null);
-    }
-  }
-
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   if (!order) return <p className="text-muted-foreground">Order not found</p>;
 
@@ -63,38 +47,64 @@ export default function ManagerProductionDetailPage() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold">{order.orderNo}</h1>
-          <p className="text-muted-foreground">{order.customer}</p>
+          <p className="text-muted-foreground flex flex-wrap items-center gap-2 mt-1">
+            <span>{order.customer?.name}</span>
+            {order.assignedWorker?.name ? <span>· {order.assignedWorker.name}</span> : null}
+            {getOrderCurrentStageBadges(order).map((badge) => (
+              <Badge
+                key={badge.key}
+                variant="outline"
+                className={cn("font-medium", badge.className)}
+              >
+                {badge.label}
+              </Badge>
+            ))}
+          </p>
         </div>
-        <Badge className="ml-auto">{order.status}</Badge>
+        <Badge variant="outline" className={cn("ml-auto font-medium", ORDER_STATUS_COLORS[order.status])}>
+          {order.status}
+        </Badge>
       </div>
 
-      <div className="grid gap-3">
-        {order.stages?.map((stage) => (
-          <Card key={stage.id} className={cn(stage.status === "IN_PROGRESS" && "border-primary/50")}>
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-3">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-sm font-bold">{stage.sequence}</span>
-                <CardTitle className="text-base flex-1">{getStageLabel(stage.stageType)}</CardTitle>
-                <Badge className={STAGE_STATUS[stage.status] || ""}>{stage.status}</Badge>
-                {stage.locked && <Lock className="h-4 w-4 text-muted-foreground" />}
-              </div>
-            </CardHeader>
-            <CardContent className="text-sm space-y-2">
-              <div className="grid grid-cols-3 gap-4">
-                <div><p className="text-xs text-muted-foreground">Input</p><p>{stage.inputQty ?? "—"} {stage.inputUnit}</p></div>
-                <div><p className="text-xs text-muted-foreground">Output</p><p>{stage.outputQty ?? "—"} {stage.outputUnit}</p></div>
-                <div><p className="text-xs text-muted-foreground">Waste</p><p>{stage.wasteQty ?? "—"}</p></div>
-              </div>
-              {stage.locked && (
-                <Button variant="outline" size="sm" onClick={() => handleUnlock(stage.id)} disabled={unlocking === stage.id}>
-                  {unlocking === stage.id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Unlock className="h-4 w-4 mr-1" />}
-                  Unlock Stage
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {(order.lines || []).map((line) => (
+        <div key={line.id} className="space-y-3">
+          <h2 className="text-lg font-semibold">
+            Line {line.lineNo}: {line.bagSpec?.name} ({line.plannedQty} bags)
+          </h2>
+          <div className="grid gap-3">
+            {(line.stages || []).map((stage) => (
+              <Card key={stage.id} className={cn(stage.status === "IN_PROGRESS" && "border-primary/50")}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-sm font-bold">{stage.sequence}</span>
+                    <CardTitle className="text-base flex-1 flex flex-wrap items-center gap-2">
+                      {getStageLabel(stage.stageType)}
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "font-medium",
+                          getStageTypeColor(stage.stageType, {
+                            completed: stage.status === "COMPLETED",
+                          }),
+                        )}
+                      >
+                        {stage.status}
+                      </Badge>
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="text-sm">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div><p className="text-xs text-muted-foreground">Input</p><p>{stage.inputQty ?? "—"} {stage.inputUnit}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Output</p><p>{stage.outputQty ?? "—"} {stage.outputUnit}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Waste</p><p>{stage.wasteQty ?? "—"}</p></div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

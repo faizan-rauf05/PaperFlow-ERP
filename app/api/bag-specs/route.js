@@ -43,7 +43,10 @@ export async function POST(request) {
       return NextResponse.json({ error: "name and code are required" }, { status: 400 });
     }
 
-    const spec = await prisma.bagSpecification.create({ data: enrichBagSpecData(body) });
+    const cleaned = Object.fromEntries(
+      Object.entries(enrichBagSpecData(body)).filter(([, v]) => v !== "" && v !== undefined && v !== null),
+    );
+    const spec = await prisma.bagSpecification.create({ data: cleaned });
     return NextResponse.json({ spec: serializeModel(spec) }, { status: 201 });
   } catch (error) {
     if (error.code === "P2002") {
@@ -67,13 +70,45 @@ export async function PUT(request) {
     }
 
     const { id, ...rest } = body;
+    const cleaned = Object.fromEntries(
+      Object.entries(enrichBagSpecData(rest)).filter(([, v]) => v !== "" && v !== undefined && v !== null),
+    );
     const spec = await prisma.bagSpecification.update({
       where: { id },
-      data: enrichBagSpecData(rest),
+      data: cleaned,
     });
     return NextResponse.json({ spec: serializeModel(spec) });
   } catch (error) {
     console.error("PUT /api/bag-specs error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const authResult = await requireAdminOrManager();
+    if (authResult.error) {
+      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const inUse = await prisma.orderLine.count({ where: { bagSpecId: id } });
+    if (inUse > 0) {
+      return NextResponse.json(
+        { error: "Bag spec is used on production orders and cannot be deleted" },
+        { status: 409 },
+      );
+    }
+
+    await prisma.bagSpecification.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("DELETE /api/bag-specs error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

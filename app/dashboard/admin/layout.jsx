@@ -6,11 +6,12 @@ import {
   Users,
   ClipboardList,
   Package,
-  // ScrollText, // unused while Rolls nav is hidden
   Warehouse,
   Cog,
   Factory,
   ShieldAlert,
+  Contact,
+  Ruler,
 } from "lucide-react";
 
 const navigation = [
@@ -21,9 +22,9 @@ const navigation = [
     href: "/dashboard/admin/audit-logs",
     icon: ClipboardList,
   },
+  { name: "Customers", href: "/dashboard/admin/customers", icon: Contact },
+  { name: "Bag Specs", href: "/dashboard/admin/bag-specs", icon: Ruler },
   { name: "Materials", href: "/dashboard/admin/materials", icon: Package },
-  // Temporarily hidden — re-enable when rolls module is wired back in
-  // { name: "Rolls", href: "/dashboard/admin/rolls", icon: ScrollText },
   { name: "Inventory", href: "/dashboard/admin/inventory", icon: Warehouse },
   { name: "Machines", href: "/dashboard/admin/machines", icon: Cog },
   { name: "Production", href: "/dashboard/admin/production", icon: Factory },
@@ -32,9 +33,6 @@ const navigation = [
     href: "/dashboard/admin/defect-types",
     icon: ShieldAlert,
   },
-  // { name: 'Reports', href: '/dashboard/admin/reports', icon: BarChart3 },
-  // { name: 'AI Insights', href: '/dashboard/admin/ai-insights', icon: Sparkles },
-  // { name: 'Settings', href: '/dashboard/admin/settings', icon: Settings },
 ];
 
 export default function AdminLayout({ children }) {

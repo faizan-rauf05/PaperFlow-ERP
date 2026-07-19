@@ -24,7 +24,7 @@ import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 const emptyForm = {
-  transactionType: "STOCK_IN", materialId: "", rollId: "", quantity: "", unit: "METER", remarks: "",
+  transactionType: "STOCK_IN", materialId: "", quantity: "", unit: "METER", remarks: "",
 };
 
 export default function InventoryPage() {
@@ -32,7 +32,6 @@ export default function InventoryPage() {
   const [lowStock, setLowStock] = useState([]);
   const [history, setHistory] = useState([]);
   const [materials, setMaterials] = useState([]);
-  const [rolls, setRolls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -42,18 +41,16 @@ export default function InventoryPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [stockRes, lowRes, histRes, matsRes, rollsRes] = await Promise.all([
+      const [stockRes, lowRes, histRes, matsRes] = await Promise.all([
         api.get("/inventory/current-stock"),
         api.get("/inventory/low-stock"),
         api.get("/inventory/history"),
         api.get("/materials"),
-        api.get("/rolls"),
       ]);
       setStock(stockRes.data.stock || []);
       setLowStock(lowRes.data.items || []);
       setHistory(histRes.data.transactions || []);
       setMaterials(matsRes.data.materials || []);
-      setRolls(rollsRes.data.rolls || []);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -84,10 +81,7 @@ export default function InventoryPage() {
 
     setSaving(true);
     try {
-      await api.post("/inventory/transactions", {
-        ...result.data,
-        rollId: result.data.rollId || null,
-      });
+      await api.post("/inventory/transactions", result.data);
       toast.success("Transaction posted");
       setDialogOpen(false);
       load();
@@ -151,20 +145,18 @@ export default function InventoryPage() {
                 <TableHead>Date</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Material</TableHead>
-                <TableHead>Roll</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead>Remarks</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {history.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No transactions</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No transactions</TableCell></TableRow>
               ) : history.map((t) => (
                 <TableRow key={t.id}>
                   <TableCell className="text-sm">{formatDateTime(t.createdAt)}</TableCell>
                   <TableCell><Badge variant="outline">{t.transactionType}</Badge></TableCell>
                   <TableCell>{t.material?.name || "—"}</TableCell>
-                  <TableCell className="font-mono text-sm">{t.roll?.rollNo || "—"}</TableCell>
                   <TableCell className="text-right">{t.quantity} {t.unit}</TableCell>
                   <TableCell className="text-muted-foreground text-sm">{t.remarks || "—"}</TableCell>
                 </TableRow>
@@ -188,15 +180,6 @@ export default function InventoryPage() {
               <Select value={form.materialId} onValueChange={(v) => patchForm("materialId", v)}>
                 <SelectTrigger className={cn(errors.materialId && "border-destructive")}><SelectValue placeholder="Select material" /></SelectTrigger>
                 <SelectContent>{materials.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </FormField>
-            <FormField label="Roll (optional)" error={errors.rollId}>
-              <Select value={form.rollId || "none"} onValueChange={(v) => patchForm("rollId", v === "none" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {rolls.map((r) => <SelectItem key={r.id} value={r.id}>{r.rollNo}</SelectItem>)}
-                </SelectContent>
               </Select>
             </FormField>
             <div className="grid grid-cols-2 gap-4">
