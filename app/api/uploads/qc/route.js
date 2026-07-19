@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import { requireWorker } from "@/lib/apiAuth";
+import { requireAdminOrManager } from "@/lib/apiAuth";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 export async function POST(request) {
   try {
-    const authResult = await requireWorker();
+    const authResult = await requireAdminOrManager();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }

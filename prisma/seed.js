@@ -29,7 +29,7 @@ const MATERIALS = [
   {
     materialType: "PAPER_ROLL",
     code: "PAPER-BRN-80-1200",
-    name: "Brown Paper 80gsm 1200mm 10000m",
+    name: "Brown Paper 80gsm 1200mm",
     supplier: "PaperCo Ltd",
     unit: "METER",
     paperType: "BROWN",
@@ -37,6 +37,7 @@ const MATERIALS = [
     paperWidthMm: 1200,
     gsm: 80,
     kgPerMeter: 0.12,
+    minimumStock: 500,
   },
   {
     materialType: "GLUE",
@@ -46,6 +47,7 @@ const MATERIALS = [
     unit: "KG",
     glueType: "HOT",
     weightKg: 25,
+    minimumStock: 50,
   },
   {
     materialType: "GLUE",
@@ -55,25 +57,26 @@ const MATERIALS = [
     unit: "KG",
     glueType: "COLD",
     weightKg: 25,
+    minimumStock: 50,
   },
   {
     materialType: "ROPE",
     code: "ROPE-WHT-100-2",
     name: "White Rope 100m 2kg",
     supplier: "Handle Materials Co",
-    unit: "METER",
+    unit: "PCS",
     ropeColor: "WHITE",
     ropeLengthM: 100,
     ropeWeightKg: 2,
+    minimumStock: 1000,
   },
 ];
 
 const MACHINES = [
-  { machineCode: "FLEXO-01", name: "Flexo Printer 1", stageType: "PRINTING" },
   { machineCode: "SLIT-01", name: "Slitting Machine 1", stageType: "SLITTING" },
-  { machineCode: "BAG-01", name: "Bag Machine 1", stageType: "BAG_MAKING" },
-  { machineCode: "HANDLE-01", name: "Handle Machine 1", stageType: "HANDLE_MAKING" },
-  { machineCode: "PASTE-01", name: "Handle Pasting Machine 1", stageType: "HANDLE_PASTING" },
+  { machineCode: "FLEXO-01", name: "Flexo Printer 1", stageType: "PRINTING" },
+  { machineCode: "HANDLE-01", name: "Handle Make & Paste 1", stageType: "HANDLE_MAKING_PASTING" },
+  { machineCode: "PACK-01", name: "Packing Line 1", stageType: "PACKING" },
 ];
 
 const DEFECT_CATEGORIES = [
@@ -85,22 +88,8 @@ const DEFECT_CATEGORIES = [
 const DEFECTS = [
   { stageType: "PRINT_QC", code: "MISALIGNMENT", description: "Print misalignment", categoryCode: "PRINT" },
   { stageType: "PRINT_QC", code: "SMUDGE", description: "Ink smudge", categoryCode: "PRINT" },
-  { stageType: "PRINT_QC", code: "COLOR_SHIFT", description: "Color shift", categoryCode: "PRINT" },
-  { stageType: "FINAL_QC", code: "SIZE_VAR", description: "Size variation", categoryCode: "MATERIAL" },
-  { stageType: "FINAL_QC", code: "HANDLE_DEF", description: "Handle defect", categoryCode: "HANDLE" },
-];
-
-const STAGE_PIPELINE = [
-  { type: "RAW_MATERIAL", in: "METER", out: "METER" },
-  { type: "PRINTING", in: "METER", out: "METER" },
-  { type: "PRINT_QC", in: "METER", out: "METER" },
-  { type: "SLITTING", in: "METER", out: "METER" },
-  { type: "BAG_MAKING", in: "METER", out: "BAG" },
-  { type: "HANDLE_MAKING", in: "PCS", out: "PCS" },
-  { type: "HANDLE_PASTING", in: "BAG", out: "BAG" },
-  { type: "FINAL_QC", in: "BAG", out: "BAG" },
-  { type: "PACKING", in: "BAG", out: "CARTON" },
-  { type: "DISPATCH", in: "CARTON", out: "CARTON" },
+  { stageType: "QUALITY_CHECK", code: "SIZE_VAR", description: "Size variation", categoryCode: "MATERIAL" },
+  { stageType: "QUALITY_CHECK", code: "HANDLE_DEF", description: "Handle defect", categoryCode: "HANDLE" },
 ];
 
 async function main() {
@@ -129,54 +118,13 @@ async function main() {
   const glueCold = await prisma.material.findUnique({ where: { code: "GLUE-COLD-25" } });
   const handleRope = await prisma.material.findUnique({ where: { code: "ROPE-WHT-100-2" } });
 
-  const roll = await prisma.paperRoll.upsert({
-    where: { rollNo: "ROLL-2026-001" },
-    update: {
-      barcode: "ROLL-2026-001",
-      materialId: kraft.id,
-      remainingWeightKg: 1200,
-    },
-    create: {
-      rollNo: "ROLL-2026-001",
-      barcode: "ROLL-2026-001",
-      materialId: kraft.id,
-      supplier: "PaperCo Ltd",
-      batchLot: "LOT-2401",
-      gsm: 80,
-      widthMm: 1200,
-      weightKg: 1200,
-      lengthM: 10000,
-      remainingLengthM: 10000,
-      remainingWeightKg: 1200,
-      storageLocation: "Warehouse A-12",
-      status: "AVAILABLE",
-    },
-  });
-
-  await prisma.inventoryTransaction.upsert({
-    where: { id: "seed-tx-roll-001" },
-    update: {},
-    create: {
-      id: "seed-tx-roll-001",
-      materialId: kraft.id,
-      rollId: roll.id,
-      transactionType: "STOCK_IN",
-      quantity: 10000,
-      unit: "METER",
-      referenceId: roll.id,
-      remarks: "Initial roll stock",
-    },
-  });
-  console.log("Seeded demo roll");
-
-  const legacyCodes = ["KRAFT-BRN", "PAPER-WHT", "GLUE-SIDE", "GLUE-BTM", "HANDLE-ROPE"];
-  await prisma.material.deleteMany({ where: { code: { in: legacyCodes } } });
-
-  for (const [code, mat, qty, id] of [
-    ["GLUE-HOT-25", glueHot, 100, "seed-tx-glue-hot"],
-    ["GLUE-COLD-25", glueCold, 100, "seed-tx-glue-cold"],
-    ["ROPE-WHT-100-2", handleRope, 10000, "seed-tx-handle-rope"],
+  for (const [code, mat, qty, id, unit] of [
+    ["PAPER-BRN-80-1200", kraft, 10000, "seed-tx-paper", "METER"],
+    ["GLUE-HOT-25", glueHot, 100, "seed-tx-glue-hot", "KG"],
+    ["GLUE-COLD-25", glueCold, 100, "seed-tx-glue-cold", "KG"],
+    ["ROPE-WHT-100-2", handleRope, 10000, "seed-tx-handle-rope", "PCS"],
   ]) {
+    if (!mat) continue;
     await prisma.inventoryTransaction.upsert({
       where: { id },
       update: {},
@@ -185,12 +133,12 @@ async function main() {
         materialId: mat.id,
         transactionType: "STOCK_IN",
         quantity: qty,
-        unit: mat.unit,
+        unit,
         remarks: `Initial ${code} stock`,
       },
     });
   }
-  console.log("Seeded glue and handle rope stock");
+  console.log("Seeded material stock (no rolls)");
 
   for (const m of MACHINES) {
     await prisma.machine.upsert({
@@ -210,7 +158,6 @@ async function main() {
     });
     categories[c.code] = cat.id;
   }
-  console.log("Seeded defect categories");
 
   for (const d of DEFECTS) {
     await prisma.defectType.upsert({
@@ -229,12 +176,13 @@ async function main() {
   }
   console.log("Seeded defect types");
 
-  const bagSpec = await prisma.bagSpecification.upsert({
+  await prisma.bagSpecification.upsert({
     where: { code: "BAG-STD-01" },
     update: {
       handlesPerBag: 2,
       sideGlueKgPerBag: 0.002,
       bottomGlueKgPerBag: 0.001,
+      bagsPerMeter: 2.5,
     },
     create: {
       name: "Standard Kraft Bag 8x10",
@@ -249,33 +197,18 @@ async function main() {
     },
   });
 
-  const existingOrder = await prisma.productionOrder.findUnique({ where: { orderNo: "PO-2026-0001" } });
-  if (!existingOrder) {
-    const order = await prisma.productionOrder.create({
-      data: {
-        orderNo: "PO-2026-0001",
-        customer: "Metro Mart",
-        bagSpecId: bagSpec.id,
-        plannedQty: 10000,
-        status: "PENDING",
-      },
-    });
-
-    for (let i = 0; i < STAGE_PIPELINE.length; i++) {
-      const s = STAGE_PIPELINE[i];
-      await prisma.productionStage.create({
-        data: {
-          orderId: order.id,
-          stageType: s.type,
-          sequence: i + 1,
-          status: i === 0 ? "READY" : "PENDING",
-          inputUnit: s.in,
-          outputUnit: s.out,
-        },
-      });
-    }
-    console.log("Seeded demo production order PO-2026-0001");
-  }
+  const customer = await prisma.customer.upsert({
+    where: { id: "seed-customer-metro" },
+    update: { name: "Metro Mart", kind: "COMPANY" },
+    create: {
+      id: "seed-customer-metro",
+      name: "Metro Mart",
+      kind: "COMPANY",
+      phone: "+1-555-0100",
+      email: "orders@metromart.example",
+    },
+  });
+  console.log(`Seeded customer: ${customer.name}`);
 }
 
 main()

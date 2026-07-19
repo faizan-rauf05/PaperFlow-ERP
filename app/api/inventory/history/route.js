@@ -24,7 +24,6 @@ export async function GET(request) {
         where,
         include: {
           material: true,
-          roll: true,
           createdBy: { select: { id: true, name: true, email: true } },
         },
         orderBy: { createdAt: "desc" },

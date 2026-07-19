@@ -18,7 +18,6 @@ import api, { getApiErrorMessage } from "@/lib/api/client";
 
 export default function ManagerInventoryPage() {
   const [stock, setStock] = useState([]);
-  const [rolls, setRolls] = useState([]);
   const [lowStock, setLowStock] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,16 +28,14 @@ export default function ManagerInventoryPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [stockRes, lowRes, matsRes, rollsRes] = await Promise.all([
+      const [stockRes, lowRes, matsRes] = await Promise.all([
         api.get("/inventory/current-stock"),
         api.get("/inventory/low-stock"),
         api.get("/materials"),
-        api.get("/rolls"),
       ]);
       setStock(stockRes.data.stock || []);
       setLowStock(lowRes.data.items || []);
       setMaterials(matsRes.data.materials || []);
-      setRolls(rollsRes.data.rolls || []);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -107,20 +104,7 @@ export default function ManagerInventoryPage() {
         ))}
       </div>
 
-      {/* Temporarily hidden — rolls managed later via inventory
-      <Card>
-        <CardHeader><CardTitle>Paper Rolls</CardTitle></CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {rolls.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No rolls registered</p>
-          ) : rolls.slice(0, 20).map((r) => (
-            <Badge key={r.id} variant="outline">
-              {r.rollNo}: {r.remainingLengthM}m · {r.status}
-            </Badge>
-          ))}
-        </CardContent>
-      </Card>
-      */}
+      {/* Paper rolls section removed — material ledger only */}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

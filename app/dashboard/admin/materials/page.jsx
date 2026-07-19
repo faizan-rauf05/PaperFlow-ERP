@@ -494,7 +494,7 @@ export default function MaterialsPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete material?</AlertDialogTitle>
-            <AlertDialogDescription>This cannot be undone if no rolls or transactions reference it.</AlertDialogDescription>
+            <AlertDialogDescription>This cannot be undone if transactions reference it.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

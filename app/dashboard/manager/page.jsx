@@ -13,13 +13,10 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
+import { getOrderCurrentStageBadges, ORDER_STATUS_COLORS } from "@/lib/order-progress";
+import { cn } from "@/lib/utils";
 
-const STATUS_COLORS = {
-  PENDING: "bg-muted text-muted-foreground",
-  RUNNING: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
-  COMPLETED: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  CANCELLED: "bg-destructive/15 text-destructive",
-};
+const STATUS_COLORS = ORDER_STATUS_COLORS;
 
 export default function ManagerDashboard() {
   const [kpis, setKpis] = useState(null);
@@ -108,7 +105,7 @@ export default function ManagerDashboard() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Production Orders</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">View pipeline and unlock stages</p>
+            <p className="text-sm text-muted-foreground mt-1">View order pipeline by line</p>
           </div>
           <Button asChild variant="outline">
             <Link href="/dashboard/manager/inventory">Inventory</Link>
@@ -121,22 +118,36 @@ export default function ManagerDashboard() {
                 <TableRow>
                   <TableHead>Order No</TableHead>
                   <TableHead>Customer</TableHead>
-                  <TableHead>Bag Spec</TableHead>
+                  <TableHead>Worker</TableHead>
+                  <TableHead>Current stage</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={5} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow>
                 ) : orders.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
                 ) : orders.map((o) => (
                   <TableRow key={o.id}>
                     <TableCell className="font-mono font-medium">{o.orderNo}</TableCell>
-                    <TableCell>{o.customer}</TableCell>
-                    <TableCell>{o.bagSpec?.name || "—"}</TableCell>
-                    <TableCell><Badge className={STATUS_COLORS[o.status] || ""}>{o.status}</Badge></TableCell>
+                    <TableCell>{o.customer?.name || "—"}</TableCell>
+                    <TableCell>{o.assignedWorker?.name || "Unassigned"}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1.5">
+                        {getOrderCurrentStageBadges(o).map((badge) => (
+                          <Badge
+                            key={badge.key}
+                            variant="outline"
+                            className={cn("font-medium", badge.className)}
+                          >
+                            {badge.label}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell><Badge variant="outline" className={cn("font-medium", STATUS_COLORS[o.status] || "")}>{o.status}</Badge></TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/dashboard/manager/production/${o.id}`}><Eye className="h-4 w-4 mr-1" />View</Link>

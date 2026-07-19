@@ -12,7 +12,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { materialId, rollId, transactionType, quantity, unit, referenceId, remarks } = body;
+    const { materialId, transactionType, quantity, unit, referenceId, remarks } = body;
 
     if (!materialId || !transactionType || !quantity || !unit) {
       return NextResponse.json(
@@ -23,7 +23,6 @@ export async function POST(request) {
 
     const record = await postInventoryTransaction({
       materialId,
-      rollId: rollId || null,
       transactionType,
       quantity,
       unit,

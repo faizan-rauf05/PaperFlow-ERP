@@ -19,8 +19,14 @@ export async function GET(request) {
     const orders = await prisma.productionOrder.findMany({
       where,
       include: {
-        bagSpec: true,
-        stages: { select: { id: true, stageType: true, status: true, sequence: true } },
+        customer: true,
+        assignedWorker: { select: { id: true, name: true, email: true } },
+        lines: {
+          include: {
+            bagSpec: true,
+            stages: { select: { id: true, stageType: true, status: true, sequence: true } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -40,21 +46,33 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    if (!body.customer || !body.bagSpecId || !body.plannedQty) {
+    if (!body.customerId || !body.assignedWorkerId || !Array.isArray(body.lines) || body.lines.length === 0) {
       return NextResponse.json(
-        { error: "customer, bagSpecId, and plannedQty are required" },
+        { error: "customerId, assignedWorkerId, and at least one line are required" },
         { status: 400 },
       );
     }
 
-    const order = await createProductionOrder(body);
+    const order = await createProductionOrder({
+      customerId: body.customerId,
+      assignedWorkerId: body.assignedWorkerId,
+      notes: body.notes,
+      lines: body.lines,
+    });
+
     await writeAuditLog({
       userId: authResult.session.user.id,
       action: ACTIONS.PRODUCTION_ORDER_CREATED,
       model: "ProductionOrder",
       recordId: order.id,
-      newValue: { orderNo: order.orderNo, customer: body.customer },
+      newValue: {
+        orderNo: order.orderNo,
+        customerId: body.customerId,
+        assignedWorkerId: body.assignedWorkerId,
+        lines: body.lines.length,
+      },
     });
+
     return NextResponse.json({ order: serializeModel(order) }, { status: 201 });
   } catch (error) {
     console.error("POST /api/production/orders error:", error);
