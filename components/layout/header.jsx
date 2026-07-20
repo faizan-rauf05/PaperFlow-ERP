@@ -61,7 +61,7 @@ export function Header({ userName, userRole, onMenuClick, onToggleSidebar, onLog
           <PanelLeft className="h-5 w-5" />
         )}
       </Button>
-
+        
       {/* Search */}
       <div className="flex-1 max-w-md">
         <div className="relative">
@@ -77,7 +77,7 @@ export function Header({ userName, userRole, onMenuClick, onToggleSidebar, onLog
       </div>
 
       {/* Right side */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-1 items-center justify-end gap-2">
         <ThemeToggle />
 
         {/* Notifications */}

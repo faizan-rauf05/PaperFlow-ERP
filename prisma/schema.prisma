@@ -309,6 +309,7 @@ model ProductionStage {
   pieceWeightKg   Decimal?         @db.Decimal(14, 4)
   remainderAction RemainderAction?
   remainderQty    Decimal?         @db.Decimal(14, 4)
+  lengthRestockQty Decimal?        @db.Decimal(14, 4)
   proofUrls       Json?
   remarks         String?
   createdAt       DateTime         @default(now())

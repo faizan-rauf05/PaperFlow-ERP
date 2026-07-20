@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { bagSpecSchema } from "@/lib/validations/admin-forms";
 import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validations/form-utils";
+import { generateBagSpecCode } from "@/lib/order-progress";
 
 const emptyForm = {
   name: "",
@@ -47,6 +48,13 @@ function toPayload(data) {
   };
 }
 
+function computeBagsPerMeter(widthMm, lengthMm) {
+  const w = Number(widthMm);
+  const l = Number(lengthMm);
+  if (!w || !l) return "";
+  return ((1000 / w) * (1000 / l)).toFixed(4);
+}
+
 export default function BagSpecsPage() {
   const [specs, setSpecs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +64,7 @@ export default function BagSpecsPage() {
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [codeTouched, setCodeTouched] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,19 +81,41 @@ export default function BagSpecsPage() {
   useEffect(() => { load(); }, [load]);
 
   function patchForm(field, value) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === "name" || field === "bagWidthMm" || field === "repeatLengthMm") {
+        if (!codeTouched || field !== "code") {
+          next.code = generateBagSpecCode({
+            name: field === "name" ? value : next.name,
+            bagWidthMm: field === "bagWidthMm" ? value : next.bagWidthMm,
+            bagLengthMm: field === "repeatLengthMm" ? value : next.repeatLengthMm,
+          });
+        }
+        if (
+          (field === "bagWidthMm" || field === "repeatLengthMm") &&
+          next.bagWidthMm &&
+          next.repeatLengthMm &&
+          !next.bagsPerMeter
+        ) {
+          next.bagsPerMeter = computeBagsPerMeter(next.bagWidthMm, next.repeatLengthMm);
+        }
+      }
+      return next;
+    });
     setErrors((prev) => clearFieldError(prev, field));
   }
 
   function openCreate() {
     setEditing(null);
     setForm(emptyForm);
+    setCodeTouched(false);
     setErrors({});
     setDialogOpen(true);
   }
 
   function openEdit(s) {
     setEditing(s);
+    setCodeTouched(true);
     setForm({
       name: s.name ?? "",
       code: s.code ?? "",
@@ -143,7 +174,7 @@ export default function BagSpecsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Bag Specifications</h1>
-          <p className="text-muted-foreground">Sizes and consumption rates used on production lines</p>
+          <p className="text-muted-foreground">Product recipe: name, width, length, glue & handles</p>
         </div>
         <Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" />Add bag spec
@@ -154,9 +185,9 @@ export default function BagSpecsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name / size</TableHead>
+              <TableHead>Name</TableHead>
               <TableHead>Code</TableHead>
-              <TableHead>Width × repeat (mm)</TableHead>
+              <TableHead>Width × length (mm)</TableHead>
               <TableHead>Bags/m</TableHead>
               <TableHead>Handles/bag</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -206,22 +237,65 @@ export default function BagSpecsPage() {
             <DialogTitle>{editing ? "Edit bag specification" : "New bag specification"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 py-2 sm:grid-cols-2">
-            <FormField label="Name / size" required error={errors.name} className="sm:col-span-2">
+            <FormField
+              label="Name"
+              required
+              error={errors.name}
+              className="sm:col-span-2"
+              hint="Product name only — not the size (size is width × length)."
+            >
               <Input
                 className={fieldClassName("", !!errors.name)}
-                placeholder="e.g. 200x400 or Standard 8x10"
+                placeholder="e.g. Grocery Kraft"
                 value={form.name}
                 onChange={(e) => patchForm("name", e.target.value)}
               />
             </FormField>
-            <FormField label="Code" required error={errors.code}>
+            <FormField
+              label="Bag width (mm)"
+              required
+              error={errors.bagWidthMm}
+              hint="Finished bag width / slit target width."
+            >
+              <Input
+                type="number"
+                step="any"
+                className={fieldClassName("", !!errors.bagWidthMm)}
+                value={form.bagWidthMm}
+                onChange={(e) => patchForm("bagWidthMm", e.target.value)}
+              />
+            </FormField>
+            <FormField
+              label="Bag length (mm)"
+              required
+              error={errors.repeatLengthMm}
+              hint="Length of one bag along the paper (cut-off / height)."
+            >
+              <Input
+                type="number"
+                step="any"
+                className={fieldClassName("", !!errors.repeatLengthMm)}
+                value={form.repeatLengthMm}
+                onChange={(e) => patchForm("repeatLengthMm", e.target.value)}
+              />
+            </FormField>
+            <FormField
+              label="Code"
+              required
+              error={errors.code}
+              className="sm:col-span-2"
+              hint="Auto from name + width + length. Editable."
+            >
               <Input
                 className={fieldClassName("", !!errors.code)}
                 value={form.code}
-                onChange={(e) => patchForm("code", e.target.value)}
+                onChange={(e) => {
+                  setCodeTouched(true);
+                  patchForm("code", e.target.value);
+                }}
               />
             </FormField>
-            <FormField label="Handles per bag" error={errors.handlesPerBag}>
+            <FormField label="Handles per bag" error={errors.handlesPerBag} hint="Rope pieces per bag.">
               <Input
                 type="number"
                 step="any"
@@ -230,23 +304,7 @@ export default function BagSpecsPage() {
                 onChange={(e) => patchForm("handlesPerBag", e.target.value)}
               />
             </FormField>
-            <FormField label="Bag width (mm)" error={errors.bagWidthMm}>
-              <Input
-                type="number"
-                step="any"
-                value={form.bagWidthMm}
-                onChange={(e) => patchForm("bagWidthMm", e.target.value)}
-              />
-            </FormField>
-            <FormField label="Repeat length (mm)" error={errors.repeatLengthMm}>
-              <Input
-                type="number"
-                step="any"
-                value={form.repeatLengthMm}
-                onChange={(e) => patchForm("repeatLengthMm", e.target.value)}
-              />
-            </FormField>
-            <FormField label="Bags per meter" error={errors.bagsPerMeter}>
+            <FormField label="Bags per meter" error={errors.bagsPerMeter} hint="How many bags from 1 m of slit paper.">
               <Input
                 type="number"
                 step="any"
@@ -254,7 +312,7 @@ export default function BagSpecsPage() {
                 onChange={(e) => patchForm("bagsPerMeter", e.target.value)}
               />
             </FormField>
-            <FormField label="Side glue kg/bag" error={errors.sideGlueKgPerBag}>
+            <FormField label="Side glue kg/bag" error={errors.sideGlueKgPerBag} hint="Planned side glue per bag.">
               <Input
                 type="number"
                 step="any"
@@ -262,7 +320,7 @@ export default function BagSpecsPage() {
                 onChange={(e) => patchForm("sideGlueKgPerBag", e.target.value)}
               />
             </FormField>
-            <FormField label="Bottom glue kg/bag" error={errors.bottomGlueKgPerBag}>
+            <FormField label="Bottom glue kg/bag" error={errors.bottomGlueKgPerBag} hint="Planned bottom glue per bag.">
               <Input
                 type="number"
                 step="any"
