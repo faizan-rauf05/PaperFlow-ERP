@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { productionOrderSchema } from "@/lib/validations/admin-forms";
 import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validations/form-utils";
-import { getOrderCurrentStageBadges, ORDER_STATUS_COLORS } from "@/lib/order-progress";
+import { getOrderLineProgressRows, ORDER_STATUS_COLORS } from "@/lib/order-progress";
 import { cn } from "@/lib/utils";
 
 const emptyLine = { bagSpecId: "", plannedQty: "" };
@@ -63,7 +63,6 @@ export default function ProductionOrdersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Refresh bag sizes when returning to this tab after adding a size
   useEffect(() => {
     function onFocus() {
       if (dialogOpen) loadBagSpecs().catch(() => {});
@@ -133,9 +132,7 @@ export default function ProductionOrdersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Production Orders</h1>
-          <p className="text-muted-foreground">
-            Assign a worker and pick bag size per line
-          </p>
+          <p className="text-muted-foreground">Assign worker · pick bag size per line</p>
         </div>
         <Button onClick={openCreateDialog}>
           <Plus className="h-4 w-4 mr-2" />New Order
@@ -147,9 +144,8 @@ export default function ProductionOrdersPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Order</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Worker</TableHead>
-              <TableHead>Current stage</TableHead>
+              <TableHead>Customer / Worker</TableHead>
+              <TableHead>Lines</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Open</TableHead>
             </TableRow>
@@ -157,36 +153,43 @@ export default function ProductionOrdersPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
+                <TableCell colSpan={5} className="text-center py-8">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
             ) : orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                   No orders yet
                 </TableCell>
               </TableRow>
             ) : (
               orders.map((o) => (
-                <TableRow key={o.id}>
-                  <TableCell className="font-mono text-sm">{o.orderNo}</TableCell>
-                  <TableCell>{o.customer?.name}</TableCell>
-                  <TableCell>{o.assignedWorker?.name || "Unassigned"}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1.5">
-                      {getOrderCurrentStageBadges(o).map((badge) => (
-                        <Badge
-                          key={badge.key}
-                          variant="outline"
-                          className={cn("font-medium", badge.className)}
-                        >
-                          {badge.label}
-                        </Badge>
+                <TableRow key={o.id} className="align-top">
+                  <TableCell className="font-mono text-sm pt-4">{o.orderNo}</TableCell>
+                  <TableCell className="pt-4">
+                    <div className="space-y-0.5">
+                      <p>{o.customer?.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {o.assignedWorker?.name || "Unassigned"}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="pt-3">
+                    <div className="space-y-2">
+                      {getOrderLineProgressRows(o).map((row) => (
+                        <div key={row.key} className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="text-muted-foreground">L{row.lineNo}</span>
+                          <span className="font-medium">{row.bagSpecName}</span>
+                          <span className="text-muted-foreground">· {row.plannedQty} bags</span>
+                          <Badge variant="outline" className={cn("font-medium", row.className)}>
+                            {row.stageLabel}
+                          </Badge>
+                        </div>
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="pt-4">
                     <Badge
                       variant="outline"
                       className={cn("font-medium", ORDER_STATUS_COLORS[o.status])}
@@ -194,7 +197,7 @@ export default function ProductionOrdersPage() {
                       {o.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right pt-4">
                     <Button variant="outline" size="sm" asChild>
                       <Link href={`/dashboard/admin/production/${o.id}`}>View</Link>
                     </Button>
@@ -239,9 +242,7 @@ export default function ProductionOrdersPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {workers.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.name}
-                    </SelectItem>
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -260,12 +261,7 @@ export default function ProductionOrdersPage() {
                 <p className="text-sm font-medium">Bag lines</p>
                 <div className="flex items-center gap-2">
                   <Button type="button" variant="link" size="sm" className="h-auto px-0" asChild>
-                    <Link
-                      href="/dashboard/admin/bag-specs"
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={() => toast.message("Add a size, then return here — the list will refresh")}
-                    >
+                    <Link href="/dashboard/admin/bag-specs" target="_blank" rel="noreferrer">
                       <Plus className="h-3.5 w-3.5 mr-1" />
                       Add new size
                       <ExternalLink className="h-3 w-3 ml-1 opacity-70" />
@@ -328,26 +324,11 @@ export default function ProductionOrdersPage() {
                   </div>
                 </div>
               ))}
-              {bagSpecs.length === 0 && (
-                <p className="text-xs text-amber-700 dark:text-amber-300">
-                  No bag sizes available.{" "}
-                  <Link
-                    href="/dashboard/admin/bag-specs"
-                    target="_blank"
-                    className="underline font-medium"
-                  >
-                    Add a new size
-                  </Link>{" "}
-                  then come back to this dialog.
-                </p>
-              )}
               {errors.lines && <p className="text-xs text-destructive">{errors.lines}</p>}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving || bagSpecs.length === 0}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Create

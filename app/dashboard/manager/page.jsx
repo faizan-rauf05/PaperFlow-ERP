@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
-import { getOrderCurrentStageBadges, ORDER_STATUS_COLORS } from "@/lib/order-progress";
+import { getOrderLineProgressRows, ORDER_STATUS_COLORS } from "@/lib/order-progress";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLORS = ORDER_STATUS_COLORS;
@@ -117,38 +117,44 @@ export default function ManagerDashboard() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Order No</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Worker</TableHead>
-                  <TableHead>Current stage</TableHead>
+                  <TableHead>Customer / Worker</TableHead>
+                  <TableHead>Lines</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow>
                 ) : orders.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No orders</TableCell></TableRow>
                 ) : orders.map((o) => (
-                  <TableRow key={o.id}>
-                    <TableCell className="font-mono font-medium">{o.orderNo}</TableCell>
-                    <TableCell>{o.customer?.name || "—"}</TableCell>
-                    <TableCell>{o.assignedWorker?.name || "Unassigned"}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1.5">
-                        {getOrderCurrentStageBadges(o).map((badge) => (
-                          <Badge
-                            key={badge.key}
-                            variant="outline"
-                            className={cn("font-medium", badge.className)}
-                          >
-                            {badge.label}
-                          </Badge>
+                  <TableRow key={o.id} className="align-top">
+                    <TableCell className="font-mono font-medium pt-4">{o.orderNo}</TableCell>
+                    <TableCell className="pt-4">
+                      <div className="space-y-0.5">
+                        <p>{o.customer?.name || "—"}</p>
+                        <p className="text-xs text-muted-foreground">{o.assignedWorker?.name || "Unassigned"}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="pt-3">
+                      <div className="space-y-2">
+                        {getOrderLineProgressRows(o).map((row) => (
+                          <div key={row.key} className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="text-muted-foreground">L{row.lineNo}</span>
+                            <span className="font-medium">{row.bagSpecName}</span>
+                            <span className="text-muted-foreground">· {row.plannedQty} bags</span>
+                            <Badge variant="outline" className={cn("font-medium", row.className)}>
+                              {row.stageLabel}
+                            </Badge>
+                          </div>
                         ))}
                       </div>
                     </TableCell>
-                    <TableCell><Badge variant="outline" className={cn("font-medium", STATUS_COLORS[o.status] || "")}>{o.status}</Badge></TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="pt-4">
+                      <Badge variant="outline" className={cn("font-medium", STATUS_COLORS[o.status] || "")}>{o.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right pt-4">
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/dashboard/manager/production/${o.id}`}><Eye className="h-4 w-4 mr-1" />View</Link>
                       </Button>

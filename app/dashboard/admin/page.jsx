@@ -348,7 +348,7 @@ export default function AdminDashboard() {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Recent Activity Feed */}
         <div className="dashboard-panel">
-          <CardHeader className="pb-3">
+          <CardHeader className="py-3">
             <CardTitle className="text-lg font-semibold flex items-center gap-2">
               <Clock className="h-5 w-5 text-muted-foreground" />
               Recent Activity
@@ -365,7 +365,7 @@ export default function AdminDashboard() {
 
         {/* Alerts Feed */}
         <div className="dashboard-panel">
-          <CardHeader className="pb-3">
+          <CardHeader className="py-3">
             <CardTitle className="text-lg font-semibold flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
               Alerts
@@ -385,7 +385,7 @@ export default function AdminDashboard() {
       </div>
 
       <p className="text-center text-xs text-muted-foreground">
-        PackFactory ERP · Last synced just now · All times in PKT
+        PackFactory ERP · Last synced just now
       </p>
     </div>
   );

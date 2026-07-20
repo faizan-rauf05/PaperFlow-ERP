@@ -13,15 +13,16 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { FormField, fieldClassName } from "@/components/ui/form-field";
+import { FormField } from "@/components/ui/form-field";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { getStageLabel, QC_STAGE_TYPES } from "@/lib/production-constants";
 import { computeSlittingPreview } from "@/lib/slitting-math";
 import {
-  getOrderCurrentStageBadges,
-  getStageTypeColor,
+  getOrderLineProgressRows,
+  getStageStatusColor,
   ORDER_STATUS_COLORS,
+  summarizeOrderMaterials,
 } from "@/lib/order-progress";
 import { cn } from "@/lib/utils";
 
@@ -29,23 +30,29 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
   const isQc = QC_STAGE_TYPES.includes(stage.stageType);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [errors, setErrors] = useState({});
   const [paperMaterials, setPaperMaterials] = useState([]);
+  const [glueMaterials, setGlueMaterials] = useState([]);
+  const [cartonMaterials, setCartonMaterials] = useState([]);
+  const [stockById, setStockById] = useState({});
   const [machines, setMachines] = useState([]);
   const [defectTypes, setDefectTypes] = useState([]);
   const [form, setForm] = useState({
     materialId: "",
     machineId: "",
     outputQty: "",
-    cutWidthMm: "",
+    cutWidthMm: context?.suggestedCutWidthMm != null ? String(context.suggestedCutWidthMm) : "",
     remainderAction: "",
-    remainderQty: "",
+    lengthRestockQty: "0",
     pieceCount: "",
     pieceWeightKg: "",
     proofUrls: [],
     remarks: "",
     passedQty: "",
-    rejectedQty: "",
     defectTypeId: "",
+    glueSideQty: "",
+    glueBottomQty: "",
+    cartonMaterialId: "",
   });
 
   const inputQty = context?.inputQty;
@@ -53,19 +60,42 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
   useEffect(() => {
     (async () => {
       try {
-        const [mats, mach, defects] = await Promise.all([
+        const [mats, mach, defects, stock] = await Promise.all([
           api.get("/materials"),
           api.get("/machines"),
           api.get("/defect-types"),
+          api.get("/inventory/current-stock"),
         ]);
-        setPaperMaterials((mats.data.materials || []).filter((m) => m.materialType === "PAPER_ROLL"));
-        setMachines((mach.data.machines || []).filter((m) => m.stageType === stage.stageType || !stage.stageType));
+        const all = mats.data.materials || [];
+        setPaperMaterials(all.filter((m) => m.materialType === "PAPER_ROLL"));
+        setGlueMaterials(all.filter((m) => m.materialType === "GLUE"));
+        setCartonMaterials(all.filter((m) => m.materialType === "CARTON"));
+        setMachines((mach.data.machines || []).filter((m) => m.stageType === stage.stageType));
         setDefectTypes((defects.data.defectTypes || defects.data.types || []).filter((d) => d.stageType === stage.stageType));
+
+        const map = {};
+        for (const row of stock.data.stock || stock.data.materials || stock.data.stocks || []) {
+          map[row.id] = Number(row.currentStock ?? row.stock ?? 0);
+        }
+        setStockById(map);
       } catch (e) {
         toast.error(getApiErrorMessage(e));
       }
     })();
   }, [stage.stageType]);
+
+  useEffect(() => {
+    if (stage.stageType !== "HANDLE_MAKING_PASTING" || !context?.gluePlan) return;
+    setForm((prev) => ({
+      ...prev,
+      glueSideQty: prev.glueSideQty || String(context.gluePlan.sideKg || 0),
+      glueBottomQty: prev.glueBottomQty || String(context.gluePlan.bottomKg || 0),
+    }));
+  }, [stage.stageType, context?.gluePlan]);
+
+  const selectedPaperStock = form.materialId
+    ? stockById[form.materialId]
+    : context?.paperStock;
 
   const slitPreview = useMemo(() => {
     if (stage.stageType !== "SLITTING") return null;
@@ -74,8 +104,9 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       parentWidthMm: context?.paperMaterial?.paperWidthMm,
       cutWidthMm: form.cutWidthMm,
       gsm: context?.paperMaterial?.gsm,
+      lengthRestockMeters: form.lengthRestockQty,
     });
-  }, [stage.stageType, inputQty, context?.paperMaterial, form.cutWidthMm]);
+  }, [stage.stageType, inputQty, context?.paperMaterial, form.cutWidthMm, form.lengthRestockQty]);
 
   useEffect(() => {
     if (!slitPreview) return;
@@ -83,10 +114,78 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       ...prev,
       pieceCount: slitPreview.pieceCount || "",
       pieceWeightKg: slitPreview.pieceWeightKg ?? "",
-      remainderQty: slitPreview.remainderMeters ? Number(slitPreview.remainderMeters).toFixed(2) : "",
-      outputQty: prev.outputQty || (inputQty != null ? String(inputQty) : ""),
+      outputQty: String(slitPreview.usableMeters ?? ""),
     }));
-  }, [slitPreview, inputQty]);
+  }, [slitPreview]);
+
+  const rejectedLive = useMemo(() => {
+    if (!isQc || inputQty == null || form.passedQty === "") return null;
+    return Math.max(0, Number(inputQty) - Number(form.passedQty || 0));
+  }, [isQc, inputQty, form.passedQty]);
+
+  const handleBagsPlan = useMemo(() => {
+    if (stage.stageType !== "HANDLE_MAKING_PASTING") return null;
+    const bags = Number(form.outputQty) || 0;
+    const bpm = Number(context?.bagSpec?.bagsPerMeter) || 0;
+    const hpb = Number(context?.bagSpec?.handlesPerBag) || 2;
+    const side = Number(context?.bagSpec?.sideGlueKgPerBag) || 0;
+    const bottom = Number(context?.bagSpec?.bottomGlueKgPerBag) || 0;
+    return {
+      metersNeeded: bpm > 0 ? bags / bpm : null,
+      ropePcs: bags * hpb,
+      sideKg: bags * side,
+      bottomKg: bags * bottom,
+      maxFromMeters: bpm > 0 && inputQty != null ? Math.floor(Number(inputQty) * bpm) : null,
+    };
+  }, [stage.stageType, form.outputQty, context?.bagSpec, inputQty]);
+
+  function patch(field, value) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }
+
+  function validate() {
+    const next = {};
+    if (form.proofUrls.length === 0) next.proofUrls = "Add at least one proof";
+
+    if (stage.stageType === "RAW_MATERIAL") {
+      if (!form.materialId) next.materialId = "Select paper material";
+      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Enter meters issued";
+    }
+    if (stage.stageType === "SLITTING") {
+      if (!form.machineId) next.machineId = "Slitting machine required";
+      if (!form.cutWidthMm || Number(form.cutWidthMm) <= 0) next.cutWidthMm = "Cut width required";
+      if (slitPreview?.widthRemainderMeters > 0 && !form.remainderAction) {
+        next.remainderAction = "Choose waste or restock for width leftover";
+      }
+    }
+    if (stage.stageType === "PRINTING") {
+      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Printed meters required";
+    }
+    if (isQc) {
+      if (form.passedQty === "" || Number(form.passedQty) < 0) next.passedQty = "Enter passed qty";
+      if (inputQty != null && Number(form.passedQty) > Number(inputQty)) {
+        next.passedQty = "Cannot exceed input";
+      }
+    }
+    if (stage.stageType === "HANDLE_MAKING_PASTING") {
+      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Bags produced required";
+    }
+    if (stage.stageType === "PACKING") {
+      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Cartons required";
+      if (!form.cartonMaterialId) next.cartonMaterialId = "Select carton type";
+    }
+    if (stage.stageType === "DISPATCH") {
+      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Dispatched qty required";
+    }
+
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
 
   async function uploadProof(file) {
     setUploading(true);
@@ -97,6 +196,11 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setForm((prev) => ({ ...prev, proofUrls: [...prev.proofUrls, data.photoUrl] }));
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.proofUrls;
+        return next;
+      });
       toast.success("Proof uploaded");
     } catch (e) {
       toast.error(getApiErrorMessage(e));
@@ -106,6 +210,22 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
   }
 
   async function handleSubmit() {
+    if (!validate()) {
+      toast.error("Fix the highlighted fields");
+      return;
+    }
+
+    if (
+      stage.stageType === "RAW_MATERIAL" &&
+      selectedPaperStock != null &&
+      Number(form.outputQty) > Number(selectedPaperStock)
+    ) {
+      const ok = window.confirm(
+        `Issued ${form.outputQty} m exceeds stock (${selectedPaperStock} m). Continue anyway?`,
+      );
+      if (!ok) return;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -118,11 +238,15 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
         pieceCount: form.pieceCount || undefined,
         pieceWeightKg: form.pieceWeightKg || undefined,
         remainderAction: form.remainderAction || undefined,
-        remainderQty: form.remainderQty || undefined,
+        remainderQty: slitPreview?.widthRemainderMeters || undefined,
+        lengthRestockQty: form.lengthRestockQty || undefined,
+        glueSideQty: form.glueSideQty || undefined,
+        glueBottomQty: form.glueBottomQty || undefined,
+        cartonMaterialId: form.cartonMaterialId || undefined,
         qc: isQc
           ? {
               passedQty: form.passedQty,
-              rejectedQty: form.rejectedQty || 0,
+              rejectedQty: rejectedLive ?? 0,
               defectTypeId: form.defectTypeId || undefined,
             }
           : undefined,
@@ -142,49 +266,129 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       {stage.sequence > 1 && (
         <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
           Prefill input: <strong>{inputQty ?? "—"}</strong> {stage.inputUnit}
+          {stage.stageType === "PRINTING" && (
+            <span className="text-muted-foreground"> (slit meters × cut pieces)</span>
+          )}
         </div>
       )}
 
       {stage.stageType === "RAW_MATERIAL" && (
         <>
-          <FormField label="Paper material" required>
-            <Select value={form.materialId} onValueChange={(v) => setForm((p) => ({ ...p, materialId: v }))}>
+          <FormField
+            label="Paper material"
+            required
+            error={errors.materialId}
+            hint="Paper stock only — pick the roll material to issue."
+          >
+            <Select value={form.materialId} onValueChange={(v) => patch("materialId", v)}>
               <SelectTrigger className="w-full"><SelectValue placeholder="Select paper" /></SelectTrigger>
               <SelectContent>
                 {paperMaterials.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.name} ({m.code})</SelectItem>
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name} · {m.paperWidthMm ?? "?"}mm ({m.code})
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </FormField>
-          <FormField label="Meters issued" required>
-            <Input type="number" min="0" step="0.01" value={form.outputQty} onChange={(e) => setForm((p) => ({ ...p, outputQty: e.target.value }))} />
+          <FormField
+            label="Meters issued"
+            required
+            error={errors.outputQty}
+            hint="Length taken from stock into this order."
+          >
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.outputQty}
+              onChange={(e) => patch("outputQty", e.target.value)}
+            />
+            {form.materialId && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Available stock for this paper:{" "}
+                <strong>{selectedPaperStock != null ? `${selectedPaperStock} m` : "—"}</strong>
+              </p>
+            )}
           </FormField>
         </>
       )}
 
       {stage.stageType === "SLITTING" && (
         <>
-          <FormField label="Cut width (mm)" required>
-            <Input type="number" min="1" value={form.cutWidthMm} onChange={(e) => setForm((p) => ({ ...p, cutWidthMm: e.target.value }))} />
+          <FormField
+            label="Slitting machine"
+            required
+            error={errors.machineId}
+            hint="Required — which slitters did this cut."
+          >
+            <Select value={form.machineId} onValueChange={(v) => patch("machineId", v)}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="Select machine" /></SelectTrigger>
+              <SelectContent>
+                {machines.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </FormField>
+          <FormField
+            label="Cut width (mm)"
+            required
+            error={errors.cutWidthMm}
+            hint="Target strip width (prefilled from bag width). Editable."
+          >
+            <Input
+              type="number"
+              min="1"
+              value={form.cutWidthMm}
+              onChange={(e) => patch("cutWidthMm", e.target.value)}
+            />
+          </FormField>
+          {context?.paperMaterial && (
+            <p className="text-xs text-muted-foreground">
+              Parent paper: {context.paperMaterial.name} · width{" "}
+              {context.paperMaterial.paperWidthMm ?? "—"} mm · input {inputQty ?? "—"} m
+            </p>
+          )}
           {slitPreview && (
-            <div className="text-sm text-muted-foreground space-y-1">
-              <p>Pieces across width: {slitPreview.pieceCount}</p>
-              <p>Each piece length: {inputQty} m · Est. piece weight: {slitPreview.pieceWeightKg != null ? `${Number(slitPreview.pieceWeightKg).toFixed(3)} kg` : "—"}</p>
-              <p>Remainder length (width scrap): {Number(slitPreview.remainderMeters || 0).toFixed(2)} m</p>
+            <div className="rounded-md border px-3 py-2 text-sm space-y-1">
+              <p>Pieces across width: <strong>{slitPreview.pieceCount}</strong></p>
+              <p>
+                Gross usable: {inputQty} × {slitPreview.pieceCount} ={" "}
+                <strong>{(Number(inputQty || 0) * slitPreview.pieceCount).toFixed(2)} m</strong>
+              </p>
+              <p>
+                Width leftover: <strong>{slitPreview.widthRemainderMm} mm</strong> strip × {inputQty} m
+                {" "}(= {Number(slitPreview.widthRemainderMeters || 0).toFixed(2)} m)
+              </p>
+              <p>
+                After length restock → next stage input:{" "}
+                <strong>{Number(slitPreview.usableMeters || 0).toFixed(2)} m</strong>
+              </p>
             </div>
           )}
-          <FormField label="Usable output length (m)" required>
-            <Input type="number" min="0" step="0.01" value={form.outputQty} onChange={(e) => setForm((p) => ({ ...p, outputQty: e.target.value }))} />
+          <FormField
+            label="Length restock (m)"
+            hint="Optional: return unused cut-strip length to stock. Reduces usable meters."
+          >
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.lengthRestockQty}
+              onChange={(e) => patch("lengthRestockQty", e.target.value)}
+            />
           </FormField>
-          {Number(form.remainderQty) > 0 && (
-            <FormField label="Remainder action" required>
-              <Select value={form.remainderAction} onValueChange={(v) => setForm((p) => ({ ...p, remainderAction: v }))}>
+          {slitPreview?.widthRemainderMeters > 0 && (
+            <FormField
+              label="Width leftover action"
+              required
+              error={errors.remainderAction}
+              hint="Leftover width strip — you choose restock or waste (not auto)."
+            >
+              <Select value={form.remainderAction} onValueChange={(v) => patch("remainderAction", v)}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="Waste or Restock" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="WASTE">Waste</SelectItem>
-                  <SelectItem value="RESTOCK">Restock</SelectItem>
+                  <SelectItem value="RESTOCK">Restock leftover width strip</SelectItem>
+                  <SelectItem value="WASTE">Mark leftover width as waste</SelectItem>
                 </SelectContent>
               </Select>
             </FormField>
@@ -193,28 +397,53 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       )}
 
       {stage.stageType === "PRINTING" && (
-        <FormField label="Printed meters" required>
-          <Input type="number" min="0" step="0.01" value={form.outputQty} onChange={(e) => setForm((p) => ({ ...p, outputQty: e.target.value }))} />
+        <FormField
+          label="Printed meters"
+          required
+          error={errors.outputQty}
+          hint="Good printed length from the slit usable meters."
+        >
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.outputQty}
+            onChange={(e) => patch("outputQty", e.target.value)}
+          />
           {inputQty != null && form.outputQty !== "" && (
-            <p className="text-xs text-muted-foreground mt-1">Waste (auto): {(Number(inputQty) - Number(form.outputQty || 0)).toFixed(2)} m</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Waste (auto): {(Number(inputQty) - Number(form.outputQty || 0)).toFixed(2)} m
+            </p>
           )}
         </FormField>
       )}
 
       {isQc && (
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Passed" required>
-            <Input type="number" min="0" value={form.passedQty} onChange={(e) => setForm((p) => ({ ...p, passedQty: e.target.value }))} />
+        <div className="space-y-3">
+          <FormField
+            label="Passed"
+            required
+            error={errors.passedQty}
+            hint="Good qty after check. Rejected = input − passed."
+          >
+            <Input
+              type="number"
+              min="0"
+              value={form.passedQty}
+              onChange={(e) => patch("passedQty", e.target.value)}
+            />
           </FormField>
-          <FormField label="Rejected">
-            <Input type="number" min="0" value={form.rejectedQty} onChange={(e) => setForm((p) => ({ ...p, rejectedQty: e.target.value }))} />
-          </FormField>
+          <p className="text-sm">
+            Rejected (auto): <strong>{rejectedLive != null ? rejectedLive : "—"}</strong> {stage.inputUnit}
+          </p>
           {defectTypes.length > 0 && (
-            <FormField label="Defect type" className="col-span-2">
-              <Select value={form.defectTypeId} onValueChange={(v) => setForm((p) => ({ ...p, defectTypeId: v }))}>
+            <FormField label="Defect type" hint="Optional reason for rejects.">
+              <Select value={form.defectTypeId} onValueChange={(v) => patch("defectTypeId", v)}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="Optional" /></SelectTrigger>
                 <SelectContent>
-                  {defectTypes.map((d) => <SelectItem key={d.id} value={d.id}>{d.description}</SelectItem>)}
+                  {defectTypes.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.description}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </FormField>
@@ -224,33 +453,121 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
 
       {stage.stageType === "HANDLE_MAKING_PASTING" && (
         <>
-          {context?.handleCapacity && (
-            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm space-y-1">
-              <p>Handle capacity (from rope + meters): <strong>{Math.floor(context.handleCapacity.capacityBags)}</strong> bags</p>
-              <p className="text-muted-foreground">Rope stock: {context.handleCapacity.ropeStock} · Handles/bag: {context.handleCapacity.handlesPerBag}</p>
-            </div>
-          )}
-          <FormField label="Bags produced (handles pasted)" required>
-            <Input type="number" min="1" value={form.outputQty} onChange={(e) => setForm((p) => ({ ...p, outputQty: e.target.value }))} />
+          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm space-y-1">
+            {context?.handleCapacity && (
+              <p>
+                Max from rope + meters:{" "}
+                <strong>{Math.floor(context.handleCapacity.capacityBags)}</strong> bags
+              </p>
+            )}
+            {context?.gluePlan && (
+              <>
+                <p>Bags / meter (spec): {context.gluePlan.bagsPerMeter ?? "—"}</p>
+                <p>Handles / bag: {context.gluePlan.handlesPerBag}</p>
+              </>
+            )}
+            {handleBagsPlan && (
+              <p className="text-muted-foreground">
+                For entered bags → rope ~{handleBagsPlan.ropePcs} pcs · side glue ~{handleBagsPlan.sideKg.toFixed(4)} kg · bottom ~{handleBagsPlan.bottomKg.toFixed(4)} kg
+              </p>
+            )}
+          </div>
+          <FormField
+            label="Bags produced"
+            required
+            error={errors.outputQty}
+            hint="Actual bags with handles pasted."
+          >
+            <Input
+              type="number"
+              min="1"
+              value={form.outputQty}
+              onChange={(e) => patch("outputQty", e.target.value)}
+            />
           </FormField>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField
+              label="Side glue (kg)"
+              hint="Prefilled from bag spec × bags. Editable."
+            >
+              <Input
+                type="number"
+                min="0"
+                step="0.0001"
+                value={form.glueSideQty}
+                onChange={(e) => patch("glueSideQty", e.target.value)}
+              />
+              {glueMaterials.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Stock: {glueMaterials.map((g) => `${g.name} ${stockById[g.id] ?? "?"}kg`).join(" · ")}
+                </p>
+              )}
+            </FormField>
+            <FormField
+              label="Bottom glue (kg)"
+              hint="Prefilled from bag spec × bags. Editable."
+            >
+              <Input
+                type="number"
+                min="0"
+                step="0.0001"
+                value={form.glueBottomQty}
+                onChange={(e) => patch("glueBottomQty", e.target.value)}
+              />
+            </FormField>
+          </div>
         </>
       )}
 
       {stage.stageType === "PACKING" && (
-        <FormField label="Cartons packed" required>
-          <Input type="number" min="1" value={form.outputQty} onChange={(e) => setForm((p) => ({ ...p, outputQty: e.target.value }))} />
-        </FormField>
+        <>
+          <FormField
+            label="Cartons packed"
+            required
+            error={errors.outputQty}
+            hint="How many cartons filled."
+          >
+            <Input
+              type="number"
+              min="1"
+              value={form.outputQty}
+              onChange={(e) => patch("outputQty", e.target.value)}
+            />
+          </FormField>
+          <FormField
+            label="Carton type"
+            required
+            error={errors.cartonMaterialId}
+            hint="Deducts this carton from inventory."
+          >
+            <Select value={form.cartonMaterialId} onValueChange={(v) => patch("cartonMaterialId", v)}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="Select carton" /></SelectTrigger>
+              <SelectContent>
+                {cartonMaterials.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name} (stock {stockById[m.id] ?? "—"})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
+        </>
       )}
 
       {stage.stageType === "DISPATCH" && (
-        <FormField label="Cartons dispatched" required>
-          <Input type="number" min="1" value={form.outputQty} onChange={(e) => setForm((p) => ({ ...p, outputQty: e.target.value }))} />
+        <FormField label="Cartons dispatched" required error={errors.outputQty} hint="Qty leaving the factory.">
+          <Input
+            type="number"
+            min="1"
+            value={form.outputQty}
+            onChange={(e) => patch("outputQty", e.target.value)}
+          />
         </FormField>
       )}
 
-      {machines.length > 0 && (
-        <FormField label="Machine">
-          <Select value={form.machineId} onValueChange={(v) => setForm((p) => ({ ...p, machineId: v }))}>
+      {machines.length > 0 && stage.stageType !== "SLITTING" && (
+        <FormField label="Machine" hint="Optional machine used.">
+          <Select value={form.machineId} onValueChange={(v) => patch("machineId", v)}>
             <SelectTrigger className="w-full"><SelectValue placeholder="Optional" /></SelectTrigger>
             <SelectContent>
               {machines.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
@@ -259,8 +576,13 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
         </FormField>
       )}
 
-      <FormField label="Proof images" required>
-        <Input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(e) => e.target.files?.[0] && uploadProof(e.target.files[0])} />
+      <FormField label="Proof images" required error={errors.proofUrls} hint="Photo evidence for this stage.">
+        <Input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          disabled={uploading}
+          onChange={(e) => e.target.files?.[0] && uploadProof(e.target.files[0])}
+        />
         <div className="flex flex-wrap gap-2 mt-2">
           {form.proofUrls.map((url) => (
             <a key={url} href={url} target="_blank" rel="noreferrer" className="text-xs text-primary underline">{url}</a>
@@ -268,8 +590,8 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
         </div>
       </FormField>
 
-      <FormField label="Remarks">
-        <Input value={form.remarks} onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))} />
+      <FormField label="Remarks" hint="Optional note.">
+        <Input value={form.remarks} onChange={(e) => patch("remarks", e.target.value)} />
       </FormField>
 
       <DialogFooter>
@@ -317,6 +639,11 @@ export default function ProductionOrderDetailPage() {
       }
     })();
   }, []);
+
+  const materialSummary = useMemo(
+    () => (order ? summarizeOrderMaterials(order) : null),
+    [order],
+  );
 
   async function openRecord(stage) {
     setLoadingContext(true);
@@ -369,17 +696,26 @@ export default function ProductionOrderDetailPage() {
               <Badge variant="outline" className={cn("font-medium", ORDER_STATUS_COLORS[order.status])}>
                 {order.status}
               </Badge>
-              {getOrderCurrentStageBadges(order).map((badge) => (
-                <Badge
-                  key={badge.key}
-                  variant="outline"
-                  className={cn("font-medium", badge.className)}
-                >
-                  {badge.label}
-                </Badge>
-              ))}
             </p>
           </div>
+
+          {materialSummary && (
+            <div className="grid gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm sm:grid-cols-2">
+              <p>
+                Paper used: <strong>{materialSummary.usedMeters.toFixed(2)} m</strong>
+              </p>
+              <p>
+                Paper / meter waste: <strong>{materialSummary.wasteMeters.toFixed(2)} m</strong>
+              </p>
+              <p>
+                Bags made: <strong>{materialSummary.usedBags}</strong>
+              </p>
+              <p>
+                Bag rejects: <strong>{materialSummary.wasteBags}</strong>
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-3">
             <FormField label="Responsible worker" className="min-w-[220px]">
               <Select
@@ -392,9 +728,7 @@ export default function ProductionOrderDetailPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {workers.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.name}
-                    </SelectItem>
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -404,55 +738,70 @@ export default function ProductionOrderDetailPage() {
         </div>
       </div>
 
-      {(order.lines || []).map((line) => (
-        <div key={line.id} className="rounded-lg border">
-          <div className="border-b px-4 py-3">
-            <p className="font-medium">Line {line.lineNo}: {line.bagSpec?.name}</p>
-            <p className="text-sm text-muted-foreground">Planned {line.plannedQty} bags</p>
-          </div>
-          <div className="divide-y">
-            {(line.stages || []).map((stage) => (
-              <div key={stage.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium flex flex-wrap items-center gap-2">
-                    <span>{stage.sequence}. {getStageLabel(stage.stageType)}</span>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "font-medium",
-                        getStageTypeColor(stage.stageType, {
-                          completed: stage.status === "COMPLETED",
-                        }),
-                      )}
-                    >
-                      {stage.status}
-                    </Badge>
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {stage.status}
-                    {stage.outputQty != null && ` · out ${stage.outputQty} ${stage.outputUnit}`}
-                    {stage.wasteQty != null && Number(stage.wasteQty) > 0 && ` · waste ${stage.wasteQty}`}
-                  </p>
+      {(order.lines || []).map((line) => {
+        const progress = getOrderLineProgressRows({ lines: [line] })[0];
+        return (
+          <div key={line.id} className="rounded-lg border">
+            <div className="border-b px-4 py-3 flex flex-wrap items-center gap-2">
+              <p className="font-medium">
+                Line {line.lineNo}: {line.bagSpec?.name}
+              </p>
+              <span className="text-sm text-muted-foreground">{line.plannedQty} bags</span>
+              {progress && (
+                <Badge variant="outline" className={cn("font-medium", progress.className)}>
+                  {progress.stageLabel}
+                </Badge>
+              )}
+            </div>
+            <div className="divide-y">
+              {(line.stages || []).map((stage) => (
+                <div
+                  key={stage.id}
+                  className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-medium flex flex-wrap items-center gap-2">
+                      <span>{stage.sequence}. {getStageLabel(stage.stageType)}</span>
+                      <Badge
+                        variant="outline"
+                        className={cn("font-medium", getStageStatusColor(stage.status))}
+                      >
+                        {stage.status}
+                      </Badge>
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {stage.outputQty != null && `out ${stage.outputQty} ${stage.outputUnit}`}
+                      {stage.wasteQty != null && Number(stage.wasteQty) > 0 && ` · waste ${stage.wasteQty}`}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    {stage.status === "COMPLETED" && (
+                      <Button variant="outline" size="sm" onClick={() => setPreviewStage(stage)}>
+                        <Eye className="h-4 w-4 mr-1" />Preview
+                      </Button>
+                    )}
+                    {["READY", "IN_PROGRESS"].includes(stage.status) && (
+                      <Button size="sm" onClick={() => openRecord(stage)}>
+                        <ClipboardEdit className="h-4 w-4 mr-1" />Record input
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  {stage.status === "COMPLETED" && (
-                    <Button variant="outline" size="sm" onClick={() => setPreviewStage(stage)}>
-                      <Eye className="h-4 w-4 mr-1" />Preview
-                    </Button>
-                  )}
-                  {["READY", "IN_PROGRESS"].includes(stage.status) && (
-                    <Button size="sm" onClick={() => openRecord(stage)}>
-                      <ClipboardEdit className="h-4 w-4 mr-1" />Record input
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
-      <Dialog open={!!recordStage} onOpenChange={(open) => { if (!open) { setRecordStage(null); setRecordContext(null); } }}>
+      <Dialog
+        open={!!recordStage}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRecordStage(null);
+            setRecordContext(null);
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Record — {recordStage ? getStageLabel(recordStage.stageType) : ""}</DialogTitle>
@@ -478,22 +827,25 @@ export default function ProductionOrderDetailPage() {
           </DialogHeader>
           {previewStage && (
             <div className="space-y-2 text-sm">
-              <p>Status: <Badge variant="outline">{previewStage.status}</Badge></p>
+              <p>Status: <Badge variant="outline" className={getStageStatusColor(previewStage.status)}>{previewStage.status}</Badge></p>
               <p>Input: {previewStage.inputQty ?? "—"} {previewStage.inputUnit}</p>
               <p>Output: {previewStage.outputQty ?? "—"} {previewStage.outputUnit}</p>
               <p>Waste: {previewStage.wasteQty ?? "—"}</p>
               {previewStage.cutWidthMm != null && <p>Cut width: {previewStage.cutWidthMm} mm</p>}
               {previewStage.pieceCount != null && <p>Pieces: {previewStage.pieceCount}</p>}
-              {previewStage.remainderAction && <p>Remainder: {previewStage.remainderQty} → {previewStage.remainderAction}</p>}
-              {previewStage.material && <p>Material: {previewStage.material.name}</p>}
-              {previewStage.machine && <p>Machine: {previewStage.machine.name}</p>}
+              {previewStage.lengthRestockQty != null && <p>Length restock: {previewStage.lengthRestockQty} m</p>}
+              {previewStage.remainderAction && (
+                <p>Width leftover: {previewStage.remainderQty} → {previewStage.remainderAction}</p>
+              )}
               {previewStage.remarks && <p>Remarks: {previewStage.remarks}</p>}
               {Array.isArray(previewStage.proofUrls) && previewStage.proofUrls.length > 0 && (
                 <div>
                   <p className="font-medium mb-1">Proofs</p>
                   <ul className="space-y-1">
                     {previewStage.proofUrls.map((url) => (
-                      <li key={url}><a className="text-primary underline" href={url} target="_blank" rel="noreferrer">{url}</a></li>
+                      <li key={url}>
+                        <a className="text-primary underline" href={url} target="_blank" rel="noreferrer">{url}</a>
+                      </li>
                     ))}
                   </ul>
                 </div>

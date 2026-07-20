@@ -9,7 +9,7 @@ export function FieldError({ message, className }) {
   );
 }
 
-export function FormField({ label, error, required, children, className }) {
+export function FormField({ label, error, required, children, className, hint }) {
   return (
     <div className={cn("space-y-2", className)}>
       {label && (
@@ -18,6 +18,7 @@ export function FormField({ label, error, required, children, className }) {
           {required && <span className="text-destructive"> *</span>}
         </label>
       )}
+      {hint && <p className="text-xs text-muted-foreground leading-snug">{hint}</p>}
       {children}
       <FieldError message={error} />
     </div>

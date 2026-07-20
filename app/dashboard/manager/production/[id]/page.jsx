@@ -11,8 +11,8 @@ import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { getStageLabel } from "@/lib/production-constants";
 import {
-  getOrderCurrentStageBadges,
-  getStageTypeColor,
+  getOrderLineProgressRows,
+  getStageStatusColor,
   ORDER_STATUS_COLORS,
 } from "@/lib/order-progress";
 import { cn } from "@/lib/utils";
@@ -50,16 +50,19 @@ export default function ManagerProductionDetailPage() {
           <p className="text-muted-foreground flex flex-wrap items-center gap-2 mt-1">
             <span>{order.customer?.name}</span>
             {order.assignedWorker?.name ? <span>· {order.assignedWorker.name}</span> : null}
-            {getOrderCurrentStageBadges(order).map((badge) => (
-              <Badge
-                key={badge.key}
-                variant="outline"
-                className={cn("font-medium", badge.className)}
-              >
-                {badge.label}
-              </Badge>
-            ))}
           </p>
+          <div className="mt-2 space-y-1">
+            {getOrderLineProgressRows(order).map((row) => (
+              <div key={row.key} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">L{row.lineNo}</span>
+                <span className="font-medium">{row.bagSpecName}</span>
+                <span className="text-muted-foreground">· {row.plannedQty} bags</span>
+                <Badge variant="outline" className={cn("font-medium", row.className)}>
+                  {row.stageLabel}
+                </Badge>
+              </div>
+            ))}
+          </div>
         </div>
         <Badge variant="outline" className={cn("ml-auto font-medium", ORDER_STATUS_COLORS[order.status])}>
           {order.status}
@@ -83,9 +86,7 @@ export default function ManagerProductionDetailPage() {
                         variant="outline"
                         className={cn(
                           "font-medium",
-                          getStageTypeColor(stage.stageType, {
-                            completed: stage.status === "COMPLETED",
-                          }),
+                          getStageStatusColor(stage.status),
                         )}
                       >
                         {stage.status}
