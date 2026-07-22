@@ -1,27 +1,67 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Loader2, ArrowDownAZ, ArrowUpZA } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  ArrowDownAZ,
+  ArrowUpZA,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  X,
+  ChevronsUp,
+  ChevronsUpDown,
+  Filter,
+  Clock,
+  Calendar,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { FormField, fieldClassName } from "@/components/ui/form-field";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { materialSchema } from "@/lib/validations/admin-forms";
-import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validations/form-utils";
+import {
+  validateForm,
+  clearFieldError,
+  firstErrorMessage,
+} from "@/lib/validations/form-utils";
 import {
   createCodeSuffix,
   generateMaterialCode,
@@ -37,32 +77,59 @@ import {
   PAPER_TYPES,
   ROPE_COLORS,
 } from "@/lib/material-constants";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 
 function selectTriggerClass(hasError) {
   return cn("w-full", hasError && "border-destructive");
 }
 
 const SORT_OPTIONS = [
+  { value: "createdAt", label: "Created Date" },
+  { value: "updatedAt", label: "Modified Date" },
   { value: "name", label: "Name" },
   { value: "code", label: "Code" },
   { value: "materialType", label: "Type" },
   { value: "supplier", label: "Supplier" },
-  { value: "createdAt", label: "Newest" },
+];
+
+const GROUP_OPTIONS = [
+  { value: "materialType", label: "Material Type" },
+  { value: "supplier", label: "Supplier" },
+  { value: "none", label: "None (Flat List)" },
 ];
 
 function compareMaterials(a, b, sortBy) {
   if (sortBy === "createdAt") {
-    return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+    return (
+      new Date(a.createdAt || 0).getTime() -
+      new Date(b.createdAt || 0).getTime()
+    );
+  }
+  if (sortBy === "updatedAt") {
+    return (
+      new Date(a.updatedAt || a.createdAt || 0).getTime() -
+      new Date(b.updatedAt || b.createdAt || 0).getTime()
+    );
   }
   if (sortBy === "materialType") {
-    const av = (MATERIAL_TYPE_LABELS[a.materialType] ?? a.materialType ?? "").toString();
-    const bv = (MATERIAL_TYPE_LABELS[b.materialType] ?? b.materialType ?? "").toString();
+    const av = (
+      MATERIAL_TYPE_LABELS[a.materialType] ??
+      a.materialType ??
+      ""
+    ).toString();
+    const bv = (
+      MATERIAL_TYPE_LABELS[b.materialType] ??
+      b.materialType ??
+      ""
+    ).toString();
     return av.localeCompare(bv, undefined, { sensitivity: "base" });
   }
   const av = (a[sortBy] ?? "").toString();
   const bv = (b[sortBy] ?? "").toString();
-  return av.localeCompare(bv, undefined, { sensitivity: "base", numeric: true });
+  return av.localeCompare(bv, undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
 }
 
 function SortableHead({ label, column, sortBy, sortDir, onSort, className }) {
@@ -78,7 +145,12 @@ function SortableHead({ label, column, sortBy, sortDir, onSort, className }) {
         )}
       >
         {label}
-        {active && (sortDir === "asc" ? <ArrowDownAZ className="h-3.5 w-3.5" /> : <ArrowUpZA className="h-3.5 w-3.5" />)}
+        {active &&
+          (sortDir === "asc" ? (
+            <ArrowDownAZ className="h-3.5 w-3.5" />
+          ) : (
+            <ArrowUpZA className="h-3.5 w-3.5" />
+          ))}
       </button>
     </TableHead>
   );
@@ -117,21 +189,61 @@ function TypeSpecificFields({ form, errors, patchForm }) {
       return (
         <>
           <FormField label="Paper Type" required error={errors.paperType}>
-            <Select value={form.paperType} onValueChange={(v) => patchForm("paperType", v)}>
-              <SelectTrigger className={selectTriggerClass(!!errors.paperType)}><SelectValue placeholder="Select paper type" /></SelectTrigger>
-              <SelectContent>{PAPER_TYPES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+            <Select
+              value={form.paperType}
+              onValueChange={(v) => patchForm("paperType", v)}
+            >
+              <SelectTrigger className={selectTriggerClass(!!errors.paperType)}>
+                <SelectValue placeholder="Select paper type" />
+              </SelectTrigger>
+              <SelectContent>
+                {PAPER_TYPES.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </FormField>
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Paper Length (m)" required error={errors.paperLengthM}>
-              <Input type="number" min="0" step="0.01" className={fieldClassName("", !!errors.paperLengthM)} value={form.paperLengthM} onChange={(e) => patchForm("paperLengthM", e.target.value)} />
+            <FormField
+              label="Paper Length (m)"
+              required
+              error={errors.paperLengthM}
+            >
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                className={fieldClassName("", !!errors.paperLengthM)}
+                value={form.paperLengthM}
+                onChange={(e) => patchForm("paperLengthM", e.target.value)}
+              />
             </FormField>
-            <FormField label="Paper Width (mm)" required error={errors.paperWidthMm}>
-              <Input type="number" min="0" step="1" className={fieldClassName("", !!errors.paperWidthMm)} value={form.paperWidthMm} onChange={(e) => patchForm("paperWidthMm", e.target.value)} />
+            <FormField
+              label="Paper Width (mm)"
+              required
+              error={errors.paperWidthMm}
+            >
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                className={fieldClassName("", !!errors.paperWidthMm)}
+                value={form.paperWidthMm}
+                onChange={(e) => patchForm("paperWidthMm", e.target.value)}
+              />
             </FormField>
           </div>
           <FormField label="GSM" required error={errors.gsm}>
-            <Input type="number" min="1" step="1" className={fieldClassName("", !!errors.gsm)} value={form.gsm} onChange={(e) => patchForm("gsm", e.target.value)} />
+            <Input
+              type="number"
+              min="1"
+              step="1"
+              className={fieldClassName("", !!errors.gsm)}
+              value={form.gsm}
+              onChange={(e) => patchForm("gsm", e.target.value)}
+            />
           </FormField>
         </>
       );
@@ -139,13 +251,31 @@ function TypeSpecificFields({ form, errors, patchForm }) {
       return (
         <>
           <FormField label="Glue Type" required error={errors.glueType}>
-            <Select value={form.glueType} onValueChange={(v) => patchForm("glueType", v)}>
-              <SelectTrigger className={selectTriggerClass(!!errors.glueType)}><SelectValue placeholder="Select glue type" /></SelectTrigger>
-              <SelectContent>{GLUE_TYPES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+            <Select
+              value={form.glueType}
+              onValueChange={(v) => patchForm("glueType", v)}
+            >
+              <SelectTrigger className={selectTriggerClass(!!errors.glueType)}>
+                <SelectValue placeholder="Select glue type" />
+              </SelectTrigger>
+              <SelectContent>
+                {GLUE_TYPES.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </FormField>
           <FormField label="Weight (kg)" required error={errors.weightKg}>
-            <Input type="number" min="0" step="0.01" className={fieldClassName("", !!errors.weightKg)} value={form.weightKg} onChange={(e) => patchForm("weightKg", e.target.value)} />
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              className={fieldClassName("", !!errors.weightKg)}
+              value={form.weightKg}
+              onChange={(e) => patchForm("weightKg", e.target.value)}
+            />
           </FormField>
         </>
       );
@@ -153,18 +283,45 @@ function TypeSpecificFields({ form, errors, patchForm }) {
       return (
         <>
           <FormField label="Ink Color" required error={errors.inkColor}>
-            <Select value={form.inkColor} onValueChange={(v) => patchForm("inkColor", v)}>
-              <SelectTrigger className={selectTriggerClass(!!errors.inkColor)}><SelectValue placeholder="Select ink color" /></SelectTrigger>
-              <SelectContent>{INK_COLORS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+            <Select
+              value={form.inkColor}
+              onValueChange={(v) => patchForm("inkColor", v)}
+            >
+              <SelectTrigger className={selectTriggerClass(!!errors.inkColor)}>
+                <SelectValue placeholder="Select ink color" />
+              </SelectTrigger>
+              <SelectContent>
+                {INK_COLORS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </FormField>
           {form.inkColor === "CUSTOM" && (
-            <FormField label="Custom Color" required error={errors.inkColorCustom}>
-              <Input className={fieldClassName("", !!errors.inkColorCustom)} value={form.inkColorCustom} onChange={(e) => patchForm("inkColorCustom", e.target.value)} placeholder="Enter color name" />
+            <FormField
+              label="Custom Color"
+              required
+              error={errors.inkColorCustom}
+            >
+              <Input
+                className={fieldClassName("", !!errors.inkColorCustom)}
+                value={form.inkColorCustom}
+                onChange={(e) => patchForm("inkColorCustom", e.target.value)}
+                placeholder="Enter color name"
+              />
             </FormField>
           )}
           <FormField label="Weight (kg)" required error={errors.weightKg}>
-            <Input type="number" min="0" step="0.01" className={fieldClassName("", !!errors.weightKg)} value={form.weightKg} onChange={(e) => patchForm("weightKg", e.target.value)} />
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              className={fieldClassName("", !!errors.weightKg)}
+              value={form.weightKg}
+              onChange={(e) => patchForm("weightKg", e.target.value)}
+            />
           </FormField>
         </>
       );
@@ -172,17 +329,46 @@ function TypeSpecificFields({ form, errors, patchForm }) {
       return (
         <>
           <FormField label="Rope Color" required error={errors.ropeColor}>
-            <Select value={form.ropeColor} onValueChange={(v) => patchForm("ropeColor", v)}>
-              <SelectTrigger className={selectTriggerClass(!!errors.ropeColor)}><SelectValue placeholder="Select rope color" /></SelectTrigger>
-              <SelectContent>{ROPE_COLORS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+            <Select
+              value={form.ropeColor}
+              onValueChange={(v) => patchForm("ropeColor", v)}
+            >
+              <SelectTrigger className={selectTriggerClass(!!errors.ropeColor)}>
+                <SelectValue placeholder="Select rope color" />
+              </SelectTrigger>
+              <SelectContent>
+                {ROPE_COLORS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </FormField>
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Length (m)" required error={errors.ropeLengthM}>
-              <Input type="number" min="0" step="0.01" className={fieldClassName("", !!errors.ropeLengthM)} value={form.ropeLengthM} onChange={(e) => patchForm("ropeLengthM", e.target.value)} />
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                className={fieldClassName("", !!errors.ropeLengthM)}
+                value={form.ropeLengthM}
+                onChange={(e) => patchForm("ropeLengthM", e.target.value)}
+              />
             </FormField>
-            <FormField label="Rope Weight (kg)" required error={errors.ropeWeightKg}>
-              <Input type="number" min="0" step="0.01" className={fieldClassName("", !!errors.ropeWeightKg)} value={form.ropeWeightKg} onChange={(e) => patchForm("ropeWeightKg", e.target.value)} />
+            <FormField
+              label="Rope Weight (kg)"
+              required
+              error={errors.ropeWeightKg}
+            >
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                className={fieldClassName("", !!errors.ropeWeightKg)}
+                value={form.ropeWeightKg}
+                onChange={(e) => patchForm("ropeWeightKg", e.target.value)}
+              />
             </FormField>
           </div>
         </>
@@ -191,40 +377,99 @@ function TypeSpecificFields({ form, errors, patchForm }) {
       return (
         <>
           <FormField label="Kapton Type" required error={errors.tapeType}>
-            <Select value={form.tapeType} onValueChange={(v) => patchForm("tapeType", v)}>
-              <SelectTrigger className={selectTriggerClass(!!errors.tapeType)}><SelectValue placeholder="Select Kapton type" /></SelectTrigger>
-              <SelectContent>{KAPTON_TYPES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+            <Select
+              value={form.tapeType}
+              onValueChange={(v) => patchForm("tapeType", v)}
+            >
+              <SelectTrigger className={selectTriggerClass(!!errors.tapeType)}>
+                <SelectValue placeholder="Select Kapton type" />
+              </SelectTrigger>
+              <SelectContent>
+                {KAPTON_TYPES.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </FormField>
           <FormField label="Size" required error={errors.size}>
-            <Input className={fieldClassName("", !!errors.size)} value={form.size} onChange={(e) => patchForm("size", e.target.value)} placeholder="e.g. 25mm, Large" />
+            <Input
+              className={fieldClassName("", !!errors.size)}
+              value={form.size}
+              onChange={(e) => patchForm("size", e.target.value)}
+              placeholder="e.g. 25mm, Large"
+            />
           </FormField>
           <FormField label="Unit" required error={errors.unit}>
-            <Input className={fieldClassName("", !!errors.unit)} value={form.unit} onChange={(e) => patchForm("unit", e.target.value)} placeholder="e.g. Roll, PCS, Meter" />
+            <Input
+              className={fieldClassName("", !!errors.unit)}
+              value={form.unit}
+              onChange={(e) => patchForm("unit", e.target.value)}
+              placeholder="e.g. Roll, PCS, Meter"
+            />
           </FormField>
         </>
       );
     case "SPONGE":
       return (
-        <FormField label="Sheets (No. of Sheets)" required error={errors.sheetCount}>
-          <Input type="number" min="1" step="1" className={fieldClassName("", !!errors.sheetCount)} value={form.sheetCount} onChange={(e) => patchForm("sheetCount", e.target.value)} />
+        <FormField
+          label="Sheets (No. of Sheets)"
+          required
+          error={errors.sheetCount}
+        >
+          <Input
+            type="number"
+            min="1"
+            step="1"
+            className={fieldClassName("", !!errors.sheetCount)}
+            value={form.sheetCount}
+            onChange={(e) => patchForm("sheetCount", e.target.value)}
+          />
         </FormField>
       );
     case "CARTON":
       return (
         <>
           <FormField label="Carton Size" required error={errors.cartonSize}>
-            <Input className={fieldClassName("", !!errors.cartonSize)} value={form.cartonSize} onChange={(e) => patchForm("cartonSize", e.target.value)} placeholder="e.g. Large, Medium" />
+            <Input
+              className={fieldClassName("", !!errors.cartonSize)}
+              value={form.cartonSize}
+              onChange={(e) => patchForm("cartonSize", e.target.value)}
+              placeholder="e.g. Large, Medium"
+            />
           </FormField>
           <div className="grid grid-cols-3 gap-4">
             <FormField label="Length (cm)" required error={errors.cartonLength}>
-              <Input type="number" min="0" step="0.1" className={fieldClassName("", !!errors.cartonLength)} value={form.cartonLength} onChange={(e) => patchForm("cartonLength", e.target.value)} />
+              <Input
+                type="number"
+                min="0"
+                step="0.1"
+                className={fieldClassName("", !!errors.cartonLength)}
+                value={form.cartonLength}
+                onChange={(e) => patchForm("cartonLength", e.target.value)}
+              />
             </FormField>
             <FormField label="Width (cm)" required error={errors.cartonWidth}>
-              <Input type="number" min="0" step="0.1" className={fieldClassName("", !!errors.cartonWidth)} value={form.cartonWidth} onChange={(e) => patchForm("cartonWidth", e.target.value)} />
+              <Input
+                type="number"
+                min="0"
+                step="0.1"
+                className={fieldClassName("", !!errors.cartonWidth)}
+                value={form.cartonWidth}
+                onChange={(e) => patchForm("cartonWidth", e.target.value)}
+              />
             </FormField>
             <FormField label="Height (cm)" error={errors.cartonHeight}>
-              <Input type="number" min="0" step="0.1" className={fieldClassName("", !!errors.cartonHeight)} value={form.cartonHeight} onChange={(e) => patchForm("cartonHeight", e.target.value)} placeholder="Optional" />
+              <Input
+                type="number"
+                min="0"
+                step="0.1"
+                className={fieldClassName("", !!errors.cartonHeight)}
+                value={form.cartonHeight}
+                onChange={(e) => patchForm("cartonHeight", e.target.value)}
+                placeholder="Optional"
+              />
             </FormField>
           </div>
         </>
@@ -243,23 +488,105 @@ export default function MaterialsPage() {
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
-  const [sortBy, setSortBy] = useState("name");
-  const [sortDir, setSortDir] = useState("asc");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortDir, setSortDir] = useState("desc");
   const [typeFilter, setTypeFilter] = useState("ALL");
+  const [groupBy, setGroupBy] = useState("materialType");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [groupViewState, setGroupViewState] = useState("expanded");
+
+  const toggleGroup = useCallback((groupKey) => {
+    setCollapsedGroups((prev) => ({
+      ...prev,
+      [groupKey]: !prev[groupKey],
+    }));
+    setGroupViewState("custom");
+  }, []);
 
   const previewCode = useMemo(() => generateMaterialCode(form), [form]);
 
+  const filteredMaterials = useMemo(() => {
+    let list = materials;
+    if (typeFilter !== "ALL") {
+      list = list.filter((m) => m.materialType === typeFilter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((m) => {
+        const name = (m.name || "").toLowerCase();
+        const code = (m.code || "").toLowerCase();
+        const supplier = (m.supplier || "").toLowerCase();
+        const typeLabel = (
+          MATERIAL_TYPE_LABELS[m.materialType] ||
+          m.materialType ||
+          ""
+        ).toLowerCase();
+        return (
+          name.includes(q) ||
+          code.includes(q) ||
+          supplier.includes(q) ||
+          typeLabel.includes(q)
+        );
+      });
+    }
+    return list;
+  }, [materials, typeFilter, searchQuery]);
+
   const sortedMaterials = useMemo(() => {
-    const filtered = typeFilter === "ALL"
-      ? materials
-      : materials.filter((m) => m.materialType === typeFilter);
-    const list = [...filtered];
+    const list = [...filteredMaterials];
     list.sort((a, b) => {
       const result = compareMaterials(a, b, sortBy);
       return sortDir === "asc" ? result : -result;
     });
     return list;
-  }, [materials, sortBy, sortDir, typeFilter]);
+  }, [filteredMaterials, sortBy, sortDir]);
+
+  const groupedMaterials = useMemo(() => {
+    if (groupBy === "none") {
+      return null;
+    }
+
+    const groups = new Map();
+
+    if (groupBy === "materialType") {
+      for (const m of sortedMaterials) {
+        const key = m.materialType || "OTHER";
+        const label = MATERIAL_TYPE_LABELS[key] || key;
+        if (!groups.has(key)) {
+          groups.set(key, { key, label, items: [] });
+        }
+        groups.get(key).items.push(m);
+      }
+    } else if (groupBy === "supplier") {
+      for (const m of sortedMaterials) {
+        const rawSupplier = (m.supplier || "").trim();
+        const key = rawSupplier ? rawSupplier.toLowerCase() : "__none__";
+        const label = rawSupplier || "Unspecified Supplier";
+        if (!groups.has(key)) {
+          groups.set(key, { key, label, items: [] });
+        }
+        groups.get(key).items.push(m);
+      }
+    }
+
+    return Array.from(groups.values());
+  }, [sortedMaterials, groupBy]);
+
+  const handleExpandAll = useCallback(() => {
+    setCollapsedGroups({});
+    setGroupViewState("expanded");
+  }, []);
+
+  const handleCollapseAll = useCallback(() => {
+    if (!groupedMaterials) return;
+    const collapsed = {};
+    for (const group of groupedMaterials) {
+      collapsed[group.key] = true;
+    }
+    setCollapsedGroups(collapsed);
+    setGroupViewState("collapsed");
+  }, [groupedMaterials]);
 
   function handleSort(column) {
     if (sortBy === column) {
@@ -282,7 +609,9 @@ export default function MaterialsPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   function patchForm(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -360,99 +689,478 @@ export default function MaterialsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Materials</h1>
-          <p className="text-muted-foreground">Define raw materials and supplies by type</p>
+          <p className="text-muted-foreground">
+            Define raw materials and supplies by type
+          </p>
         </div>
-        <Button onClick={openCreate} className="shrink-0"><Plus className="h-4 w-4 mr-2" />Add Material</Button>
+        <Button onClick={openCreate} className="shrink-0">
+          <Plus className="h-4 w-4 mr-2" />
+          Add Material
+        </Button>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">Type</span>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All types</SelectItem>
-              {MATERIAL_TYPES.map((type) => (
-                <SelectItem key={type} value={type}>{MATERIAL_TYPE_LABELS[type]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {/* Controls Bar */}
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          {/* Live Search Input */}
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, code, supplier..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={cn(
+                "pl-9 pr-8 transition-all",
+                searchQuery &&
+                  "border-primary ring-1 ring-primary/30 bg-primary/5 font-medium",
+              )}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Grouping, Filters & Sort Controls */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Group By */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                Group by:
+              </span>
+              <Select
+                value={groupBy}
+                onValueChange={(val) => {
+                  setGroupBy(val);
+                  setCollapsedGroups({});
+                  setGroupViewState("expanded");
+                }}
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-[155px] h-9 text-xs transition-all",
+                    groupBy !== "none" &&
+                      "border-primary bg-primary/10 font-semibold text-primary shadow-xs ring-1 ring-primary/30",
+                  )}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GROUP_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Expand / Collapse Segmented Switch Control */}
+            {groupBy !== "none" && (
+              <div className="flex items-center gap-0.5 bg-muted/60 p-1 rounded-md border border-input shadow-2xs h-9">
+                <button
+                  type="button"
+                  onClick={handleExpandAll}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all select-none cursor-pointer",
+                    groupViewState === "expanded"
+                      ? "bg-background text-primary font-semibold shadow-xs ring-1 ring-border"
+                      : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+                  )}
+                  title="Expand all group sections"
+                >
+                  <ChevronsUpDown className="h-3.5 w-3.5 text-primary" />
+                  <span>Expand All</span>
+                </button>
+                <div className="h-4 w-px bg-border/70 my-auto" />
+                <button
+                  type="button"
+                  onClick={handleCollapseAll}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all select-none cursor-pointer",
+                    groupViewState === "collapsed"
+                      ? "bg-background text-primary font-semibold shadow-xs ring-1 ring-border"
+                      : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+                  )}
+                  title="Collapse all group sections"
+                >
+                  <ChevronsUp className="h-3.5 w-3.5 text-primary" />
+                  <span>Collapse All</span>
+                </button>
+              </div>
+            )}
+
+            {/* Type Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                Type:
+              </span>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger
+                  className={cn(
+                    "w-[160px] h-9 text-xs transition-all",
+                    typeFilter !== "ALL" &&
+                      "border-primary bg-primary/10 font-semibold text-primary shadow-xs ring-1 ring-primary/30",
+                  )}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All types</SelectItem>
+                  {MATERIAL_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {MATERIAL_TYPE_LABELS[type]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Sort by */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                Sort by:
+              </span>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[145px] h-9 text-xs border-primary/50 bg-primary/5 font-medium">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SORT_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Order */}
+            <div className="flex items-center gap-1.5">
+              <Select value={sortDir} onValueChange={setSortDir}>
+                <SelectTrigger className="w-[125px] h-9 text-xs border-primary/50 bg-primary/5 font-medium">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desc">Newest / Z-A</SelectItem>
+                  <SelectItem value="asc">Oldest / A-Z</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">Sort by</span>
-          <Select
-            value={sortBy}
-            onValueChange={(v) => {
-              setSortBy(v);
-              setSortDir(v === "createdAt" ? "desc" : "asc");
-            }}
-          >
-            <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {SORT_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">Order</span>
-          <Select value={sortDir} onValueChange={setSortDir}>
-            <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="asc">Ascending</SelectItem>
-              <SelectItem value="desc">Descending</SelectItem>
-            </SelectContent>
-          </Select>
+
+        {/* Active Options Summary Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-muted/40 rounded-md border text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground font-medium flex items-center gap-1">
+              <Filter className="h-3.5 w-3.5 text-primary" /> Active Views:
+            </span>
+            <Badge
+              variant="outline"
+              className="border-primary/50 bg-primary/10 text-primary gap-1 font-normal"
+            >
+              <span className="font-semibold">Grouped:</span>{" "}
+              {GROUP_OPTIONS.find((o) => o.value === groupBy)?.label}
+            </Badge>
+            <Badge
+              variant="outline"
+              className="border-primary/50 bg-primary/10 text-primary gap-1 font-normal"
+            >
+              <span className="font-semibold">Sorted:</span>{" "}
+              {SORT_OPTIONS.find((o) => o.value === sortBy)?.label} (
+              {sortDir === "desc" ? "Newest First" : "Oldest First"})
+            </Badge>
+            {typeFilter !== "ALL" && (
+              <Badge
+                variant="outline"
+                className="border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400 gap-1 font-normal"
+              >
+                <span className="font-semibold">Filtered Type:</span>{" "}
+                {MATERIAL_TYPE_LABELS[typeFilter]}
+              </Badge>
+            )}
+            {searchQuery && (
+              <Badge
+                variant="outline"
+                className="border-blue-500/50 bg-blue-500/10 text-blue-600 dark:text-blue-400 gap-1 font-normal"
+              >
+                <span className="font-semibold">Search:</span> "{searchQuery}"
+              </Badge>
+            )}
+          </div>
+          <div className="text-muted-foreground text-xs font-mono">
+            Showing{" "}
+            <strong className="text-foreground">
+              {sortedMaterials.length}
+            </strong>{" "}
+            of {materials.length} items
+          </div>
         </div>
       </div>
 
-      <div className="rounded-lg border">
+      <div className="rounded-lg border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <SortableHead label="Code" column="code" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-              <SortableHead label="Type" column="materialType" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-              <SortableHead label="Name" column="name" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <TableHead className="w-[50px] text-center">#</TableHead>
+              <SortableHead
+                label="Code"
+                column="code"
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableHead
+                label="Type"
+                column="materialType"
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableHead
+                label="Name"
+                column="name"
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <TableHead>Initial Stock</TableHead>
+              <TableHead>Available Stock</TableHead>
               <TableHead>Details</TableHead>
-              <SortableHead label="Supplier" column="supplier" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <SortableHead
+                label="Supplier"
+                column="supplier"
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableHead
+                label="Created At"
+                column="createdAt"
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableHead
+                label="Modified At"
+                column="updatedAt"
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow>
-            ) : sortedMaterials.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No materials yet</TableCell></TableRow>
-            ) : sortedMaterials.map((m) => (
-              <TableRow key={m.id}>
-                <TableCell className="font-mono text-sm">{m.code}</TableCell>
-                <TableCell>{MATERIAL_TYPE_LABELS[m.materialType] ?? m.materialType}</TableCell>
-                <TableCell>{m.name}</TableCell>
-                <TableCell className="text-muted-foreground text-sm">{getMaterialSummary(m)}</TableCell>
-                <TableCell>{m.supplier || "—"}</TableCell>
-                <TableCell className="text-right space-x-1">
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(m)}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => setDeleteId(m.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+              <TableRow>
+                <TableCell colSpan={11} className="text-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : sortedMaterials.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={11}
+                  className="text-center py-8 text-muted-foreground"
+                >
+                  No materials found
+                </TableCell>
+              </TableRow>
+            ) : groupBy !== "none" && groupedMaterials ? (
+              groupedMaterials.map((group) => {
+                const isCollapsed = Boolean(collapsedGroups[group.key]);
+                return (
+                  <Fragment key={`group-block-${group.key}`}>
+                    <TableRow
+                      className="bg-muted/60 hover:bg-muted/80 cursor-pointer font-medium select-none transition-colors"
+                      onClick={() => toggleGroup(group.key)}
+                    >
+                      <TableCell colSpan={11} className="py-2.5 px-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {isCollapsed ? (
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <span className="font-semibold text-foreground text-sm">
+                              {group.label}
+                            </span>
+                            <Badge
+                              variant="secondary"
+                              className="text-xs font-normal"
+                            >
+                              {group.items.length}{" "}
+                              {group.items.length === 1 ? "item" : "items"}
+                            </Badge>
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {!isCollapsed &&
+                      group.items.map((m, idx) => (
+                        <TableRow key={m.id}>
+                          <TableCell className="text-center font-mono text-xs text-muted-foreground">
+                            {idx + 1}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {m.code}
+                          </TableCell>
+                          <TableCell>
+                            {MATERIAL_TYPE_LABELS[m.materialType] ??
+                              m.materialType}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {m.name}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs whitespace-nowrap">
+                            {m.initialStock !== undefined
+                              ? `${m.initialStock.toLocaleString()} ${m.unit || ""}`
+                              : "—"}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs whitespace-nowrap">
+                            <span
+                              className={cn(
+                                "font-semibold px-2 py-0.5 rounded text-xs inline-block",
+                                (m.availableStock ?? 0) <= 0
+                                  ? "bg-destructive/10 text-destructive"
+                                  : m.isLowStock
+                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                                  : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+                              )}
+                            >
+                              {(m.availableStock ?? 0).toLocaleString()}{" "}
+                              {m.unit || ""}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {getMaterialSummary(m)}
+                          </TableCell>
+                          <TableCell>{m.supplier || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {m.createdAt ? formatDateTime(m.createdAt) : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {m.updatedAt ? formatDateTime(m.updatedAt) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right space-x-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEdit(m)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteId(m.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </Fragment>
+                );
+              })
+            ) : (
+              sortedMaterials.map((m, idx) => (
+                <TableRow key={m.id}>
+                  <TableCell className="text-center font-mono text-xs text-muted-foreground">
+                    {idx + 1}
+                  </TableCell>
+                  <TableCell className="font-mono text-sm">{m.code}</TableCell>
+                  <TableCell>
+                    {MATERIAL_TYPE_LABELS[m.materialType] ?? m.materialType}
+                  </TableCell>
+                  <TableCell className="font-medium">{m.name}</TableCell>
+                  <TableCell className="font-mono text-xs whitespace-nowrap">
+                    {m.initialStock !== undefined
+                      ? `${m.initialStock.toLocaleString()} ${m.unit || ""}`
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs whitespace-nowrap">
+                    <span
+                      className={cn(
+                        "font-semibold px-2 py-0.5 rounded text-xs inline-block",
+                        (m.availableStock ?? 0) <= 0
+                          ? "bg-destructive/10 text-destructive"
+                          : m.isLowStock
+                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+                      )}
+                    >
+                      {(m.availableStock ?? 0).toLocaleString()} {m.unit || ""}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {getMaterialSummary(m)}
+                  </TableCell>
+                  <TableCell>{m.supplier || "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                    {m.createdAt ? formatDateTime(m.createdAt) : "—"}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                    {m.updatedAt ? formatDateTime(m.updatedAt) : "—"}
+                  </TableCell>
+                  <TableCell className="text-right space-x-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEdit(m)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDeleteId(m.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader><DialogTitle>{editing ? "Edit Material" : "New Material"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? "Edit Material" : "New Material"}
+            </DialogTitle>
+          </DialogHeader>
           <div className="space-y-4 py-2">
-            <FormField label="Material Type" required error={errors.materialType}>
-              <Select value={form.materialType} onValueChange={patchMaterialType}>
-                <SelectTrigger className={selectTriggerClass(!!errors.materialType)}>
+            <FormField
+              label="Material Type"
+              required
+              error={errors.materialType}
+            >
+              <Select
+                value={form.materialType}
+                onValueChange={patchMaterialType}
+              >
+                <SelectTrigger
+                  className={selectTriggerClass(!!errors.materialType)}
+                >
                   <SelectValue placeholder="Select material type" />
                 </SelectTrigger>
                 <SelectContent>
                   {MATERIAL_TYPES.map((type) => (
-                    <SelectItem key={type} value={type}>{MATERIAL_TYPE_LABELS[type]}</SelectItem>
+                    <SelectItem key={type} value={type}>
+                      {MATERIAL_TYPE_LABELS[type]}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -461,11 +1169,21 @@ export default function MaterialsPage() {
             {hasType && (
               <>
                 <FormField label="Name" required error={errors.name}>
-                  <Input className={fieldClassName("", !!errors.name)} value={form.name} onChange={(e) => patchForm("name", e.target.value)} placeholder="Material name" />
+                  <Input
+                    className={fieldClassName("", !!errors.name)}
+                    value={form.name}
+                    onChange={(e) => patchForm("name", e.target.value)}
+                    placeholder="Material name"
+                  />
                 </FormField>
 
                 <FormField label="Supplier" error={errors.supplier}>
-                  <Input className={fieldClassName("", !!errors.supplier)} value={form.supplier} onChange={(e) => patchForm("supplier", e.target.value)} placeholder="Supplier name" />
+                  <Input
+                    className={fieldClassName("", !!errors.supplier)}
+                    value={form.supplier}
+                    onChange={(e) => patchForm("supplier", e.target.value)}
+                    placeholder="Supplier name"
+                  />
                 </FormField>
 
                 <FormField label="Code" error={errors.code}>
@@ -477,12 +1195,18 @@ export default function MaterialsPage() {
                   />
                 </FormField>
 
-                <TypeSpecificFields form={form} errors={errors} patchForm={patchForm} />
+                <TypeSpecificFields
+                  form={form}
+                  errors={errors}
+                  patchForm={patchForm}
+                />
               </>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleSave} disabled={saving || !hasType}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save
             </Button>
@@ -494,11 +1218,18 @@ export default function MaterialsPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete material?</AlertDialogTitle>
-            <AlertDialogDescription>This cannot be undone if transactions reference it.</AlertDialogDescription>
+            <AlertDialogDescription>
+              This cannot be undone if transactions reference it.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
