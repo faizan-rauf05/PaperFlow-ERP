@@ -692,7 +692,12 @@ export default function ProductionOrderDetailPage() {
           <div>
             <h1 className="text-2xl font-bold font-mono">{order.orderNo}</h1>
             <p className="text-muted-foreground flex flex-wrap items-center gap-2">
-              <span>{order.customer?.name}</span>
+              <span>{order.customer?.name} {order.customer?.companyName ? `(${order.customer.companyName})` : ""}</span>
+              {order.salesRep && (
+                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-medium">
+                  Sales Rep: {order.salesRep}
+                </span>
+              )}
               <Badge variant="outline" className={cn("font-medium", ORDER_STATUS_COLORS[order.status])}>
                 {order.status}
               </Badge>
@@ -740,13 +745,28 @@ export default function ProductionOrderDetailPage() {
 
       {(order.lines || []).map((line) => {
         const progress = getOrderLineProgressRows({ lines: [line] })[0];
+        const dims = line.heightMm || line.widthMm || line.baseMm
+          ? `${line.heightMm || 0} × ${line.widthMm || 0} × ${line.baseMm || 0} mm`
+          : "—";
         return (
           <div key={line.id} className="rounded-lg border">
-            <div className="border-b px-4 py-3 flex flex-wrap items-center gap-2">
-              <p className="font-medium">
-                Line {line.lineNo}: {line.bagSpec?.name}
-              </p>
-              <span className="text-sm text-muted-foreground">{line.plannedQty} bags</span>
+            <div className="border-b px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <p className="font-medium">
+                  Line #{line.lineNo}: <span className="font-mono text-primary font-semibold">{dims}</span>
+                </p>
+                <span className="text-sm text-muted-foreground">{line.plannedQty} bags</span>
+                {line.fileUrl && (
+                  <a
+                    href={line.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs bg-muted hover:bg-muted/80 text-foreground px-2.5 py-1 rounded border inline-flex items-center gap-1 font-medium transition-colors"
+                  >
+                    📎 {line.fileName || "View Attachment"}
+                  </a>
+                )}
+              </div>
               {progress && (
                 <Badge variant="outline" className={cn("font-medium", progress.className)}>
                   {progress.stageLabel}
@@ -770,21 +790,24 @@ export default function ProductionOrderDetailPage() {
                       </Badge>
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {stage.outputQty != null && `out ${stage.outputQty} ${stage.outputUnit}`}
+                      {stage.outputQty != null && `out ${stage.outputQty} ${stage.outputUnit || ""}`}
                       {stage.wasteQty != null && Number(stage.wasteQty) > 0 && ` · waste ${stage.wasteQty}`}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     {stage.status === "COMPLETED" && (
                       <Button variant="outline" size="sm" onClick={() => setPreviewStage(stage)}>
-                        <Eye className="h-4 w-4 mr-1" />Preview
+                        <Eye className="h-4 w-4 mr-1" />Preview Input
                       </Button>
                     )}
-                    {["READY", "IN_PROGRESS"].includes(stage.status) && (
-                      <Button size="sm" onClick={() => openRecord(stage)}>
-                        <ClipboardEdit className="h-4 w-4 mr-1" />Record input
-                      </Button>
-                    )}
+                    <Button
+                      variant={stage.status === "COMPLETED" ? "secondary" : "default"}
+                      size="sm"
+                      onClick={() => openRecord(stage)}
+                    >
+                      <ClipboardEdit className="h-4 w-4 mr-1" />
+                      {stage.status === "COMPLETED" ? "Update Input" : "Record Input"}
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -804,7 +827,10 @@ export default function ProductionOrderDetailPage() {
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Record — {recordStage ? getStageLabel(recordStage.stageType) : ""}</DialogTitle>
+            <DialogTitle>
+              {recordStage?.status === "COMPLETED" ? "Update Input — " : "Record — "}
+              {recordStage ? getStageLabel(recordStage.stageType) : ""}
+            </DialogTitle>
           </DialogHeader>
           {loadingContext || !recordContext ? (
             <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>
@@ -823,35 +849,79 @@ export default function ProductionOrderDetailPage() {
       <Dialog open={!!previewStage} onOpenChange={(open) => !open && setPreviewStage(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Preview — {previewStage ? getStageLabel(previewStage.stageType) : ""}</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Preview — {previewStage ? getStageLabel(previewStage.stageType) : ""}</span>
+            </DialogTitle>
           </DialogHeader>
           {previewStage && (
-            <div className="space-y-2 text-sm">
-              <p>Status: <Badge variant="outline" className={getStageStatusColor(previewStage.status)}>{previewStage.status}</Badge></p>
-              <p>Input: {previewStage.inputQty ?? "—"} {previewStage.inputUnit}</p>
-              <p>Output: {previewStage.outputQty ?? "—"} {previewStage.outputUnit}</p>
-              <p>Waste: {previewStage.wasteQty ?? "—"}</p>
-              {previewStage.cutWidthMm != null && <p>Cut width: {previewStage.cutWidthMm} mm</p>}
-              {previewStage.pieceCount != null && <p>Pieces: {previewStage.pieceCount}</p>}
-              {previewStage.lengthRestockQty != null && <p>Length restock: {previewStage.lengthRestockQty} m</p>}
-              {previewStage.remainderAction && (
-                <p>Width leftover: {previewStage.remainderQty} → {previewStage.remainderAction}</p>
-              )}
-              {previewStage.remarks && <p>Remarks: {previewStage.remarks}</p>}
-              {Array.isArray(previewStage.proofUrls) && previewStage.proofUrls.length > 0 && (
+            <div className="space-y-4 text-sm py-2">
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40 border">
+                <span className="text-muted-foreground font-medium">Stage Status</span>
+                <Badge variant="outline" className={getStageStatusColor(previewStage.status)}>
+                  {previewStage.status}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 p-3 rounded-lg border bg-card text-center">
                 <div>
-                  <p className="font-medium mb-1">Proofs</p>
-                  <ul className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Input</p>
+                  <p className="font-semibold text-base">{previewStage.inputQty ?? "—"} <span className="text-xs text-muted-foreground">{previewStage.inputUnit}</span></p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Output</p>
+                  <p className="font-semibold text-base text-emerald-600 dark:text-emerald-400">{previewStage.outputQty ?? "—"} <span className="text-xs text-muted-foreground">{previewStage.outputUnit}</span></p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Waste</p>
+                  <p className="font-semibold text-base text-destructive">{previewStage.wasteQty ?? "—"}</p>
+                </div>
+              </div>
+
+              {(previewStage.cutWidthMm != null || previewStage.pieceCount != null || previewStage.lengthRestockQty != null) && (
+                <div className="space-y-1.5 p-3 rounded-lg border bg-muted/20">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Slitting Details</p>
+                  {previewStage.cutWidthMm != null && <p>Cut Width: <strong>{previewStage.cutWidthMm} mm</strong></p>}
+                  {previewStage.pieceCount != null && <p>Pieces Across Width: <strong>{previewStage.pieceCount}</strong></p>}
+                  {previewStage.lengthRestockQty != null && <p>Length Restock: <strong>{previewStage.lengthRestockQty} m</strong></p>}
+                  {previewStage.remainderAction && (
+                    <p>Width Leftover: <strong>{previewStage.remainderQty}</strong> → {previewStage.remainderAction}</p>
+                  )}
+                </div>
+              )}
+
+              {previewStage.remarks && (
+                <div className="p-3 rounded-lg border bg-muted/20">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Remarks</p>
+                  <p className="text-foreground italic">{previewStage.remarks}</p>
+                </div>
+              )}
+
+              {Array.isArray(previewStage.proofUrls) && previewStage.proofUrls.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Proof Images</p>
+                  <div className="flex flex-wrap gap-2">
                     {previewStage.proofUrls.map((url) => (
-                      <li key={url}>
-                        <a className="text-primary underline" href={url} target="_blank" rel="noreferrer">{url}</a>
-                      </li>
+                      <a key={url} href={url} target="_blank" rel="noreferrer" className="group relative">
+                        <img src={url} alt="Proof" className="h-16 w-16 rounded-md object-cover border group-hover:opacity-80 transition-opacity" />
+                      </a>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               )}
             </div>
           )}
+          <DialogFooter className="flex flex-row justify-between sm:justify-between items-center pt-2 border-t">
+            <Button variant="outline" onClick={() => setPreviewStage(null)}>Close</Button>
+            <Button
+              onClick={() => {
+                const target = previewStage;
+                setPreviewStage(null);
+                openRecord(target);
+              }}
+            >
+              <ClipboardEdit className="h-4 w-4 mr-1.5" /> Edit / Update Values
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

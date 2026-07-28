@@ -14,7 +14,7 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     const data = {};
     if (body.name != null) data.name = String(body.name).trim();
-    if (body.kind === "PERSON" || body.kind === "COMPANY") data.kind = body.kind;
+    if (body.companyName !== undefined) data.companyName = body.companyName?.trim() || null;
     if (body.phone !== undefined) data.phone = body.phone?.trim() || null;
     if (body.email !== undefined) data.email = body.email?.trim() || null;
     if (body.address !== undefined) data.address = body.address?.trim() || null;

@@ -18,8 +18,10 @@ export async function GET(request) {
         ? {
             OR: [
               { name: { contains: q, mode: "insensitive" } },
+              { companyName: { contains: q, mode: "insensitive" } },
               { email: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
+              { address: { contains: q, mode: "insensitive" } },
             ],
           }
         : undefined,
@@ -46,11 +48,10 @@ export async function POST(request) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    const kind = body?.kind === "PERSON" ? "PERSON" : "COMPANY";
     const customer = await prisma.customer.create({
       data: {
         name,
-        kind,
+        companyName: body?.companyName?.trim() || null,
         phone: body?.phone?.trim() || null,
         email: body?.email?.trim() || null,
         address: body?.address?.trim() || null,

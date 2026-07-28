@@ -23,7 +23,6 @@ export async function GET(request) {
         assignedWorker: { select: { id: true, name: true, email: true } },
         lines: {
           include: {
-            bagSpec: true,
             stages: { select: { id: true, stageType: true, status: true, sequence: true } },
           },
         },
@@ -55,6 +54,7 @@ export async function POST(request) {
 
     const order = await createProductionOrder({
       customerId: body.customerId,
+      salesRep: body.salesRep,
       assignedWorkerId: body.assignedWorkerId,
       notes: body.notes,
       lines: body.lines,
