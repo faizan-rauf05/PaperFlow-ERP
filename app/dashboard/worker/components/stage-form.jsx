@@ -2,6 +2,7 @@ import { Clock, Loader2, ArrowLeft, AlertCircle } from "lucide-react";
 import { getStageLabel } from "@/lib/production-constants";
 import { workerStyles } from "../worker-dashboard.styles";
 import { getTaskDisplayStatus } from "./status-badge";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
 
 function fieldInputClass(hasError) {
@@ -129,21 +130,21 @@ export function StageForm({
             {isRawMaterial && (
               <div className={workerStyles.formField}>
                 <label className={workerStyles.formLabel}>Select roll *</label>
-                <select
-                  className={fieldSelectClass(!!errors.rollId)}
+                <SearchableSelect
                   value={rollId}
-                  onChange={(e) => {
-                    setRollId(e.target.value);
+                  onValueChange={(v) => {
+                    setRollId(v);
                     clearError?.("rollId");
                   }}
-                >
-                  <option value="">Choose roll…</option>
-                  {rolls.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.rollNo} — {r.remainingLengthM}m left ({r.status})
-                    </option>
-                  ))}
-                </select>
+                  options={rolls.map((r) => ({
+                    value: r.id,
+                    label: `${r.rollNo} — ${r.remainingLengthM}m left`,
+                    description: `Status: ${r.status}`,
+                  }))}
+                  placeholder="Choose roll…"
+                  searchPlaceholder="Search roll…"
+                  error={!!errors.rollId}
+                />
                 {errors.rollId ? (
                   <span className={workerStyles.fieldError} role="alert">{errors.rollId}</span>
                 ) : (
@@ -162,19 +163,21 @@ export function StageForm({
             {machines.length > 0 && (
               <div className={workerStyles.formField}>
                 <label className={workerStyles.formLabel}>Machine</label>
-                <select
-                  className={fieldSelectClass(!!errors.machineId)}
+                <SearchableSelect
                   value={machineId}
-                  onChange={(e) => {
-                    setMachineId(e.target.value);
+                  onValueChange={(v) => {
+                    setMachineId(v);
                     clearError?.("machineId");
                   }}
-                >
-                  <option value="">Select machine…</option>
-                  {machines.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
+                  options={machines.map((m) => ({
+                    value: m.id,
+                    label: m.name,
+                    description: `Code: ${m.machineCode}`,
+                  }))}
+                  placeholder="Select machine…"
+                  searchPlaceholder="Search machine…"
+                  error={!!errors.machineId}
+                />
                 {errors.machineId && (
                   <span className={workerStyles.fieldError} role="alert">{errors.machineId}</span>
                 )}
@@ -229,23 +232,21 @@ export function StageForm({
                 </div>
                 <div className={`${workerStyles.formField} col-span-2`}>
                   <label className={workerStyles.formLabel}>Defect type</label>
-                  <select
-                    className={fieldSelectClass(!!errors.defectTypeId)}
+                  <SearchableSelect
                     value={defectTypeId}
-                    onChange={(e) => {
-                      setDefectTypeId(e.target.value);
+                    onValueChange={(v) => {
+                      setDefectTypeId(v);
                       clearError?.("defectTypeId");
                     }}
-                  >
-                    <option value="">Select defect…</option>
-                    {Object.entries(defectGroups).map(([cat, items]) => (
-                      <optgroup key={cat} label={cat}>
-                        {items.map((d) => (
-                          <option key={d.id} value={d.id}>{d.description}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                    options={defectTypes.map((d) => ({
+                      value: d.id,
+                      label: d.description,
+                      description: `Category: ${d.category?.name || "Other"} · Code: ${d.code}`,
+                    }))}
+                    placeholder="Select defect…"
+                    searchPlaceholder="Search defect…"
+                    error={!!errors.defectTypeId}
+                  />
                   {errors.defectTypeId && (
                     <span className={workerStyles.fieldError} role="alert">{errors.defectTypeId}</span>
                   )}

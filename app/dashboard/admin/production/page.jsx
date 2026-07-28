@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { FormField, fieldClassName } from "@/components/ui/form-field";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { productionOrderSchema } from "@/lib/validations/admin-forms";
@@ -222,18 +223,18 @@ export default function ProductionOrdersPage() {
           <div className="space-y-4 py-2">
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField label="Customer" required error={errors.customerId}>
-                <Select value={form.customerId} onValueChange={(v) => patchForm("customerId", v)}>
-                  <SelectTrigger className={cn("w-full", errors.customerId && "border-destructive")}>
-                    <SelectValue placeholder="Select customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name} {c.companyName ? `(${c.companyName})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={form.customerId}
+                  onValueChange={(v) => patchForm("customerId", v)}
+                  options={customers.map((c) => ({
+                    value: c.id,
+                    label: `${c.name}${c.companyName ? ` (${c.companyName})` : ""}`,
+                    description: c.phone || c.email || undefined,
+                  }))}
+                  placeholder="Select customer"
+                  searchPlaceholder="Search customer..."
+                  error={!!errors.customerId}
+                />
               </FormField>
 
               <FormField label="Sales Rep" error={errors.salesRep}>
@@ -247,21 +248,18 @@ export default function ProductionOrdersPage() {
             </div>
 
             <FormField label="Assign worker" required error={errors.assignedWorkerId}>
-              <Select
+              <SearchableSelect
                 value={form.assignedWorkerId}
                 onValueChange={(v) => patchForm("assignedWorkerId", v)}
-              >
-                <SelectTrigger
-                  className={cn("w-full", errors.assignedWorkerId && "border-destructive")}
-                >
-                  <SelectValue placeholder="Select responsible worker" />
-                </SelectTrigger>
-                <SelectContent>
-                  {workers.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={workers.map((w) => ({
+                  value: w.id,
+                  label: w.name,
+                  description: w.email,
+                }))}
+                placeholder="Select responsible worker"
+                searchPlaceholder="Search worker..."
+                error={!!errors.assignedWorkerId}
+              />
             </FormField>
 
             <FormField label="Notes" error={errors.notes}>

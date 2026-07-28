@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { FormField, fieldClassName } from "@/components/ui/form-field";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { inventoryTransactionSchema, MATERIAL_UNITS, TX_TYPES } from "@/lib/validations/admin-forms";
@@ -177,10 +178,18 @@ export default function InventoryPage() {
               </Select>
             </FormField>
             <FormField label="Material" required error={errors.materialId}>
-              <Select value={form.materialId} onValueChange={(v) => patchForm("materialId", v)}>
-                <SelectTrigger className={cn(errors.materialId && "border-destructive")}><SelectValue placeholder="Select material" /></SelectTrigger>
-                <SelectContent>{materials.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <SearchableSelect
+                value={form.materialId}
+                onValueChange={(v) => patchForm("materialId", v)}
+                options={materials.map((m) => ({
+                  value: m.id,
+                  label: `${m.name} (${m.code})`,
+                  description: `Unit: ${m.unit} · Type: ${m.materialType}`,
+                }))}
+                placeholder="Select material"
+                searchPlaceholder="Search material..."
+                error={!!errors.materialId}
+              />
             </FormField>
             <div className="grid grid-cols-2 gap-4">
               <FormField label="Quantity" required error={errors.quantity}>

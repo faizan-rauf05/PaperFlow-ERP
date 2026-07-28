@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Eye, Loader2, ClipboardEdit } from "lucide-react";
+import { ArrowLeft, Eye, Loader2, ClipboardEdit, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { FormField } from "@/components/ui/form-field";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { getStageLabel, QC_STAGE_TYPES } from "@/lib/production-constants";
@@ -23,8 +24,63 @@ import {
   getStageStatusColor,
   ORDER_STATUS_COLORS,
   summarizeOrderMaterials,
+  getLineCurrentStage,
 } from "@/lib/order-progress";
 import { cn } from "@/lib/utils";
+
+function buildInitialForm(stage, context) {
+  const stg = context?.stage || stage || {};
+  const isQc = QC_STAGE_TYPES.includes(stg.stageType);
+  const qcRec = stg.qcRecords?.[0];
+  const sideConsumption = stg.consumptions?.find((c) => c.consumptionKind === "GLUE_SIDE");
+  const bottomConsumption = stg.consumptions?.find((c) => c.consumptionKind === "GLUE_BOTTOM");
+
+  let initialOutputQty = "";
+  if (stg.outputQty != null) {
+    initialOutputQty = String(stg.outputQty);
+  } else if (isQc && qcRec?.passedQty != null) {
+    initialOutputQty = String(qcRec.passedQty);
+  }
+
+  let initialPassedQty = "";
+  if (qcRec?.passedQty != null) {
+    initialPassedQty = String(qcRec.passedQty);
+  } else if (isQc && stg.outputQty != null) {
+    initialPassedQty = String(stg.outputQty);
+  }
+
+  let initialGlueSideQty = "";
+  if (sideConsumption?.actualQty != null) {
+    initialGlueSideQty = String(sideConsumption.actualQty);
+  } else if (context?.gluePlan?.sideKg != null) {
+    initialGlueSideQty = String(context.gluePlan.sideKg);
+  }
+
+  let initialGlueBottomQty = "";
+  if (bottomConsumption?.actualQty != null) {
+    initialGlueBottomQty = String(bottomConsumption.actualQty);
+  } else if (context?.gluePlan?.bottomKg != null) {
+    initialGlueBottomQty = String(context.gluePlan.bottomKg);
+  }
+
+  return {
+    materialId: stg.materialId || "",
+    machineId: stg.machineId || "",
+    outputQty: initialOutputQty,
+    cutWidthMm: stg.cutWidthMm != null ? String(stg.cutWidthMm) : (context?.suggestedCutWidthMm != null ? String(context.suggestedCutWidthMm) : ""),
+    remainderAction: stg.remainderAction || "",
+    lengthRestockQty: stg.lengthRestockQty != null ? String(stg.lengthRestockQty) : "0",
+    pieceCount: stg.pieceCount != null ? String(stg.pieceCount) : "",
+    pieceWeightKg: stg.pieceWeightKg != null ? String(stg.pieceWeightKg) : "",
+    proofUrls: Array.isArray(stg.proofUrls) ? stg.proofUrls : [],
+    remarks: stg.remarks || "",
+    passedQty: initialPassedQty,
+    defectTypeId: qcRec?.defectTypeId || "",
+    glueSideQty: initialGlueSideQty,
+    glueBottomQty: initialGlueBottomQty,
+    cartonMaterialId: stg.stageType === "PACKING" ? stg.materialId || "" : "",
+  };
+}
 
 function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
   const isQc = QC_STAGE_TYPES.includes(stage.stageType);
@@ -37,23 +93,13 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
   const [stockById, setStockById] = useState({});
   const [machines, setMachines] = useState([]);
   const [defectTypes, setDefectTypes] = useState([]);
-  const [form, setForm] = useState({
-    materialId: "",
-    machineId: "",
-    outputQty: "",
-    cutWidthMm: context?.suggestedCutWidthMm != null ? String(context.suggestedCutWidthMm) : "",
-    remainderAction: "",
-    lengthRestockQty: "0",
-    pieceCount: "",
-    pieceWeightKg: "",
-    proofUrls: [],
-    remarks: "",
-    passedQty: "",
-    defectTypeId: "",
-    glueSideQty: "",
-    glueBottomQty: "",
-    cartonMaterialId: "",
-  });
+  const [form, setForm] = useState(() => buildInitialForm(stage, context));
+
+  useEffect(() => {
+    if (context) {
+      setForm(buildInitialForm(stage, context));
+    }
+  }, [context, stage]);
 
   const inputQty = context?.inputQty;
 
@@ -280,16 +326,18 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             error={errors.materialId}
             hint="Paper stock only — pick the roll material to issue."
           >
-            <Select value={form.materialId} onValueChange={(v) => patch("materialId", v)}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Select paper" /></SelectTrigger>
-              <SelectContent>
-                {paperMaterials.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.name} · {m.paperWidthMm ?? "?"}mm ({m.code})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={form.materialId}
+              onValueChange={(v) => patch("materialId", v)}
+              options={paperMaterials.map((m) => ({
+                value: m.id,
+                label: `${m.name} · ${m.paperWidthMm ?? "?"}mm (${m.code})`,
+                description: `Stock: ${stockById[m.id] ?? 0} m`,
+              }))}
+              placeholder="Select paper material"
+              searchPlaceholder="Search paper..."
+              error={!!errors.materialId}
+            />
           </FormField>
           <FormField
             label="Meters issued"
@@ -322,12 +370,18 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             error={errors.machineId}
             hint="Required — which slitters did this cut."
           >
-            <Select value={form.machineId} onValueChange={(v) => patch("machineId", v)}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Select machine" /></SelectTrigger>
-              <SelectContent>
-                {machines.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={form.machineId}
+              onValueChange={(v) => patch("machineId", v)}
+              options={machines.map((m) => ({
+                value: m.id,
+                label: `${m.name} (${m.machineCode})`,
+                description: `Status: ${m.status}`,
+              }))}
+              placeholder="Select slitting machine"
+              searchPlaceholder="Search machine..."
+              error={!!errors.machineId}
+            />
           </FormField>
           <FormField
             label="Cut width (mm)"
@@ -438,14 +492,17 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
           </p>
           {defectTypes.length > 0 && (
             <FormField label="Defect type" hint="Optional reason for rejects.">
-              <Select value={form.defectTypeId} onValueChange={(v) => patch("defectTypeId", v)}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Optional" /></SelectTrigger>
-                <SelectContent>
-                  {defectTypes.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>{d.description}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={form.defectTypeId}
+                onValueChange={(v) => patch("defectTypeId", v)}
+                options={defectTypes.map((d) => ({
+                  value: d.id,
+                  label: d.description,
+                  description: `Code: ${d.code}`,
+                }))}
+                placeholder="Select defect type (optional)"
+                searchPlaceholder="Search defect..."
+              />
             </FormField>
           )}
         </div>
@@ -540,16 +597,18 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             error={errors.cartonMaterialId}
             hint="Deducts this carton from inventory."
           >
-            <Select value={form.cartonMaterialId} onValueChange={(v) => patch("cartonMaterialId", v)}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Select carton" /></SelectTrigger>
-              <SelectContent>
-                {cartonMaterials.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.name} (stock {stockById[m.id] ?? "—"})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={form.cartonMaterialId}
+              onValueChange={(v) => patch("cartonMaterialId", v)}
+              options={cartonMaterials.map((m) => ({
+                value: m.id,
+                label: `${m.name} (${m.code})`,
+                description: `Stock: ${stockById[m.id] ?? "—"}`,
+              }))}
+              placeholder="Select carton"
+              searchPlaceholder="Search carton type..."
+              error={!!errors.cartonMaterialId}
+            />
           </FormField>
         </>
       )}
@@ -567,12 +626,17 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
 
       {machines.length > 0 && stage.stageType !== "SLITTING" && (
         <FormField label="Machine" hint="Optional machine used.">
-          <Select value={form.machineId} onValueChange={(v) => patch("machineId", v)}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="Optional" /></SelectTrigger>
-            <SelectContent>
-              {machines.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={form.machineId}
+            onValueChange={(v) => patch("machineId", v)}
+            options={machines.map((m) => ({
+              value: m.id,
+              label: `${m.name} (${m.machineCode})`,
+              description: `Status: ${m.status}`,
+            }))}
+            placeholder="Select machine (optional)"
+            searchPlaceholder="Search machine..."
+          />
         </FormField>
       )}
 
@@ -722,21 +786,19 @@ export default function ProductionOrderDetailPage() {
           )}
 
           <div className="flex flex-wrap items-center gap-3">
-            <FormField label="Responsible worker" className="min-w-[220px]">
-              <Select
+            <FormField label="Responsible worker" className="min-w-[240px]">
+              <SearchableSelect
                 value={order.assignedWorkerId || ""}
                 onValueChange={reassignWorker}
                 disabled={assigning}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Assign worker" />
-                </SelectTrigger>
-                <SelectContent>
-                  {workers.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={workers.map((w) => ({
+                  value: w.id,
+                  label: w.name,
+                  description: w.email,
+                }))}
+                placeholder="Assign worker"
+                searchPlaceholder="Search worker..."
+              />
             </FormField>
             {assigning && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
           </div>
@@ -748,6 +810,8 @@ export default function ProductionOrderDetailPage() {
         const dims = line.heightMm || line.widthMm || line.baseMm
           ? `${line.heightMm || 0} × ${line.widthMm || 0} × ${line.baseMm || 0} mm`
           : "—";
+        const currentStage = getLineCurrentStage(line);
+
         return (
           <div key={line.id} className="rounded-lg border">
             <div className="border-b px-4 py-3 flex flex-wrap items-center justify-between gap-2">
@@ -774,43 +838,72 @@ export default function ProductionOrderDetailPage() {
               )}
             </div>
             <div className="divide-y">
-              {(line.stages || []).map((stage) => (
-                <div
-                  key={stage.id}
-                  className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="font-medium flex flex-wrap items-center gap-2">
-                      <span>{stage.sequence}. {getStageLabel(stage.stageType)}</span>
-                      <Badge
-                        variant="outline"
-                        className={cn("font-medium", getStageStatusColor(stage.status))}
-                      >
-                        {stage.status}
-                      </Badge>
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {stage.outputQty != null && `out ${stage.outputQty} ${stage.outputUnit || ""}`}
-                      {stage.wasteQty != null && Number(stage.wasteQty) > 0 && ` · waste ${stage.wasteQty}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {stage.status === "COMPLETED" && (
-                      <Button variant="outline" size="sm" onClick={() => setPreviewStage(stage)}>
-                        <Eye className="h-4 w-4 mr-1" />Preview Input
-                      </Button>
+              {(line.stages || []).map((stage) => {
+                const isCurrent = stage.id === currentStage?.id;
+                const isPrevious = stage.status === "COMPLETED" || stage.sequence < (currentStage?.sequence || 0);
+
+                return (
+                  <div
+                    key={stage.id}
+                    className={cn(
+                      "flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between transition-colors",
+                      isCurrent && "bg-primary/5 dark:bg-primary/10"
                     )}
-                    <Button
-                      variant={stage.status === "COMPLETED" ? "secondary" : "default"}
-                      size="sm"
-                      onClick={() => openRecord(stage)}
-                    >
-                      <ClipboardEdit className="h-4 w-4 mr-1" />
-                      {stage.status === "COMPLETED" ? "Update Input" : "Record Input"}
-                    </Button>
+                  >
+                    <div>
+                      <p className="font-medium flex flex-wrap items-center gap-2">
+                        <span>{stage.sequence}. {getStageLabel(stage.stageType)}</span>
+                        <Badge
+                          variant="outline"
+                          className={cn("font-medium", getStageStatusColor(stage.status))}
+                        >
+                          {stage.status}
+                        </Badge>
+                        {isCurrent && (
+                          <Badge className="bg-primary text-primary-foreground text-xs font-semibold">
+                            Current Stage
+                          </Badge>
+                        )}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {stage.outputQty != null && `out ${stage.outputQty} ${stage.outputUnit || ""}`}
+                        {stage.wasteQty != null && Number(stage.wasteQty) > 0 && ` · waste ${stage.wasteQty}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {stage.status === "COMPLETED" && (
+                        <Button variant="outline" size="sm" onClick={() => setPreviewStage(stage)}>
+                          <Eye className="h-4 w-4 mr-1" />Preview Input
+                        </Button>
+                      )}
+                      {isPrevious ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openRecord(stage)}
+                        >
+                          <ClipboardEdit className="h-4 w-4 mr-1" />
+                          Update Input
+                        </Button>
+                      ) : isCurrent ? (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => openRecord(stage)}
+                        >
+                          <ClipboardEdit className="h-4 w-4 mr-1" />
+                          Record Input
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic px-2.5 py-1 bg-muted/40 rounded border border-dashed flex items-center gap-1">
+                          <Lock className="h-3 w-3 text-muted-foreground/70" />
+                          Locked (Awaiting previous stage)
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );
