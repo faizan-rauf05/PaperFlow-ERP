@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, Factory } from "lucide-react";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
+import { computeSlittingPreview } from "@/lib/slitting-math";
 import { workerStyles } from "./worker-dashboard.styles";
 import { TaskList } from "./components/task-list";
 import { StageForm } from "./components/stage-form";
@@ -22,26 +23,38 @@ export default function WorkerMobileDashboard() {
   const [startingTaskId, setStartingTaskId] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
   const [context, setContext] = useState(null);
-  const [rolls, setRolls] = useState([]);
+
+  const [paperMaterials, setPaperMaterials] = useState([]);
+  const [cartonMaterials, setCartonMaterials] = useState([]);
+  const [stockById, setStockById] = useState({});
   const [machines, setMachines] = useState([]);
-  const [defectTypes, setDefectTypes] = useState([]);
+
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   // Stage form inputs
-  const [rollId, setRollId] = useState("");
+  const [materialId, setMaterialId] = useState("");
   const [machineId, setMachineId] = useState("");
   const [outputQty, setOutputQty] = useState("");
   const [wasteQty, setWasteQty] = useState("");
-  const [passedQty, setPassedQty] = useState("");
-  const [rejectedQty, setRejectedQty] = useState("");
-  const [defectTypeId, setDefectTypeId] = useState("");
   const [remarks, setRemarks] = useState("");
+
+  // Slitting
+  const [cutWidthMm, setCutWidthMm] = useState("");
+  const [lengthRestockQty, setLengthRestockQty] = useState("0");
+  const [remainderAction, setRemainderAction] = useState("");
+
+  // Packing
+  const [cartonMaterialId, setCartonMaterialId] = useState("");
+
+  // Handle making/pasting
   const [sideGlueKg, setSideGlueKg] = useState("");
   const [bottomGlueKg, setBottomGlueKg] = useState("");
   const [handleRopePcs, setHandleRopePcs] = useState("");
-  const [qcPhotoUrl, setQcPhotoUrl] = useState("");
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const [proofPhotoUrl, setProofPhotoUrl] = useState("");
+  const [uploadingProof, setUploadingProof] = useState(false);
+
   const [downtimeOpen, setDowntimeOpen] = useState(false);
   const [downtimeReason, setDowntimeReason] = useState("");
   const [errors, setErrors] = useState({});
@@ -80,18 +93,19 @@ export default function WorkerMobileDashboard() {
   async function handleStartTask(task) {
     setStartingTaskId(task.id);
     try {
-      const [recordRes, rollsRes, machRes, defectsRes] = await Promise.all([
+      const [recordRes, matsRes, stockRes, machRes] = await Promise.all([
         api.get(
           `/production/orders/${task.orderLine?.orderId || task.orderId}/stages/${task.id}/record`,
         ),
-        api.get("/rolls").catch(() => ({ data: { rolls: [] } })),
+        api.get("/materials").catch(() => ({ data: { materials: [] } })),
+        api
+          .get("/inventory/current-stock")
+          .catch(() => ({ data: { stock: [] } })),
         api.get("/machines").catch(() => ({ data: { machines: [] } })),
-        api.get("/defect-types").catch(() => ({ data: { defectTypes: [] } })),
       ]);
 
       const ctx = recordRes.data.context || {};
       const stg = ctx.stage || task;
-      const qcRec = stg.qcRecords?.[0];
       const sideConsumption = stg.consumptions?.find(
         (c) => c.consumptionKind === "GLUE_SIDE",
       );
@@ -99,36 +113,53 @@ export default function WorkerMobileDashboard() {
         (c) => c.consumptionKind === "GLUE_BOTTOM",
       );
 
-      setContext(ctx);
-      setRolls(rollsRes.data.rolls || []);
+      const allMaterials = matsRes.data.materials || [];
+      setPaperMaterials(
+        allMaterials.filter((m) => m.materialType === "PAPER_ROLL"),
+      );
+      setCartonMaterials(
+        allMaterials.filter((m) => m.materialType === "CARTON"),
+      );
+
+      const stockMap = {};
+      for (const row of stockRes.data.stock ||
+        stockRes.data.materials ||
+        stockRes.data.stocks ||
+        []) {
+        stockMap[row.id] = Number(row.currentStock ?? row.stock ?? 0);
+      }
+      setStockById(stockMap);
+
       setMachines(
         (machRes.data.machines || []).filter(
           (m) => m.stageType === task.stageType,
         ),
       );
-      setDefectTypes(
-        (defectsRes.data.defectTypes || defectsRes.data.types || []).filter(
-          (d) => d.stageType === task.stageType,
-        ),
-      );
+
+      setContext(ctx);
 
       // Auto-populate form values if previously entered or available in context
-      setRollId(stg.materialId || "");
+      setMaterialId(task.stageType === "PACKING" ? "" : stg.materialId || "");
+      setCartonMaterialId(
+        task.stageType === "PACKING" ? stg.materialId || "" : "",
+      );
       setMachineId(stg.machineId || "");
       setOutputQty(stg.outputQty != null ? String(stg.outputQty) : "");
       setWasteQty(stg.wasteQty != null ? String(stg.wasteQty) : "");
       setRemarks(stg.remarks || "");
-      setPassedQty(
-        qcRec?.passedQty != null
-          ? String(qcRec.passedQty)
-          : stg.outputQty != null
-            ? String(stg.outputQty)
+
+      setCutWidthMm(
+        stg.cutWidthMm != null
+          ? String(stg.cutWidthMm)
+          : ctx.suggestedCutWidthMm != null
+            ? String(ctx.suggestedCutWidthMm)
             : "",
       );
-      setRejectedQty(
-        qcRec?.rejectedQty != null ? String(qcRec.rejectedQty) : "",
+      setLengthRestockQty(
+        stg.lengthRestockQty != null ? String(stg.lengthRestockQty) : "0",
       );
-      setDefectTypeId(qcRec?.defectTypeId || "");
+      setRemainderAction(stg.remainderAction || "");
+
       setSideGlueKg(
         sideConsumption?.actualQty != null
           ? String(sideConsumption.actualQty)
@@ -144,7 +175,10 @@ export default function WorkerMobileDashboard() {
             : "",
       );
       setHandleRopePcs("");
-      setQcPhotoUrl(Array.isArray(stg.proofUrls) ? stg.proofUrls[0] || "" : "");
+      setProofPhotoUrl(
+        Array.isArray(stg.proofUrls) ? stg.proofUrls[0] || "" : "",
+      );
+
       setErrors({});
 
       setSelectedTask(task);
@@ -155,21 +189,103 @@ export default function WorkerMobileDashboard() {
     }
   }
 
-  async function handleQcPhotoUpload(file) {
+  const isRawMaterial = selectedTask?.stageType === "RAW_MATERIAL";
+  const isSlitting = selectedTask?.stageType === "SLITTING";
+  const isPrinting = selectedTask?.stageType === "PRINTING";
+  const isHandleMaking = selectedTask?.stageType === "HANDLE_MAKING_PASTING";
+  const isPacking = selectedTask?.stageType === "PACKING";
+  const isDispatch = selectedTask?.stageType === "DISPATCH";
+
+  const inputQty = context?.inputQty ?? selectedTask?.inputQty;
+
+  const slitPreview = useMemo(() => {
+    if (!isSlitting) return null;
+    return computeSlittingPreview({
+      inputMeters: inputQty,
+      parentWidthMm: context?.paperMaterial?.paperWidthMm,
+      cutWidthMm,
+      gsm: context?.paperMaterial?.gsm,
+      lengthRestockMeters: lengthRestockQty,
+    });
+  }, [
+    isSlitting,
+    inputQty,
+    context?.paperMaterial,
+    cutWidthMm,
+    lengthRestockQty,
+  ]);
+
+  // Keep output/piece fields in sync with the live slitting preview
+  useEffect(() => {
+    if (!slitPreview) return;
+    setOutputQty(String(slitPreview.usableMeters ?? ""));
+  }, [slitPreview]);
+
+  function clearError(field) {
+    setErrors((prev) => ({ ...prev, [field]: null }));
+  }
+
+  function validate() {
+    const next = {};
+    if (!proofPhotoUrl) next.proofPhoto = "Add stage proof photo";
+
+    if (isRawMaterial) {
+      if (!materialId) next.materialId = "Select paper material";
+      if (!outputQty || Number(outputQty) <= 0)
+        next.outputQty = "Enter meters issued";
+    }
+    if (isSlitting) {
+      if (!machineId) next.machineId = "Slitting machine required";
+      if (!cutWidthMm || Number(cutWidthMm) <= 0)
+        next.cutWidthMm = "Cut width required";
+      if (slitPreview?.widthRemainderMeters > 0 && !remainderAction) {
+        next.remainderAction = "Choose waste or restock for width leftover";
+      }
+    }
+    if (isPrinting) {
+      if (!outputQty || Number(outputQty) <= 0)
+        next.outputQty = "Printed meters required";
+    }
+    if (isHandleMaking) {
+      if (!outputQty || Number(outputQty) <= 0)
+        next.outputQty = "Bags produced required";
+    }
+    if (isPacking) {
+      if (!outputQty || Number(outputQty) <= 0)
+        next.outputQty = "Cartons required";
+      if (!cartonMaterialId) next.cartonMaterialId = "Select carton type";
+    }
+    if (isDispatch) {
+      if (!outputQty || Number(outputQty) <= 0)
+        next.outputQty = "Dispatched qty required";
+    }
+
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  async function handleProofUpload(file) {
     if (!file) return;
-    setUploadingPhoto(true);
+
+    setUploadingProof(true);
+
     try {
       const fd = new FormData();
       fd.append("file", file);
+
       const { data } = await api.post("/uploads/qc", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
       });
-      setQcPhotoUrl(data.photoUrl);
-      toast.success("Photo uploaded");
+
+      setProofPhotoUrl(data.photoUrl);
+      clearError("proofPhoto");
+      toast.success("Proof photo uploaded");
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
-      setUploadingPhoto(false);
+      setUploadingProof(false);
     }
   }
 
@@ -197,31 +313,42 @@ export default function WorkerMobileDashboard() {
 
   async function handleSubmitStage() {
     if (!selectedTask) return;
+    if (!validate()) {
+      toast.error("Fix the highlighted fields");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const isQc = ["PRINT_QC", "QUALITY_CHECK"].includes(
-        selectedTask.stageType,
-      );
-      const proofUrls = qcPhotoUrl ? [qcPhotoUrl] : [];
       const orderId = selectedTask.orderLine?.orderId || selectedTask.orderId;
+      const proofUrls = proofPhotoUrl ? [proofPhotoUrl] : [];
 
       const payload = {
-        materialId: rollId || undefined,
+        materialId: isPacking
+          ? cartonMaterialId || undefined
+          : materialId || undefined,
         machineId: machineId || undefined,
-        outputQty: isQc ? passedQty : outputQty,
+        outputQty: outputQty || undefined,
         wasteQty: wasteQty || undefined,
         proofUrls: proofUrls.length > 0 ? proofUrls : undefined,
         remarks: remarks || undefined,
-        glueSideQty: sideGlueKg || undefined,
-        glueBottomQty: bottomGlueKg || undefined,
-        ropeMaterialId: handleRopePcs || undefined,
-        qc: isQc
-          ? {
-              passedQty: passedQty,
-              rejectedQty: rejectedQty || undefined,
-              defectTypeId: defectTypeId || undefined,
-            }
+        cutWidthMm: isSlitting ? cutWidthMm || undefined : undefined,
+        remainderAction: isSlitting ? remainderAction || undefined : undefined,
+        remainderQty: isSlitting
+          ? slitPreview?.widthRemainderMeters || undefined
           : undefined,
+        lengthRestockQty: isSlitting
+          ? lengthRestockQty || undefined
+          : undefined,
+        pieceCount: isSlitting
+          ? slitPreview?.pieceCount || undefined
+          : undefined,
+        pieceWeightKg: isSlitting
+          ? (slitPreview?.pieceWeightKg ?? undefined)
+          : undefined,
+        cartonMaterialId: isPacking ? cartonMaterialId || undefined : undefined,
+        glueSideQty: isHandleMaking ? sideGlueKg || undefined : undefined,
+        glueBottomQty: isHandleMaking ? bottomGlueKg || undefined : undefined,
       };
 
       await api.post(
@@ -238,15 +365,6 @@ export default function WorkerMobileDashboard() {
       setSubmitting(false);
     }
   }
-
-  const isQc = selectedTask
-    ? ["PRINT_QC", "QUALITY_CHECK"].includes(selectedTask.stageType)
-    : false;
-  const isRawMaterial = selectedTask?.stageType === "RAW_MATERIAL";
-  const isPrinting = selectedTask?.stageType === "PRINTING";
-  const isBagMaking = selectedTask?.stageType === "SLITTING";
-  const isHandleMaking = selectedTask?.stageType === "HANDLE_MAKING_PASTING";
-  const isHandlePasting = selectedTask?.stageType === "HANDLE_MAKING_PASTING";
 
   return (
     <div className={workerStyles.root}>
@@ -283,32 +401,37 @@ export default function WorkerMobileDashboard() {
               submitting={submitting}
               timerSeconds={timerSeconds}
               formatTime={formatTimer}
-              isQc={isQc}
               isRawMaterial={isRawMaterial}
+              isSlitting={isSlitting}
               isPrinting={isPrinting}
-              isBagMaking={isBagMaking}
               isHandleMaking={isHandleMaking}
-              isHandlePasting={isHandlePasting}
-              rolls={rolls}
-              inheritedRoll={context?.paperMaterial}
+              isPacking={isPacking}
+              isDispatch={isDispatch}
+              materials={paperMaterials}
+              stockById={stockById}
+              inheritedMaterial={context?.paperMaterial}
               machines={machines}
-              defectTypes={defectTypes}
-              rollId={rollId}
-              setRollId={setRollId}
+              materialId={materialId}
+              setMaterialId={setMaterialId}
               machineId={machineId}
               setMachineId={setMachineId}
               outputQty={outputQty}
               setOutputQty={setOutputQty}
               wasteQty={wasteQty}
               setWasteQty={setWasteQty}
-              passedQty={passedQty}
-              setPassedQty={setPassedQty}
-              rejectedQty={rejectedQty}
-              setRejectedQty={setRejectedQty}
-              defectTypeId={defectTypeId}
-              setDefectTypeId={setDefectTypeId}
               remarks={remarks}
               setRemarks={setRemarks}
+              cutWidthMm={cutWidthMm}
+              setCutWidthMm={setCutWidthMm}
+              lengthRestockQty={lengthRestockQty}
+              setLengthRestockQty={setLengthRestockQty}
+              remainderAction={remainderAction}
+              setRemainderAction={setRemainderAction}
+              slitPreview={slitPreview}
+              inputQty={inputQty}
+              cartonMaterialId={cartonMaterialId}
+              setCartonMaterialId={setCartonMaterialId}
+              cartonMaterials={cartonMaterials}
               downtimeOpen={downtimeOpen}
               setDowntimeOpen={setDowntimeOpen}
               downtimeReason={downtimeReason}
@@ -321,13 +444,11 @@ export default function WorkerMobileDashboard() {
               setBottomGlueKg={setBottomGlueKg}
               handleRopePcs={handleRopePcs}
               setHandleRopePcs={setHandleRopePcs}
-              qcPhotoUrl={qcPhotoUrl}
-              uploadingPhoto={uploadingPhoto}
-              onQcPhotoUpload={handleQcPhotoUpload}
+              proofPhotoUrl={proofPhotoUrl}
+              uploadingProof={uploadingProof}
+              onProofUpload={handleProofUpload}
               errors={errors}
-              clearError={(field) =>
-                setErrors((prev) => ({ ...prev, [field]: null }))
-              }
+              clearError={clearError}
               onBack={() => setSelectedTask(null)}
               onSubmit={handleSubmitStage}
               onReportDowntime={handleReportDowntime}

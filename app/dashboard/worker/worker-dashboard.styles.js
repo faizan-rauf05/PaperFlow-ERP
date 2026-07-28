@@ -14,9 +14,9 @@ export const workerStyles = {
     "flex h-9 w-9 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/20",
   main: "flex flex-1 flex-col gap-5 px-4 py-5 pb-10",
   summaryGrid: "grid grid-cols-2 gap-2.5",
-  summaryTile:
-    "rounded-xl border border-border bg-card px-4 py-3.5 shadow-sm",
-  summaryValue: "font-serif text-2xl text-emerald-800 dark:text-emerald-300 min-h-7",
+  summaryTile: "rounded-xl border border-border bg-card px-4 py-3.5 shadow-sm",
+  summaryValue:
+    "font-serif text-2xl text-emerald-800 dark:text-emerald-300 min-h-7",
   summaryLabel: "text-xs text-muted-foreground",
   sectionHead: "mb-3 flex items-center gap-2",
   sectionTitle: "font-serif text-lg text-foreground",
@@ -38,7 +38,8 @@ export const workerStyles = {
   taskOrder: "mt-0.5 text-xs text-muted-foreground",
   startBtn:
     "flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50",
-  formCard: "overflow-hidden rounded-2xl border-2 border-emerald-500 bg-card shadow-lg",
+  formCard:
+    "overflow-hidden rounded-2xl border-2 border-emerald-500 bg-card shadow-lg",
   formHeader: "bg-gradient-to-br from-slate-800 to-emerald-900 px-4 py-4",
   backBtn:
     "mb-2 flex items-center gap-1 text-sm text-white/80 transition-colors hover:text-white",
@@ -50,8 +51,7 @@ export const workerStyles = {
   timerHint: "text-[11px] text-white/50",
   formBody: "flex flex-col gap-3.5 p-4",
   formField: "flex flex-col gap-1.5",
-  formLabel:
-    "text-xs font-semibold uppercase tracking-wide text-foreground/80",
+  formLabel: "text-xs font-semibold uppercase tracking-wide text-foreground/80",
   formInput:
     "h-11 w-full rounded-xl border border-border bg-background px-3.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20",
   formSelect:
@@ -70,9 +70,34 @@ export const workerStyles = {
     "flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-muted/50 text-sm text-muted-foreground hover:border-emerald-500 hover:bg-emerald-50/50",
   submitBtn:
     "flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-700 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
-  loadingBox: "flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground",
+  loadingBox:
+    "flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground",
   fieldError: "text-xs text-destructive",
-  inputError: "border-destructive focus:border-destructive focus:ring-destructive/20",
+  inputError:
+    "border-destructive focus:border-destructive focus:ring-destructive/20",
+  uploadBox:
+    "rounded-xl border-2 border-dashed border-border bg-muted/40 p-4 transition hover:border-emerald-500 hover:bg-emerald-50/50",
+
+  uploadButton:
+    "flex w-full flex-col items-center justify-center gap-2 rounded-xl py-6 text-center cursor-pointer",
+
+  uploadIcon:
+    "flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl",
+
+  uploadTitle: "text-sm font-semibold text-foreground",
+
+  uploadHint: "text-xs text-muted-foreground",
+
+  uploadPreview:
+    "relative mt-3 overflow-hidden rounded-xl border bg-background",
+
+  uploadImage: "h-48 w-full object-cover",
+
+  uploadBadge:
+    "absolute right-2 top-2 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white",
+
+  replaceUploadBtn:
+    "mt-3 flex h-10 w-full items-center justify-center rounded-xl border border-border bg-background text-sm font-medium hover:border-emerald-500",
 };
 
 export const statusBadgeStyles = {
