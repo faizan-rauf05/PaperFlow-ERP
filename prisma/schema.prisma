@@ -101,9 +101,12 @@ model Material {
   minimumStock      Decimal                @default(0) @db.Decimal(14, 4)
   kgPerMeter        Decimal?               @db.Decimal(14, 6)
   paperType         String?
+  paperColor        String?
   paperLengthM      Decimal?               @db.Decimal(14, 4)
   paperWidthMm      Decimal?               @db.Decimal(10, 2)
   gsm               Int?
+  receivingDate     DateTime?
+  barCode           String?
   glueType          String?
   inkColor          String?
   weightKg          Decimal?               @db.Decimal(14, 4)
@@ -188,16 +191,17 @@ enum CustomerKind {
 }
 
 model Customer {
-  id        String           @id @default(cuid())
-  name      String
-  kind      CustomerKind     @default(COMPANY)
-  phone     String?
-  email     String?
-  address   String?
-  notes     String?
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  orders    ProductionOrder[]
+  id          String           @id @default(cuid())
+  name        String
+  companyName String?
+  kind        CustomerKind     @default(COMPANY)
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  orders      ProductionOrder[]
 
   @@index([name])
 }
@@ -232,27 +236,12 @@ enum RemainderAction {
   RESTOCK
 }
 
-model BagSpecification {
-  id                 String      @id @default(cuid())
-  name               String
-  code               String      @unique
-  bagWidthMm         Decimal?    @db.Decimal(10, 2)
-  repeatLengthMm     Decimal?    @db.Decimal(10, 2)
-  bagsPerMeter       Decimal?    @db.Decimal(14, 6)
-  handlesPerBag      Decimal     @default(2) @db.Decimal(8, 4)
-  sideGlueKgPerBag   Decimal?    @db.Decimal(14, 6)
-  bottomGlueKgPerBag Decimal?    @db.Decimal(14, 6)
-  description        String?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
-  orderLines         OrderLine[]
-}
-
 model ProductionOrder {
   id                String                @id @default(cuid())
   orderNo           String                @unique
   customerId        String
   customer          Customer              @relation(fields: [customerId], references: [id])
+  salesRep          String?
   assignedWorkerId  String?
   assignedWorker    User?                 @relation("OrderAssignee", fields: [assignedWorkerId], references: [id], onDelete: SetNull)
   status            ProductionOrderStatus @default(PENDING)
@@ -271,8 +260,11 @@ model OrderLine {
   id          String           @id @default(cuid())
   orderId     String
   order       ProductionOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  bagSpecId   String
-  bagSpec     BagSpecification @relation(fields: [bagSpecId], references: [id])
+  heightMm    Decimal?         @db.Decimal(10, 2)
+  widthMm     Decimal?         @db.Decimal(10, 2)
+  baseMm      Decimal?         @db.Decimal(10, 2)
+  fileUrl     String?
+  fileName    String?
   plannedQty  Decimal          @db.Decimal(14, 4)
   lineNo      Int
   createdAt   DateTime         @default(now())

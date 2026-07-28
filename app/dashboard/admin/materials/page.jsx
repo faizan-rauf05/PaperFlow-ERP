@@ -67,8 +67,11 @@ import {
   generateMaterialCode,
   getMaterialSummary,
   materialToFormValues,
+  generatePaperRollBarcode
 } from "@/lib/material-code";
 import {
+  PAPER_COLORS,
+  PAPER_WIDTH_PRESETS,
   GLUE_TYPES,
   INK_COLORS,
   KAPTON_TYPES,
@@ -184,28 +187,97 @@ const emptyForm = {
 };
 
 function TypeSpecificFields({ form, errors, patchForm }) {
+  const [isCustomWidth, setIsCustomWidth] = useState(
+    form.paperWidthMm && !PAPER_WIDTH_PRESETS.includes(Number(form.paperWidthMm)),
+  );
+
   switch (form.materialType) {
     case "PAPER_ROLL":
       return (
         <>
-          <FormField label="Paper Type" required error={errors.paperType}>
-            <Select
-              value={form.paperType}
-              onValueChange={(v) => patchForm("paperType", v)}
-            >
-              <SelectTrigger className={selectTriggerClass(!!errors.paperType)}>
-                <SelectValue placeholder="Select paper type" />
-              </SelectTrigger>
-              <SelectContent>
-                {PAPER_TYPES.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FormField>
           <div className="grid grid-cols-2 gap-4">
+            <FormField label="Paper Type" required error={errors.paperType}>
+              <Select
+                value={form.paperType}
+                onValueChange={(v) => patchForm("paperType", v)}
+              >
+                <SelectTrigger className={selectTriggerClass(!!errors.paperType)}>
+                  <SelectValue placeholder="Select paper type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAPER_TYPES.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FormField>
+
+            <FormField label="Paper Color" required error={errors.paperColor}>
+              <Select
+                value={form.paperColor}
+                onValueChange={(v) => patchForm("paperColor", v)}
+              >
+                <SelectTrigger className={selectTriggerClass(!!errors.paperColor)}>
+                  <SelectValue placeholder="Select paper color" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAPER_COLORS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FormField>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Paper Width (mm)" required error={errors.paperWidthMm}>
+              <Select
+                value={
+                  isCustomWidth
+                    ? "custom"
+                    : form.paperWidthMm ? String(form.paperWidthMm) : ""
+                }
+                onValueChange={(v) => {
+                  if (v === "custom") {
+                    setIsCustomWidth(true);
+                  } else {
+                    setIsCustomWidth(false);
+                    patchForm("paperWidthMm", v);
+                  }
+                }}
+              >
+                <SelectTrigger className={selectTriggerClass(!!errors.paperWidthMm)}>
+                  <SelectValue placeholder="Select width" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAPER_WIDTH_PRESETS.map((w) => (
+                    <SelectItem key={w} value={String(w)}>
+                      {w} mm
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="custom">Custom…</SelectItem>
+                </SelectContent>
+              </Select>
+            </FormField>
+
+            {isCustomWidth && (
+              <FormField label="Custom Width (mm)" required error={errors.paperWidthMm}>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  className={fieldClassName("", !!errors.paperWidthMm)}
+                  value={form.paperWidthMm}
+                  onChange={(e) => patchForm("paperWidthMm", e.target.value)}
+                  placeholder="Enter custom width"
+                />
+              </FormField>
+            )}
+
             <FormField
               label="Paper Length (m)"
               required
@@ -220,21 +292,8 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                 onChange={(e) => patchForm("paperLengthM", e.target.value)}
               />
             </FormField>
-            <FormField
-              label="Paper Width (mm)"
-              required
-              error={errors.paperWidthMm}
-            >
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                className={fieldClassName("", !!errors.paperWidthMm)}
-                value={form.paperWidthMm}
-                onChange={(e) => patchForm("paperWidthMm", e.target.value)}
-              />
-            </FormField>
           </div>
+
           <FormField label="GSM" required error={errors.gsm}>
             <Input
               type="number"
@@ -245,6 +304,45 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               onChange={(e) => patchForm("gsm", e.target.value)}
             />
           </FormField>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Receiving Date" error={errors.receivingDate}>
+              <Input
+                type="date"
+                className={fieldClassName("", !!errors.receivingDate)}
+                value={form.receivingDate || ""}
+                onChange={(e) => patchForm("receivingDate", e.target.value)}
+              />
+            </FormField>
+
+            <FormField label="Bar code" error={errors.barCode}>
+              <div className="flex gap-2">
+                <Input
+                  className={fieldClassName("font-mono text-xs", !!errors.barCode)}
+                  value={form.barCode || ""}
+                  onChange={(e) => patchForm("barCode", e.target.value)}
+                  placeholder="Barcode number / string"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    patchForm(
+                      "barCode",
+                      generatePaperRollBarcode({
+                        paperType: form.paperType,
+                        paperColor: form.paperColor,
+                        paperWidthMm: form.paperWidthMm,
+                      }),
+                    )
+                  }
+                >
+                  Gen
+                </Button>
+              </div>
+            </FormField>
+          </div>
         </>
       );
     case "GLUE":
@@ -376,13 +474,13 @@ function TypeSpecificFields({ form, errors, patchForm }) {
     case "KAPTON":
       return (
         <>
-          <FormField label="Kapton Type" required error={errors.tapeType}>
+          <FormField label="Tape Type" required error={errors.tapeType}>
             <Select
               value={form.tapeType}
               onValueChange={(v) => patchForm("tapeType", v)}
             >
               <SelectTrigger className={selectTriggerClass(!!errors.tapeType)}>
-                <SelectValue placeholder="Select Kapton type" />
+                <SelectValue placeholder="Select Tape type" />
               </SelectTrigger>
               <SelectContent>
                 {KAPTON_TYPES.map((o) => (
@@ -427,52 +525,6 @@ function TypeSpecificFields({ form, errors, patchForm }) {
             onChange={(e) => patchForm("sheetCount", e.target.value)}
           />
         </FormField>
-      );
-    case "CARTON":
-      return (
-        <>
-          <FormField label="Carton Size" required error={errors.cartonSize}>
-            <Input
-              className={fieldClassName("", !!errors.cartonSize)}
-              value={form.cartonSize}
-              onChange={(e) => patchForm("cartonSize", e.target.value)}
-              placeholder="e.g. Large, Medium"
-            />
-          </FormField>
-          <div className="grid grid-cols-3 gap-4">
-            <FormField label="Length (cm)" required error={errors.cartonLength}>
-              <Input
-                type="number"
-                min="0"
-                step="0.1"
-                className={fieldClassName("", !!errors.cartonLength)}
-                value={form.cartonLength}
-                onChange={(e) => patchForm("cartonLength", e.target.value)}
-              />
-            </FormField>
-            <FormField label="Width (cm)" required error={errors.cartonWidth}>
-              <Input
-                type="number"
-                min="0"
-                step="0.1"
-                className={fieldClassName("", !!errors.cartonWidth)}
-                value={form.cartonWidth}
-                onChange={(e) => patchForm("cartonWidth", e.target.value)}
-              />
-            </FormField>
-            <FormField label="Height (cm)" error={errors.cartonHeight}>
-              <Input
-                type="number"
-                min="0"
-                step="0.1"
-                className={fieldClassName("", !!errors.cartonHeight)}
-                value={form.cartonHeight}
-                onChange={(e) => patchForm("cartonHeight", e.target.value)}
-                placeholder="Optional"
-              />
-            </FormField>
-          </div>
-        </>
       );
     default:
       return null;
@@ -1168,15 +1220,6 @@ export default function MaterialsPage() {
 
             {hasType && (
               <>
-                <FormField label="Name" required error={errors.name}>
-                  <Input
-                    className={fieldClassName("", !!errors.name)}
-                    value={form.name}
-                    onChange={(e) => patchForm("name", e.target.value)}
-                    placeholder="Material name"
-                  />
-                </FormField>
-
                 <FormField label="Supplier" error={errors.supplier}>
                   <Input
                     className={fieldClassName("", !!errors.supplier)}

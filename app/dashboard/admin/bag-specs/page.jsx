@@ -17,7 +17,7 @@ import {
 import { FormField, fieldClassName } from "@/components/ui/form-field";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
-import { bagSpecSchema } from "@/lib/validations/admin-forms";
+// import { bagSpecSchema } from "@/lib/validations/admin-forms";
 import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validations/form-utils";
 import { generateBagSpecCode } from "@/lib/order-progress";
 
@@ -132,12 +132,12 @@ export default function BagSpecsPage() {
   }
 
   async function handleSave() {
-    const result = validateForm(bagSpecSchema, form);
-    if (!result.success) {
-      setErrors(result.errors);
-      toast.error(firstErrorMessage(result.errors));
-      return;
-    }
+    // const result = validateForm(bagSpecSchema, form);
+    // if (!result.success) {
+    //   setErrors(result.errors);
+    //   toast.error(firstErrorMessage(result.errors));
+    //   return;
+    // }
     setSaving(true);
     try {
       const payload = toPayload(result.data);

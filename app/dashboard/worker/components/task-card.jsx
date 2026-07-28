@@ -17,7 +17,11 @@ export function TaskCard({ task, isStarting, onStart }) {
             Step {task.sequence} of 10
           </span>
           <h3 className={workerStyles.taskName}>{getStageLabel(task.stageType)}</h3>
-          <p className={workerStyles.taskOrder}>{task.order?.bagSpec?.name}</p>
+          <p className={workerStyles.taskOrder}>
+            {task.orderLine
+              ? `${task.orderLine.heightMm || 0}×${task.orderLine.widthMm || 0}×${task.orderLine.baseMm || 0} mm`
+              : task.order?.orderNo || ""}
+          </p>
         </div>
         <StatusBadge task={task} />
       </div>

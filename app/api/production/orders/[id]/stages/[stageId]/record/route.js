@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireAdminOrManager } from "@/lib/apiAuth";
+import { requireWorker } from "@/lib/apiAuth";
 import { recordStage, getStageRecordContext } from "@/lib/services/workflow.service";
 import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
 
 export async function GET(_request, { params }) {
   try {
-    const authResult = await requireAdminOrManager();
+    const authResult = await requireWorker();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }
@@ -22,7 +22,7 @@ export async function GET(_request, { params }) {
 
 export async function POST(request, { params }) {
   try {
-    const authResult = await requireAdminOrManager();
+    const authResult = await requireWorker();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }

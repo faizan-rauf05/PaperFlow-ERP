@@ -19,7 +19,6 @@ const navigation = [
   { name: "Users", href: "/dashboard/admin/users", icon: Users },
 
   { name: "Customers", href: "/dashboard/admin/customers", icon: Contact },
-  { name: "Bag Specs", href: "/dashboard/admin/bag-specs", icon: Ruler },
   { name: "Materials", href: "/dashboard/admin/materials", icon: Package },
   { name: "Inventory", href: "/dashboard/admin/inventory", icon: Warehouse },
   { name: "Orders", href: "/dashboard/admin/production", icon: Factory },

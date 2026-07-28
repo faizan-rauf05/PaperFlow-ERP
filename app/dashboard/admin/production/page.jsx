@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { FormField, fieldClassName } from "@/components/ui/form-field";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { productionOrderSchema } from "@/lib/validations/admin-forms";
@@ -23,24 +24,19 @@ import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validati
 import { getOrderLineProgressRows, ORDER_STATUS_COLORS } from "@/lib/order-progress";
 import { cn } from "@/lib/utils";
 
-const emptyLine = { bagSpecId: "", plannedQty: "" };
-const emptyForm = { customerId: "", assignedWorkerId: "", notes: "", lines: [{ ...emptyLine }] };
+const emptyLine = { heightMm: "", widthMm: "", baseMm: "", plannedQty: "", fileUrl: "", fileName: "" };
+const emptyForm = { customerId: "", salesRep: "", assignedWorkerId: "", notes: "", lines: [{ ...emptyLine }] };
 
 export default function ProductionOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [workers, setWorkers] = useState([]);
-  const [bagSpecs, setBagSpecs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingIndex, setUploadingIndex] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
-
-  const loadBagSpecs = useCallback(async () => {
-    const specsRes = await api.get("/bag-specs");
-    setBagSpecs(specsRes.data.specs || specsRes.data.bagSpecs || []);
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,23 +49,14 @@ export default function ProductionOrdersPage() {
       setOrders(ordersRes.data.orders || []);
       setCustomers(custRes.data.customers || []);
       setWorkers(workersRes.data.workers || []);
-      await loadBagSpecs();
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [loadBagSpecs]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    function onFocus() {
-      if (dialogOpen) loadBagSpecs().catch(() => {});
-    }
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [dialogOpen, loadBagSpecs]);
 
   function patchForm(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -95,14 +82,28 @@ export default function ProductionOrdersPage() {
     }));
   }
 
-  async function openCreateDialog() {
-    setErrors({});
-    setForm(emptyForm);
+  async function handleLineFileUpload(index, file) {
+    if (!file) return;
+    setUploadingIndex(index);
     try {
-      await loadBagSpecs();
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/uploads/qc", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      patchLine(index, "fileUrl", data.photoUrl);
+      patchLine(index, "fileName", file.name);
+      toast.success("File attached");
     } catch (e) {
       toast.error(getApiErrorMessage(e));
+    } finally {
+      setUploadingIndex(null);
     }
+  }
+
+  function openCreateDialog() {
+    setErrors({});
+    setForm(emptyForm);
     setDialogOpen(true);
   }
 
@@ -132,7 +133,7 @@ export default function ProductionOrdersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Production Orders</h1>
-          <p className="text-muted-foreground">Assign worker · pick bag size per line</p>
+          <p className="text-muted-foreground">Sales Rep · Assign worker · Order Line dimensions & files</p>
         </div>
         <Button onClick={openCreateDialog}>
           <Plus className="h-4 w-4 mr-2" />New Order
@@ -144,8 +145,8 @@ export default function ProductionOrdersPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Order</TableHead>
-              <TableHead>Customer / Worker</TableHead>
-              <TableHead>Lines</TableHead>
+              <TableHead>Customer / Sales Rep / Worker</TableHead>
+              <TableHead>Order Lines (Dimensions)</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Open</TableHead>
             </TableRow>
@@ -169,9 +170,14 @@ export default function ProductionOrdersPage() {
                   <TableCell className="font-mono text-sm pt-4">{o.orderNo}</TableCell>
                   <TableCell className="pt-4">
                     <div className="space-y-0.5">
-                      <p>{o.customer?.name}</p>
+                      <p className="font-medium">{o.customer?.name} {o.customer?.companyName ? `(${o.customer.companyName})` : ""}</p>
+                      {o.salesRep && (
+                        <p className="text-xs text-muted-foreground">
+                          Sales Rep: <strong className="text-foreground font-medium">{o.salesRep}</strong>
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground">
-                        {o.assignedWorker?.name || "Unassigned"}
+                        Worker: {o.assignedWorker?.name || "Unassigned"}
                       </p>
                     </div>
                   </TableCell>
@@ -180,7 +186,7 @@ export default function ProductionOrdersPage() {
                       {getOrderLineProgressRows(o).map((row) => (
                         <div key={row.key} className="flex flex-wrap items-center gap-2 text-sm">
                           <span className="text-muted-foreground">L{row.lineNo}</span>
-                          <span className="font-medium">{row.bagSpecName}</span>
+                          <span className="font-mono font-medium">{row.bagSpecName}</span>
                           <span className="text-muted-foreground">· {row.plannedQty} bags</span>
                           <Badge variant="outline" className={cn("font-medium", row.className)}>
                             {row.stageLabel}
@@ -210,42 +216,50 @@ export default function ProductionOrdersPage() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Create Production Order</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <FormField label="Customer" required error={errors.customerId}>
-              <Select value={form.customerId} onValueChange={(v) => patchForm("customerId", v)}>
-                <SelectTrigger className={cn("w-full", errors.customerId && "border-destructive")}>
-                  <SelectValue placeholder="Select customer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name} ({c.kind})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormField>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Customer" required error={errors.customerId}>
+                <SearchableSelect
+                  value={form.customerId}
+                  onValueChange={(v) => patchForm("customerId", v)}
+                  options={customers.map((c) => ({
+                    value: c.id,
+                    label: `${c.name}${c.companyName ? ` (${c.companyName})` : ""}`,
+                    description: c.phone || c.email || undefined,
+                  }))}
+                  placeholder="Select customer"
+                  searchPlaceholder="Search customer..."
+                  error={!!errors.customerId}
+                />
+              </FormField>
+
+              <FormField label="Sales Rep" error={errors.salesRep}>
+                <Input
+                  className={fieldClassName("", !!errors.salesRep)}
+                  value={form.salesRep}
+                  onChange={(e) => patchForm("salesRep", e.target.value)}
+                  placeholder="Sales Rep Name"
+                />
+              </FormField>
+            </div>
 
             <FormField label="Assign worker" required error={errors.assignedWorkerId}>
-              <Select
+              <SearchableSelect
                 value={form.assignedWorkerId}
                 onValueChange={(v) => patchForm("assignedWorkerId", v)}
-              >
-                <SelectTrigger
-                  className={cn("w-full", errors.assignedWorkerId && "border-destructive")}
-                >
-                  <SelectValue placeholder="Select responsible worker" />
-                </SelectTrigger>
-                <SelectContent>
-                  {workers.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={workers.map((w) => ({
+                  value: w.id,
+                  label: w.name,
+                  description: w.email,
+                }))}
+                placeholder="Select responsible worker"
+                searchPlaceholder="Search worker..."
+                error={!!errors.assignedWorkerId}
+              />
             </FormField>
 
             <FormField label="Notes" error={errors.notes}>
@@ -253,74 +267,100 @@ export default function ProductionOrdersPage() {
                 className={fieldClassName("", !!errors.notes)}
                 value={form.notes}
                 onChange={(e) => patchForm("notes", e.target.value)}
+                placeholder="Optional order notes"
               />
             </FormField>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">Bag lines</p>
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="link" size="sm" className="h-auto px-0" asChild>
-                    <Link href="/dashboard/admin/bag-specs" target="_blank" rel="noreferrer">
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      Add new size
-                      <ExternalLink className="h-3 w-3 ml-1 opacity-70" />
-                    </Link>
-                  </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={addLine}>
-                    Add line
-                  </Button>
-                </div>
+                <p className="text-sm font-medium">Order Lines (Bag Specs)</p>
+                <Button type="button" variant="outline" size="sm" onClick={addLine}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add line
+                </Button>
               </div>
+
               {form.lines.map((line, index) => (
                 <div
                   key={index}
-                  className="grid gap-3 rounded-lg border p-3 sm:grid-cols-[1fr_120px_auto]"
+                  className="space-y-3 rounded-lg border p-3 bg-muted/20"
                 >
-                  <FormField label="Bag size" required>
-                    <Select
-                      value={line.bagSpecId}
-                      onValueChange={(v) => patchLine(index, "bagSpecId", v)}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select bag size" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {bagSpecs.length === 0 ? (
-                          <SelectItem value="__none" disabled>
-                            No sizes yet — add one first
-                          </SelectItem>
-                        ) : (
-                          bagSpecs.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
-                              {s.name}
-                              {s.bagWidthMm != null && s.repeatLengthMm != null
-                                ? ` (${s.bagWidthMm}×${s.repeatLengthMm})`
-                                : ""}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </FormField>
-                  <FormField label="Qty (bags)" required>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={line.plannedQty}
-                      onChange={(e) => patchLine(index, "plannedQty", e.target.value)}
-                    />
-                  </FormField>
-                  <div className="flex items-end">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground">Line #{index + 1}</span>
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon"
+                      size="sm"
                       onClick={() => removeLine(index)}
                       disabled={form.lines.length <= 1}
+                      className="h-7 text-xs text-destructive"
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
                     </Button>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-2">
+                    <FormField label="Height (mm)" required>
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={line.heightMm}
+                        onChange={(e) => patchLine(index, "heightMm", e.target.value)}
+                        placeholder="Height"
+                      />
+                    </FormField>
+                    <FormField label="Width (mm)" required>
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={line.widthMm}
+                        onChange={(e) => patchLine(index, "widthMm", e.target.value)}
+                        placeholder="Width"
+                      />
+                    </FormField>
+                    <FormField label="Base (mm)" required>
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={line.baseMm}
+                        onChange={(e) => patchLine(index, "baseMm", e.target.value)}
+                        placeholder="Base"
+                      />
+                    </FormField>
+                    <FormField label="Qty (bags)" required>
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={line.plannedQty}
+                        onChange={(e) => patchLine(index, "plannedQty", e.target.value)}
+                        placeholder="Qty"
+                      />
+                    </FormField>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="file"
+                        className="text-xs w-[220px]"
+                        onChange={(e) => e.target.files?.[0] && handleLineFileUpload(index, e.target.files[0])}
+                      />
+                      {uploadingIndex === index && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      {line.fileUrl && (
+                        <a
+                          href={line.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-primary underline flex items-center gap-1"
+                        >
+                          <Paperclip className="h-3 w-3" />
+                          {line.fileName || "View Attachment"}
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -329,9 +369,9 @@ export default function ProductionOrdersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || bagSpecs.length === 0}>
+            <Button onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Create
+              Create Order
             </Button>
           </DialogFooter>
         </DialogContent>

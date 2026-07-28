@@ -10,8 +10,8 @@ function groupTasksByOrder(tasks) {
     if (!groups.has(orderId)) {
       groups.set(orderId, {
         orderId,
-        orderNo: task.order?.orderNo || "Unknown order",
-        customer: task.order?.customer,
+        orderNo: task?.orderLine?.order?.orderNo || "Order #" + task.sequence,
+        customer: task?.orderLine?.order?.customer?.name || null,
         tasks: [],
       });
     }
@@ -50,7 +50,9 @@ export function TaskList({ tasks, loading, startingTaskId, onStartTask }) {
           <header className={workerStyles.orderGroupHeader}>
             <div>{group.orderNo}</div>
             {group.customer && (
-              <div className={workerStyles.orderGroupMeta}>{group.customer}</div>
+              <div className={workerStyles.orderGroupMeta}>
+                {group.customer}
+              </div>
             )}
           </header>
           <div className={workerStyles.taskList}>
