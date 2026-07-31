@@ -25,7 +25,7 @@ import { getOrderLineProgressRows, ORDER_STATUS_COLORS } from "@/lib/order-progr
 import { cn } from "@/lib/utils";
 
 const emptyLine = { heightMm: "", widthMm: "", baseMm: "", plannedQty: "", fileUrl: "", fileName: "" };
-const emptyForm = { customerId: "", salesRep: "", assignedWorkerId: "", notes: "", lines: [{ ...emptyLine }] };
+const emptyForm = { customerId: "", salesRep: "", startDate: "", deliveryDate: "", assignedWorkerId: "", notes: "", lines: [{ ...emptyLine }] };
 
 export default function ProductionOrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -247,29 +247,25 @@ export default function ProductionOrdersPage() {
               </FormField>
             </div>
 
-            <FormField label="Assign worker" required error={errors.assignedWorkerId}>
-              <SearchableSelect
-                value={form.assignedWorkerId}
-                onValueChange={(v) => patchForm("assignedWorkerId", v)}
-                options={workers.map((w) => ({
-                  value: w.id,
-                  label: w.name,
-                  description: w.email,
-                }))}
-                placeholder="Select responsible worker"
-                searchPlaceholder="Search worker..."
-                error={!!errors.assignedWorkerId}
-              />
-            </FormField>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Start Date" error={errors.startDate}>
+                <Input
+                  type="date"
+                  className={fieldClassName("", !!errors.startDate)}
+                  value={form.startDate}
+                  onChange={(e) => patchForm("startDate", e.target.value)}
+                />
+              </FormField>
 
-            <FormField label="Notes" error={errors.notes}>
-              <Input
-                className={fieldClassName("", !!errors.notes)}
-                value={form.notes}
-                onChange={(e) => patchForm("notes", e.target.value)}
-                placeholder="Optional order notes"
-              />
-            </FormField>
+              <FormField label="Delivery Date" error={errors.deliveryDate}>
+                <Input
+                  type="date"
+                  className={fieldClassName("", !!errors.deliveryDate)}
+                  value={form.deliveryDate}
+                  onChange={(e) => patchForm("deliveryDate", e.target.value)}
+                />
+              </FormField>
+            </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
@@ -366,6 +362,30 @@ export default function ProductionOrdersPage() {
               ))}
               {errors.lines && <p className="text-xs text-destructive">{errors.lines}</p>}
             </div>
+
+            <FormField label="Assign worker" required error={errors.assignedWorkerId}>
+              <SearchableSelect
+                value={form.assignedWorkerId}
+                onValueChange={(v) => patchForm("assignedWorkerId", v)}
+                options={workers.map((w) => ({
+                  value: w.id,
+                  label: w.name,
+                  description: w.email,
+                }))}
+                placeholder="Select responsible worker"
+                searchPlaceholder="Search worker..."
+                error={!!errors.assignedWorkerId}
+              />
+            </FormField>
+
+            <FormField label="Notes" error={errors.notes}>
+              <Input
+                className={fieldClassName("", !!errors.notes)}
+                value={form.notes}
+                onChange={(e) => patchForm("notes", e.target.value)}
+                placeholder="Optional order notes"
+              />
+            </FormField>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
