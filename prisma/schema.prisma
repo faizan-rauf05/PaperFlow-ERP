@@ -244,6 +244,8 @@ model ProductionOrder {
   salesRep          String?
   assignedWorkerId  String?
   assignedWorker    User?                 @relation("OrderAssignee", fields: [assignedWorkerId], references: [id], onDelete: SetNull)
+  startDate         DateTime?
+  deliveryDate      DateTime?
   status            ProductionOrderStatus @default(PENDING)
   notes             String?
   createdAt         DateTime              @default(now())

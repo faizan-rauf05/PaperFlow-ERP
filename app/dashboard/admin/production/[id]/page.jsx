@@ -762,6 +762,16 @@ export default function ProductionOrderDetailPage() {
                   Sales Rep: {order.salesRep}
                 </span>
               )}
+              {order.startDate && (
+                <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
+                  Start: {new Date(order.startDate).toLocaleDateString()}
+                </span>
+              )}
+              {order.deliveryDate && (
+                <span className="text-xs bg-amber-500/15 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded font-medium">
+                  Delivery: {new Date(order.deliveryDate).toLocaleDateString()}
+                </span>
+              )}
               <Badge variant="outline" className={cn("font-medium", ORDER_STATUS_COLORS[order.status])}>
                 {order.status}
               </Badge>

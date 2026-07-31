@@ -82,12 +82,37 @@ export async function POST(request) {
     const data = buildMaterialRecord(parsed.data);
     const material = await prisma.material.create({ data });
 
+    let initQty = 0;
+    if (body.initialStock != null && Number(body.initialStock) > 0) {
+      initQty = Number(body.initialStock);
+    } else if (data.paperLengthM != null && Number(data.paperLengthM) > 0) {
+      initQty = Number(data.paperLengthM);
+    } else if (data.weightKg != null && Number(data.weightKg) > 0) {
+      initQty = Number(data.weightKg);
+    } else if (data.ropeLengthM != null && Number(data.ropeLengthM) > 0) {
+      initQty = Number(data.ropeLengthM);
+    } else if (data.sheetCount != null && Number(data.sheetCount) > 0) {
+      initQty = Number(data.sheetCount);
+    }
+
+    if (initQty > 0) {
+      const { postInventoryTransaction } = await import("@/lib/services/inventory.service");
+      await postInventoryTransaction({
+        materialId: material.id,
+        transactionType: "STOCK_IN",
+        quantity: initQty,
+        unit: material.unit || "METER",
+        remarks: "Initial stock on material creation",
+        createdById: authResult.session.user.id,
+      });
+    }
+
     await writeAuditLog({
       userId: authResult.session.user.id,
       action: ACTIONS.MATERIAL_CREATED,
       model: "Material",
       recordId: material.id,
-      newValue: { code: material.code, name: material.name, materialType: material.materialType },
+      newValue: { code: material.code, name: material.name, materialType: material.materialType, initialStock: initQty },
     });
 
     return NextResponse.json({ material: serializeModel(material) }, { status: 201 });
