@@ -12,8 +12,6 @@ import {
   ChevronRight,
   Search,
   X,
-  ChevronsUp,
-  ChevronsUpDown,
   Filter,
   Clock,
   Calendar,
@@ -86,14 +84,23 @@ function selectTriggerClass(hasError) {
   return cn("w-full", hasError && "border-destructive");
 }
 
-const SORT_OPTIONS = [
-  { value: "createdAt", label: "Created Date" },
-  { value: "updatedAt", label: "Modified Date" },
-  { value: "name", label: "Name" },
-  { value: "code", label: "Code" },
-  { value: "materialType", label: "Type" },
-  { value: "supplier", label: "Supplier" },
+const SORT_SELECT_OPTIONS = [
+  { value: "createdAt:desc", label: "Created Date (Newest first)" },
+  { value: "createdAt:asc", label: "Created Date (Oldest first)" },
+  { value: "name:asc", label: "Name (A–Z)" },
+  { value: "name:desc", label: "Name (Z–A)" },
+  { value: "materialType:asc", label: "Type (A–Z)" },
+  { value: "materialType:desc", label: "Type (Z–A)" },
+  { value: "supplier:asc", label: "Supplier (A–Z)" },
+  { value: "supplier:desc", label: "Supplier (Z–A)" },
 ];
+
+function sortSelectLabel(sortBy, sortDir) {
+  return (
+    SORT_SELECT_OPTIONS.find((o) => o.value === `${sortBy}:${sortDir}`)?.label ||
+    `${sortBy} (${sortDir === "desc" ? "desc" : "asc"})`
+  );
+}
 
 const GROUP_OPTIONS = [
   { value: "materialType", label: "Material Type" },
@@ -542,27 +549,21 @@ export default function MaterialsPage() {
   const [saving, setSaving] = useState(false);
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortDir, setSortDir] = useState("desc");
-  const [typeFilter, setTypeFilter] = useState("ALL");
   const [groupBy, setGroupBy] = useState("materialType");
   const [searchQuery, setSearchQuery] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [groupViewState, setGroupViewState] = useState("expanded");
 
   const toggleGroup = useCallback((groupKey) => {
     setCollapsedGroups((prev) => ({
       ...prev,
       [groupKey]: !prev[groupKey],
     }));
-    setGroupViewState("custom");
   }, []);
 
   const previewCode = useMemo(() => generateMaterialCode(form), [form]);
 
   const filteredMaterials = useMemo(() => {
     let list = materials;
-    if (typeFilter !== "ALL") {
-      list = list.filter((m) => m.materialType === typeFilter);
-    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter((m) => {
@@ -583,7 +584,7 @@ export default function MaterialsPage() {
       });
     }
     return list;
-  }, [materials, typeFilter, searchQuery]);
+  }, [materials, searchQuery]);
 
   const sortedMaterials = useMemo(() => {
     const list = [...filteredMaterials];
@@ -625,21 +626,6 @@ export default function MaterialsPage() {
     return Array.from(groups.values());
   }, [sortedMaterials, groupBy]);
 
-  const handleExpandAll = useCallback(() => {
-    setCollapsedGroups({});
-    setGroupViewState("expanded");
-  }, []);
-
-  const handleCollapseAll = useCallback(() => {
-    if (!groupedMaterials) return;
-    const collapsed = {};
-    for (const group of groupedMaterials) {
-      collapsed[group.key] = true;
-    }
-    setCollapsedGroups(collapsed);
-    setGroupViewState("collapsed");
-  }, [groupedMaterials]);
-
   function handleSort(column) {
     if (sortBy === column) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -647,6 +633,12 @@ export default function MaterialsPage() {
       setSortBy(column);
       setSortDir(column === "createdAt" ? "desc" : "asc");
     }
+  }
+
+  function handleSortSelect(value) {
+    const [field, dir] = value.split(":");
+    setSortBy(field);
+    setSortDir(dir === "asc" ? "asc" : "desc");
   }
 
   const load = useCallback(async () => {
@@ -755,7 +747,7 @@ export default function MaterialsPage() {
       <div className="space-y-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           {/* Live Search Input */}
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search by name, code, supplier..."
@@ -764,7 +756,7 @@ export default function MaterialsPage() {
               className={cn(
                 "pl-9 pr-8 transition-all",
                 searchQuery &&
-                  "border-primary ring-1 ring-primary/30 bg-primary/5 font-medium",
+                "border-primary ring-1 ring-primary/30 bg-primary/5 font-medium",
               )}
             />
             {searchQuery && (
@@ -779,7 +771,7 @@ export default function MaterialsPage() {
           </div>
 
           {/* Grouping, Filters & Sort Controls */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             {/* Group By */}
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
@@ -790,14 +782,13 @@ export default function MaterialsPage() {
                 onValueChange={(val) => {
                   setGroupBy(val);
                   setCollapsedGroups({});
-                  setGroupViewState("expanded");
                 }}
               >
                 <SelectTrigger
                   className={cn(
                     "w-[155px] h-9 text-xs transition-all",
                     groupBy !== "none" &&
-                      "border-primary bg-primary/10 font-semibold text-primary shadow-xs ring-1 ring-primary/30",
+                    "border-primary bg-primary/10 font-semibold text-primary shadow-xs ring-1 ring-primary/30",
                   )}
                 >
                   <SelectValue />
@@ -812,95 +803,24 @@ export default function MaterialsPage() {
               </Select>
             </div>
 
-            {/* Expand / Collapse Segmented Switch Control */}
-            {groupBy !== "none" && (
-              <div className="flex items-center gap-0.5 bg-muted/60 p-1 rounded-md border border-input shadow-2xs h-9">
-                <button
-                  type="button"
-                  onClick={handleExpandAll}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all select-none cursor-pointer",
-                    groupViewState === "expanded"
-                      ? "bg-background text-primary font-semibold shadow-xs ring-1 ring-border"
-                      : "text-muted-foreground hover:text-foreground hover:bg-background/60",
-                  )}
-                  title="Expand all group sections"
-                >
-                  <ChevronsUpDown className="h-3.5 w-3.5 text-primary" />
-                  <span>Expand All</span>
-                </button>
-                <div className="h-4 w-px bg-border/70 my-auto" />
-                <button
-                  type="button"
-                  onClick={handleCollapseAll}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all select-none cursor-pointer",
-                    groupViewState === "collapsed"
-                      ? "bg-background text-primary font-semibold shadow-xs ring-1 ring-border"
-                      : "text-muted-foreground hover:text-foreground hover:bg-background/60",
-                  )}
-                  title="Collapse all group sections"
-                >
-                  <ChevronsUp className="h-3.5 w-3.5 text-primary" />
-                  <span>Collapse All</span>
-                </button>
-              </div>
-            )}
-
-            {/* Type Filter */}
+            {/* Sort */}
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                Type:
+                Sort:
               </span>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger
-                  className={cn(
-                    "w-[160px] h-9 text-xs transition-all",
-                    typeFilter !== "ALL" &&
-                      "border-primary bg-primary/10 font-semibold text-primary shadow-xs ring-1 ring-primary/30",
-                  )}
-                >
+              <Select
+                value={`${sortBy}:${sortDir}`}
+                onValueChange={handleSortSelect}
+              >
+                <SelectTrigger className="w-[220px] h-9 text-xs border-primary/50 bg-primary/5 font-medium">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All types</SelectItem>
-                  {MATERIAL_TYPES.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {MATERIAL_TYPE_LABELS[type]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Sort by */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                Sort by:
-              </span>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-[145px] h-9 text-xs border-primary/50 bg-primary/5 font-medium">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SORT_OPTIONS.map((o) => (
+                  {SORT_SELECT_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>
                       {o.label}
                     </SelectItem>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Order */}
-            <div className="flex items-center gap-1.5">
-              <Select value={sortDir} onValueChange={setSortDir}>
-                <SelectTrigger className="w-[125px] h-9 text-xs border-primary/50 bg-primary/5 font-medium">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="desc">Newest / Z-A</SelectItem>
-                  <SelectItem value="asc">Oldest / A-Z</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -925,18 +845,8 @@ export default function MaterialsPage() {
               className="border-primary/50 bg-primary/10 text-primary gap-1 font-normal"
             >
               <span className="font-semibold">Sorted:</span>{" "}
-              {SORT_OPTIONS.find((o) => o.value === sortBy)?.label} (
-              {sortDir === "desc" ? "Newest First" : "Oldest First"})
+              {sortSelectLabel(sortBy, sortDir)}
             </Badge>
-            {typeFilter !== "ALL" && (
-              <Badge
-                variant="outline"
-                className="border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400 gap-1 font-normal"
-              >
-                <span className="font-semibold">Filtered Type:</span>{" "}
-                {MATERIAL_TYPE_LABELS[typeFilter]}
-              </Badge>
-            )}
             {searchQuery && (
               <Badge
                 variant="outline"
@@ -1084,8 +994,8 @@ export default function MaterialsPage() {
                                 (m.availableStock ?? 0) <= 0
                                   ? "bg-destructive/10 text-destructive"
                                   : m.isLowStock
-                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                                  : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+                                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                                    : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
                               )}
                             >
                               {(m.availableStock ?? 0).toLocaleString()}{" "}
@@ -1146,8 +1056,8 @@ export default function MaterialsPage() {
                         (m.availableStock ?? 0) <= 0
                           ? "bg-destructive/10 text-destructive"
                           : m.isLowStock
-                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                            : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
                       )}
                     >
                       {(m.availableStock ?? 0).toLocaleString()} {m.unit || ""}
