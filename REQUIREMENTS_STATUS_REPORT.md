@@ -1,4 +1,5 @@
 # PaperFlow ERP - Client Requirements Status Report
+
 **Date:** July 9, 2026  
 **Meeting Purpose:** Architectural Review & Requirement Verification
 
@@ -13,6 +14,7 @@ The system has a **solid architectural foundation** with several critical featur
 ## ✅ FULLY IMPLEMENTED (6 Requirements)
 
 ### 1. ✅ Roll Management (COMPLETE)
+
 **Status: FULLY IMPLEMENTED**
 
 The system tracks individual paper rolls with complete identity management:
@@ -41,6 +43,7 @@ The system tracks individual paper rolls with complete identity management:
   - ✅ Roll data auto-syncs when units are consumed
 
 **Implementation Details:**
+
 - Database Model: `PaperRoll` with full audit trail
 - API: `/api/rolls`, `/api/materials/[id]/rolls`
 - Inventory syncing via `postInventoryTransaction()` updates remaining length/weight
@@ -49,6 +52,7 @@ The system tracks individual paper rolls with complete identity management:
 ---
 
 ### 2. ✅ Unit Conversion Engine (COMPLETE)
+
 **Status: FULLY IMPLEMENTED**
 
 Automatic unit conversion for all production measurements using Decimal precision:
@@ -70,6 +74,7 @@ Automatic unit conversion for all production measurements using Decimal precisio
   - ✅ All calculations audit-logged
 
 **Implementation Details:**
+
 - Core Service: `lib/services/unit-conversion.service.js`
 - Used in: `inventory.service.js`, `workflow.service.js`, `consumption.service.js`
 - UI Hints: `lib/conversion-hint.js` provides approximate conversions in worker forms
@@ -78,6 +83,7 @@ Automatic unit conversion for all production measurements using Decimal precisio
 ---
 
 ### 4. ✅ Glue Consumption Tracking (COMPLETE)
+
 **Status: FULLY IMPLEMENTED**
 
 Glue is tracked separately by type with planned vs. actual comparison:
@@ -96,6 +102,7 @@ Glue is tracked separately by type with planned vs. actual comparison:
   - ✅ `bottomGlueKgPerBag` stored in BagSpecification
 
 **Implementation Details:**
+
 - Database Model: `StageConsumption` with unique index on (stageId, consumptionKind)
 - Computation: `computePlannedGlue()` in consumption service
 - Workflow: Auto-recorded at BAG_MAKING stage and HANDLE_PASTING stage
@@ -105,6 +112,7 @@ Glue is tracked separately by type with planned vs. actual comparison:
 ---
 
 ### 5. ✅ Handle Production Management (COMPLETE)
+
 **Status: FULLY IMPLEMENTED**
 
 Handle manufacturing tracked as separate process with full inventory:
@@ -126,6 +134,7 @@ Handle manufacturing tracked as separate process with full inventory:
   - ✅ Real-time ledger balance
 
 **Implementation Details:**
+
 - Consumption Material: "HANDLE-ROPE" (material code)
 - Tracking: `getHandleStockSummary()` computes from all stages
 - Validation: `submitStage()` checks handle availability before accepting
@@ -134,6 +143,7 @@ Handle manufacturing tracked as separate process with full inventory:
 ---
 
 ### 8. ✅ Advanced Quality Control (COMPLETE)
+
 **Status: FULLY IMPLEMENTED**
 
 QC records include comprehensive defect tracking and audit data:
@@ -155,6 +165,7 @@ QC records include comprehensive defect tracking and audit data:
   - ✅ Photo evidence → enables technical analysis
 
 **Implementation Details:**
+
 - Database Models: `QCRecord`, `DefectType`, `DefectCategory`
 - Workflow: QC stages accept pass/reject with defect details
 - Reporting: Production order detail page shows all QC records
@@ -164,6 +175,7 @@ QC records include comprehensive defect tracking and audit data:
 ---
 
 ### 10. ✅ Executive Reports & KPIs (PARTIAL - Core Framework)
+
 **Status: PARTIALLY IMPLEMENTED**
 
 Manager dashboard with production KPIs already present:
@@ -182,6 +194,7 @@ Manager dashboard with production KPIs already present:
   - ✅ `/dashboard/admin/production` - production pipeline view
 
 **Implementation Details:**
+
 - KPI Service: `getManagerKpis()` aggregates counts
 - Inventory Queries: Stock calculated from transaction ledger
 - Real-time Updates: Counts query latest database state
@@ -192,6 +205,7 @@ Manager dashboard with production KPIs already present:
 ## ⚠️ PARTIALLY IMPLEMENTED (2 Requirements)
 
 ### 3. ⚠️ Ink Consumption Tracking (NOT IMPLEMENTED)
+
 **Status: FRAMEWORK EXISTS, COLOR SUPPORT MISSING**
 
 The consumption tracking framework exists and works for glue/handles, but ink colors are not yet modeled:
@@ -218,6 +232,7 @@ The consumption tracking framework exists and works for glue/handles, but ink co
 ---
 
 ### 10. ⚠️ Executive Reports & KPIs (PARTIAL - Missing Details)
+
 **Status: BASIC KPIs DONE, ADVANCED METRICS MISSING**
 
 Manager has basic KPIs but lacks detailed analytics:
@@ -255,6 +270,7 @@ Manager has basic KPIs but lacks detailed analytics:
 ## ❌ NOT IMPLEMENTED (4 Requirements)
 
 ### 6. ❌ Printing Parameters (NOT IMPLEMENTED)
+
 **Status: NO DATABASE SCHEMA**
 
 No structure exists to save printing machine setup information:
@@ -277,6 +293,7 @@ No structure exists to save printing machine setup information:
   - Option to auto-populate from previous order
 
 **Database Schema Needed:**
+
 ```
 model PrintingParameters {
   id                  String @id @default(cuid())
@@ -304,6 +321,7 @@ model PrintingParameters {
 ---
 
 ### 7. ❌ Machine Recipes (NOT IMPLEMENTED)
+
 **Status: NO DATABASE SCHEMA**
 
 No saved machine setup profiles exist:
@@ -325,6 +343,7 @@ No saved machine setup profiles exist:
   - Audit trail of recipe usage
 
 **Database Schema Needed:**
+
 ```
 model MachineRecipe {
   id                  String @id @default(cuid())
@@ -355,6 +374,7 @@ model MachineRecipe {
 ---
 
 ### 9. ❌ Preventive Maintenance (NOT IMPLEMENTED)
+
 **Status: DOWNTIME TRACKING EXISTS, MAINTENANCE SCHEDULING MISSING**
 
 System logs downtime but has no preventive maintenance scheduler:
@@ -374,6 +394,7 @@ System logs downtime but has no preventive maintenance scheduler:
   - ❌ Maintenance history per machine
 
 **Database Schema Needed:**
+
 ```
 enum MaintenanceFrequencyUnit {
   OPERATING_HOURS
@@ -394,17 +415,17 @@ model PreventiveMaintenance {
   machine           Machine @relation(fields: [machineId])
   maintenanceTypeId String
   maintenanceType   MaintenanceType @relation(fields: [maintenanceTypeId])
-  
+
   frequency         Int  // 500
   frequencyUnit     MaintenanceFrequencyUnit  // OPERATING_HOURS
-  
+
   dueAt             DateTime
   lastCompletedAt   DateTime?
   status            String  // PENDING, OVERDUE, IN_PROGRESS, COMPLETED
-  
+
   estimatedDurationMin Int?
   notes             String?
-  
+
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -420,6 +441,7 @@ model PreventiveMaintenance {
 ---
 
 ### 11. ❌ Real Manufacturing Cost Calculation (NOT IMPLEMENTED)
+
 **Status: NO COSTING ENGINE**
 
 System tracks consumption but does not calculate actual costs:
@@ -450,16 +472,18 @@ System tracks consumption but does not calculate actual costs:
   - Cost composition reporting
 
 **Effort to Complete**
-  - Add cost fields to Material model: 30 min
-  - Add worker wage config: 30 min
-  - Create costing calculation service: 3-4 hours
-  - Link to production orders: 1 hour
-  - Reporting dashboard: 2 hours
-  - Export detailed cost breakdown: 1.5 hours
+
+- Add cost fields to Material model: 30 min
+- Add worker wage config: 30 min
+- Create costing calculation service: 3-4 hours
+- Link to production orders: 1 hour
+- Reporting dashboard: 2 hours
+- Export detailed cost breakdown: 1.5 hours
 
 ---
 
 ### 12. ❌ Sales & Production Integration (NOT IMPLEMENTED)
+
 **Status: SALES MODULE EXISTS BUT NO ORDER INTEGRATION**
 
 Sales dashboard exists (CRM-style) but no automatic production order creation:
@@ -480,6 +504,7 @@ Sales dashboard exists (CRM-style) but no automatic production order creation:
   - ❌ Order confirmation workflow
 
 - **Required Database Schema**
+
   ```
   model SalesOrder {
     id                  String @id @default(cuid())
@@ -494,10 +519,10 @@ Sales dashboard exists (CRM-style) but no automatic production order creation:
     quotedPrice         Decimal?
     actualPrice         Decimal?
     status              String  // DRAFT, CONFIRMED, RESERVED, PRODUCTION, SHIPPED
-    
+
     productionOrderId   String? @unique
     productionOrder     ProductionOrder? @relation(fields: [productionOrderId])
-    
+
     createdAt           DateTime @default(now())
     updatedAt           DateTime @updatedAt
   }
@@ -526,26 +551,27 @@ Sales dashboard exists (CRM-style) but no automatic production order creation:
 
 ## Summary Table
 
-| # | Feature | Status | Effort to Complete |
-|---|---------|--------|-------------------|
-| 1 | Roll Management | ✅ DONE | — |
-| 2 | Unit Conversion | ✅ DONE | — |
-| 3 | Ink Consumption | ⚠️ PARTIAL | 3-4 hours |
-| 4 | Glue Consumption | ✅ DONE | — |
-| 5 | Handle Management | ✅ DONE | — |
-| 6 | Printing Parameters | ❌ NOT DONE | 4-5 hours |
-| 7 | Machine Recipes | ❌ NOT DONE | 5-6 hours |
-| 8 | Advanced QC | ✅ DONE | — |
-| 9 | Preventive Maintenance | ❌ NOT DONE | 7-8 hours |
-| 10 | Executive Reports | ⚠️ PARTIAL | 10-12 hours |
-| 11 | Manufacturing Cost Calc | ❌ NOT DONE | 8-10 hours |
-| 12 | Sales & Production Link | ❌ NOT DONE | 14-18 hours |
+| #   | Feature                 | Status      | Effort to Complete |
+| --- | ----------------------- | ----------- | ------------------ |
+| 1   | Roll Management         | ✅ DONE     | —                  |
+| 2   | Unit Conversion         | ✅ DONE     | —                  |
+| 3   | Ink Consumption         | ⚠️ PARTIAL  | 3-4 hours          |
+| 4   | Glue Consumption        | ✅ DONE     | —                  |
+| 5   | Handle Management       | ✅ DONE     | —                  |
+| 6   | Printing Parameters     | ❌ NOT DONE | 4-5 hours          |
+| 7   | Machine Recipes         | ❌ NOT DONE | 5-6 hours          |
+| 8   | Advanced QC             | ✅ DONE     | —                  |
+| 9   | Preventive Maintenance  | ❌ NOT DONE | 7-8 hours          |
+| 10  | Executive Reports       | ⚠️ PARTIAL  | 10-12 hours        |
+| 11  | Manufacturing Cost Calc | ❌ NOT DONE | 8-10 hours         |
+| 12  | Sales & Production Link | ❌ NOT DONE | 14-18 hours        |
 
 ---
 
 ## Architecture Quality Assessment
 
 ✅ **Strengths:**
+
 - Solid schema design with proper relationships
 - Decimal precision prevents rounding errors
 - Workflow engine is flexible and well-structured
@@ -555,12 +581,14 @@ Sales dashboard exists (CRM-style) but no automatic production order creation:
 - Inventory ledger-based (accurate and auditable)
 
 ✅ **Ready for Production:**
+
 - Roll management is enterprise-grade
 - Glue/handle tracking proven
 - QC system comprehensive
 - Workflow validation prevents invalid state transitions
 
 ⚠️ **Need Before Production:**
+
 - Ink consumption (critical for flexo printing)
 - Cost calculation (required for profitability decisions)
 - Sales integration (required for order pipeline)
@@ -570,14 +598,17 @@ Sales dashboard exists (CRM-style) but no automatic production order creation:
 ## Recommended Priority for Development
 
 ### Phase 1 (Essential - Weeks 1-2)
+
 1. Ink Consumption Tracking
 2. Manufacturing Cost Calculation
 
 ### Phase 2 (Important - Weeks 3-4)
+
 3. Printing Parameters
 4. Sales & Production Integration
 
 ### Phase 3 (Valuable - Weeks 5-6)
+
 5. Machine Recipes
 6. Advanced Executive Reports
 7. Preventive Maintenance
@@ -613,3 +644,14 @@ Sales dashboard exists (CRM-style) but no automatic production order creation:
 **System:** PaperFlow ERP v1.0  
 **Database:** PostgreSQL with Prisma ORM  
 **Frontend:** Next.js 15+ with React
+
+The all calculations of order line is in cm instead of mm.
+The users with role sales will be linked to the order Sales Rep.
+at each line item, there is one field more for the order is without handle or with handle.
+
+Remove the assign worker from the add order. (The order will be start showing into workers dashboards).
+The all calculations of order line is in cm instead of mm.
+The users with role sales will be linked to the order Sales Rep.
+at each line item, there is one field more for the order is without handle or with handle.
+
+Remove the assign worker from the add order. (The order will be start showing into workers dashboards).

@@ -8,10 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { FormField } from "@/components/ui/form-field";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -32,8 +40,12 @@ function buildInitialForm(stage, context) {
   const stg = context?.stage || stage || {};
   const isQc = QC_STAGE_TYPES.includes(stg.stageType);
   const qcRec = stg.qcRecords?.[0];
-  const sideConsumption = stg.consumptions?.find((c) => c.consumptionKind === "GLUE_SIDE");
-  const bottomConsumption = stg.consumptions?.find((c) => c.consumptionKind === "GLUE_BOTTOM");
+  const sideConsumption = stg.consumptions?.find(
+    (c) => c.consumptionKind === "GLUE_SIDE",
+  );
+  const bottomConsumption = stg.consumptions?.find(
+    (c) => c.consumptionKind === "GLUE_BOTTOM",
+  );
 
   let initialOutputQty = "";
   if (stg.outputQty != null) {
@@ -67,9 +79,15 @@ function buildInitialForm(stage, context) {
     materialId: stg.materialId || "",
     machineId: stg.machineId || "",
     outputQty: initialOutputQty,
-    cutWidthMm: stg.cutWidthMm != null ? String(stg.cutWidthMm) : (context?.suggestedCutWidthMm != null ? String(context.suggestedCutWidthMm) : ""),
+    cutWidthMm:
+      stg.cutWidthMm != null
+        ? String(stg.cutWidthMm)
+        : context?.suggestedCutWidthMm != null
+          ? String(context.suggestedCutWidthMm)
+          : "",
     remainderAction: stg.remainderAction || "",
-    lengthRestockQty: stg.lengthRestockQty != null ? String(stg.lengthRestockQty) : "0",
+    lengthRestockQty:
+      stg.lengthRestockQty != null ? String(stg.lengthRestockQty) : "0",
     pieceCount: stg.pieceCount != null ? String(stg.pieceCount) : "",
     pieceWeightKg: stg.pieceWeightKg != null ? String(stg.pieceWeightKg) : "",
     proofUrls: Array.isArray(stg.proofUrls) ? stg.proofUrls : [],
@@ -116,11 +134,22 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
         setPaperMaterials(all.filter((m) => m.materialType === "PAPER_ROLL"));
         setGlueMaterials(all.filter((m) => m.materialType === "GLUE"));
         setCartonMaterials(all.filter((m) => m.materialType === "CARTON"));
-        setMachines((mach.data.machines || []).filter((m) => m.stageType === stage.stageType));
-        setDefectTypes((defects.data.defectTypes || defects.data.types || []).filter((d) => d.stageType === stage.stageType));
+        setMachines(
+          (mach.data.machines || []).filter(
+            (m) => m.stageType === stage.stageType,
+          ),
+        );
+        setDefectTypes(
+          (defects.data.defectTypes || defects.data.types || []).filter(
+            (d) => d.stageType === stage.stageType,
+          ),
+        );
 
         const map = {};
-        for (const row of stock.data.stock || stock.data.materials || stock.data.stocks || []) {
+        for (const row of stock.data.stock ||
+          stock.data.materials ||
+          stock.data.stocks ||
+          []) {
           map[row.id] = Number(row.currentStock ?? row.stock ?? 0);
         }
         setStockById(map);
@@ -131,11 +160,13 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
   }, [stage.stageType]);
 
   useEffect(() => {
-    if (stage.stageType !== "HANDLE_MAKING_PASTING" || !context?.gluePlan) return;
+    if (stage.stageType !== "HANDLE_MAKING_PASTING" || !context?.gluePlan)
+      return;
     setForm((prev) => ({
       ...prev,
       glueSideQty: prev.glueSideQty || String(context.gluePlan.sideKg || 0),
-      glueBottomQty: prev.glueBottomQty || String(context.gluePlan.bottomKg || 0),
+      glueBottomQty:
+        prev.glueBottomQty || String(context.gluePlan.bottomKg || 0),
     }));
   }, [stage.stageType, context?.gluePlan]);
 
@@ -152,7 +183,13 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       gsm: context?.paperMaterial?.gsm,
       lengthRestockMeters: form.lengthRestockQty,
     });
-  }, [stage.stageType, inputQty, context?.paperMaterial, form.cutWidthMm, form.lengthRestockQty]);
+  }, [
+    stage.stageType,
+    inputQty,
+    context?.paperMaterial,
+    form.cutWidthMm,
+    form.lengthRestockQty,
+  ]);
 
   useEffect(() => {
     if (!slitPreview) return;
@@ -181,7 +218,8 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       ropePcs: bags * hpb,
       sideKg: bags * side,
       bottomKg: bags * bottom,
-      maxFromMeters: bpm > 0 && inputQty != null ? Math.floor(Number(inputQty) * bpm) : null,
+      maxFromMeters:
+        bpm > 0 && inputQty != null ? Math.floor(Number(inputQty) * bpm) : null,
     };
   }, [stage.stageType, form.outputQty, context?.bagSpec, inputQty]);
 
@@ -200,33 +238,40 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
 
     if (stage.stageType === "RAW_MATERIAL") {
       if (!form.materialId) next.materialId = "Select paper material";
-      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Enter meters issued";
+      if (!form.outputQty || Number(form.outputQty) <= 0)
+        next.outputQty = "Enter meters issued";
     }
     if (stage.stageType === "SLITTING") {
       if (!form.machineId) next.machineId = "Slitting machine required";
-      if (!form.cutWidthMm || Number(form.cutWidthMm) <= 0) next.cutWidthMm = "Cut width required";
+      if (!form.cutWidthMm || Number(form.cutWidthMm) <= 0)
+        next.cutWidthMm = "Cut width required";
       if (slitPreview?.widthRemainderMeters > 0 && !form.remainderAction) {
         next.remainderAction = "Choose waste or restock for width leftover";
       }
     }
     if (stage.stageType === "PRINTING") {
-      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Printed meters required";
+      if (!form.outputQty || Number(form.outputQty) <= 0)
+        next.outputQty = "Printed meters required";
     }
     if (isQc) {
-      if (form.passedQty === "" || Number(form.passedQty) < 0) next.passedQty = "Enter passed qty";
+      if (form.passedQty === "" || Number(form.passedQty) < 0)
+        next.passedQty = "Enter passed qty";
       if (inputQty != null && Number(form.passedQty) > Number(inputQty)) {
         next.passedQty = "Cannot exceed input";
       }
     }
     if (stage.stageType === "HANDLE_MAKING_PASTING") {
-      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Bags produced required";
+      if (!form.outputQty || Number(form.outputQty) <= 0)
+        next.outputQty = "Bags produced required";
     }
     if (stage.stageType === "PACKING") {
-      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Cartons required";
+      if (!form.outputQty || Number(form.outputQty) <= 0)
+        next.outputQty = "Cartons required";
       if (!form.cartonMaterialId) next.cartonMaterialId = "Select carton type";
     }
     if (stage.stageType === "DISPATCH") {
-      if (!form.outputQty || Number(form.outputQty) <= 0) next.outputQty = "Dispatched qty required";
+      if (!form.outputQty || Number(form.outputQty) <= 0)
+        next.outputQty = "Dispatched qty required";
     }
 
     setErrors(next);
@@ -238,10 +283,13 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const { data } = await api.post("/uploads/qc", fd, {
+      const { data } = await api.post("/uploads", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      setForm((prev) => ({ ...prev, proofUrls: [...prev.proofUrls, data.photoUrl] }));
+      setForm((prev) => ({
+        ...prev,
+        proofUrls: [...prev.proofUrls, data.photoUrl],
+      }));
       setErrors((prev) => {
         const next = { ...prev };
         delete next.proofUrls;
@@ -297,7 +345,10 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             }
           : undefined,
       };
-      await api.post(`/production/orders/${orderId}/stages/${stage.id}/record`, payload);
+      await api.post(
+        `/production/orders/${orderId}/stages/${stage.id}/record`,
+        payload,
+      );
       toast.success("Stage recorded");
       onDone();
     } catch (e) {
@@ -313,7 +364,10 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
         <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
           Prefill input: <strong>{inputQty ?? "—"}</strong> {stage.inputUnit}
           {stage.stageType === "PRINTING" && (
-            <span className="text-muted-foreground"> (slit meters × cut pieces)</span>
+            <span className="text-muted-foreground">
+              {" "}
+              (slit meters × cut pieces)
+            </span>
           )}
         </div>
       )}
@@ -355,7 +409,9 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             {form.materialId && (
               <p className="text-xs text-muted-foreground mt-1">
                 Available stock for this paper:{" "}
-                <strong>{selectedPaperStock != null ? `${selectedPaperStock} m` : "—"}</strong>
+                <strong>
+                  {selectedPaperStock != null ? `${selectedPaperStock} m` : "—"}
+                </strong>
               </p>
             )}
           </FormField>
@@ -399,23 +455,33 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
           {context?.paperMaterial && (
             <p className="text-xs text-muted-foreground">
               Parent paper: {context.paperMaterial.name} · width{" "}
-              {context.paperMaterial.paperWidthMm ?? "—"} mm · input {inputQty ?? "—"} m
+              {context.paperMaterial.paperWidthMm ?? "—"} mm · input{" "}
+              {inputQty ?? "—"} m
             </p>
           )}
           {slitPreview && (
             <div className="rounded-md border px-3 py-2 text-sm space-y-1">
-              <p>Pieces across width: <strong>{slitPreview.pieceCount}</strong></p>
               <p>
-                Gross usable: {inputQty} × {slitPreview.pieceCount} ={" "}
-                <strong>{(Number(inputQty || 0) * slitPreview.pieceCount).toFixed(2)} m</strong>
+                Pieces across width: <strong>{slitPreview.pieceCount}</strong>
               </p>
               <p>
-                Width leftover: <strong>{slitPreview.widthRemainderMm} mm</strong> strip × {inputQty} m
-                {" "}(= {Number(slitPreview.widthRemainderMeters || 0).toFixed(2)} m)
+                Gross usable: {inputQty} × {slitPreview.pieceCount} ={" "}
+                <strong>
+                  {(Number(inputQty || 0) * slitPreview.pieceCount).toFixed(2)}{" "}
+                  m
+                </strong>
+              </p>
+              <p>
+                Width leftover:{" "}
+                <strong>{slitPreview.widthRemainderMm} mm</strong> strip ×{" "}
+                {inputQty} m (={" "}
+                {Number(slitPreview.widthRemainderMeters || 0).toFixed(2)} m)
               </p>
               <p>
                 After length restock → next stage input:{" "}
-                <strong>{Number(slitPreview.usableMeters || 0).toFixed(2)} m</strong>
+                <strong>
+                  {Number(slitPreview.usableMeters || 0).toFixed(2)} m
+                </strong>
               </p>
             </div>
           )}
@@ -438,11 +504,20 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
               error={errors.remainderAction}
               hint="Leftover width strip — you choose restock or waste (not auto)."
             >
-              <Select value={form.remainderAction} onValueChange={(v) => patch("remainderAction", v)}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Waste or Restock" /></SelectTrigger>
+              <Select
+                value={form.remainderAction}
+                onValueChange={(v) => patch("remainderAction", v)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Waste or Restock" />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="RESTOCK">Restock leftover width strip</SelectItem>
-                  <SelectItem value="WASTE">Mark leftover width as waste</SelectItem>
+                  <SelectItem value="RESTOCK">
+                    Restock leftover width strip
+                  </SelectItem>
+                  <SelectItem value="WASTE">
+                    Mark leftover width as waste
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </FormField>
@@ -466,7 +541,8 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
           />
           {inputQty != null && form.outputQty !== "" && (
             <p className="text-xs text-muted-foreground mt-1">
-              Waste (auto): {(Number(inputQty) - Number(form.outputQty || 0)).toFixed(2)} m
+              Waste (auto):{" "}
+              {(Number(inputQty) - Number(form.outputQty || 0)).toFixed(2)} m
             </p>
           )}
         </FormField>
@@ -488,7 +564,9 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             />
           </FormField>
           <p className="text-sm">
-            Rejected (auto): <strong>{rejectedLive != null ? rejectedLive : "—"}</strong> {stage.inputUnit}
+            Rejected (auto):{" "}
+            <strong>{rejectedLive != null ? rejectedLive : "—"}</strong>{" "}
+            {stage.inputUnit}
           </p>
           {defectTypes.length > 0 && (
             <FormField label="Defect type" hint="Optional reason for rejects.">
@@ -514,18 +592,25 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             {context?.handleCapacity && (
               <p>
                 Max from rope + meters:{" "}
-                <strong>{Math.floor(context.handleCapacity.capacityBags)}</strong> bags
+                <strong>
+                  {Math.floor(context.handleCapacity.capacityBags)}
+                </strong>{" "}
+                bags
               </p>
             )}
             {context?.gluePlan && (
               <>
-                <p>Bags / meter (spec): {context.gluePlan.bagsPerMeter ?? "—"}</p>
+                <p>
+                  Bags / meter (spec): {context.gluePlan.bagsPerMeter ?? "—"}
+                </p>
                 <p>Handles / bag: {context.gluePlan.handlesPerBag}</p>
               </>
             )}
             {handleBagsPlan && (
               <p className="text-muted-foreground">
-                For entered bags → rope ~{handleBagsPlan.ropePcs} pcs · side glue ~{handleBagsPlan.sideKg.toFixed(4)} kg · bottom ~{handleBagsPlan.bottomKg.toFixed(4)} kg
+                For entered bags → rope ~{handleBagsPlan.ropePcs} pcs · side
+                glue ~{handleBagsPlan.sideKg.toFixed(4)} kg · bottom ~
+                {handleBagsPlan.bottomKg.toFixed(4)} kg
               </p>
             )}
           </div>
@@ -556,7 +641,10 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
               />
               {glueMaterials.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Stock: {glueMaterials.map((g) => `${g.name} ${stockById[g.id] ?? "?"}kg`).join(" · ")}
+                  Stock:{" "}
+                  {glueMaterials
+                    .map((g) => `${g.name} ${stockById[g.id] ?? "?"}kg`)
+                    .join(" · ")}
                 </p>
               )}
             </FormField>
@@ -614,7 +702,12 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       )}
 
       {stage.stageType === "DISPATCH" && (
-        <FormField label="Cartons dispatched" required error={errors.outputQty} hint="Qty leaving the factory.">
+        <FormField
+          label="Cartons dispatched"
+          required
+          error={errors.outputQty}
+          hint="Qty leaving the factory."
+        >
           <Input
             type="number"
             min="1"
@@ -640,28 +733,49 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
         </FormField>
       )}
 
-      <FormField label="Proof images" required error={errors.proofUrls} hint="Photo evidence for this stage.">
+      <FormField
+        label="Proof images"
+        required
+        error={errors.proofUrls}
+        hint="Photo evidence for this stage."
+      >
         <Input
           type="file"
           accept="image/jpeg,image/png,image/webp"
           disabled={uploading}
-          onChange={(e) => e.target.files?.[0] && uploadProof(e.target.files[0])}
+          onChange={(e) =>
+            e.target.files?.[0] && uploadProof(e.target.files[0])
+          }
         />
         <div className="flex flex-wrap gap-2 mt-2">
           {form.proofUrls.map((url) => (
-            <a key={url} href={url} target="_blank" rel="noreferrer" className="text-xs text-primary underline">{url}</a>
+            <a
+              key={url}
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-primary underline"
+            >
+              {url}
+            </a>
           ))}
         </div>
       </FormField>
 
       <FormField label="Remarks" hint="Optional note.">
-        <Input value={form.remarks} onChange={(e) => patch("remarks", e.target.value)} />
+        <Input
+          value={form.remarks}
+          onChange={(e) => patch("remarks", e.target.value)}
+        />
       </FormField>
 
       <DialogFooter>
-        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
         <Button onClick={handleSubmit} disabled={saving || uploading}>
-          {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save record
+          {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save
+          record
         </Button>
       </DialogFooter>
     </div>
@@ -691,7 +805,9 @@ export default function ProductionOrderDetailPage() {
     }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   useEffect(() => {
     (async () => {
@@ -713,7 +829,9 @@ export default function ProductionOrderDetailPage() {
     setLoadingContext(true);
     setRecordStage(stage);
     try {
-      const { data } = await api.get(`/production/orders/${id}/stages/${stage.id}/record`);
+      const { data } = await api.get(
+        `/production/orders/${id}/stages/${stage.id}/record`,
+      );
       setRecordContext(data.context);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
@@ -740,7 +858,11 @@ export default function ProductionOrderDetailPage() {
   }
 
   if (loading) {
-    return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+    return (
+      <div className="flex justify-center py-16">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
   }
   if (!order) {
     return <p className="text-muted-foreground">Order not found</p>;
@@ -750,13 +872,20 @@ export default function ProductionOrderDetailPage() {
     <div className="space-y-6">
       <div className="flex items-start gap-3">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/dashboard/admin/production"><ArrowLeft className="h-4 w-4" /></Link>
+          <Link href="/dashboard/admin/production">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
         </Button>
         <div className="flex-1 space-y-3">
           <div>
             <h1 className="text-2xl font-bold font-mono">{order.orderNo}</h1>
             <p className="text-muted-foreground flex flex-wrap items-center gap-2">
-              <span>{order.customer?.name} {order.customer?.companyName ? `(${order.customer.companyName})` : ""}</span>
+              <span>
+                {order.customer?.name}{" "}
+                {order.customer?.companyName
+                  ? `(${order.customer.companyName})`
+                  : ""}
+              </span>
               {order.salesRep && (
                 <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-medium">
                   Sales Rep: {order.salesRep}
@@ -772,7 +901,10 @@ export default function ProductionOrderDetailPage() {
                   Delivery: {new Date(order.deliveryDate).toLocaleDateString()}
                 </span>
               )}
-              <Badge variant="outline" className={cn("font-medium", ORDER_STATUS_COLORS[order.status])}>
+              <Badge
+                variant="outline"
+                className={cn("font-medium", ORDER_STATUS_COLORS[order.status])}
+              >
                 {order.status}
               </Badge>
             </p>
@@ -781,10 +913,12 @@ export default function ProductionOrderDetailPage() {
           {materialSummary && (
             <div className="grid gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm sm:grid-cols-2">
               <p>
-                Paper used: <strong>{materialSummary.usedMeters.toFixed(2)} m</strong>
+                Paper used:{" "}
+                <strong>{materialSummary.usedMeters.toFixed(2)} m</strong>
               </p>
               <p>
-                Paper / meter waste: <strong>{materialSummary.wasteMeters.toFixed(2)} m</strong>
+                Paper / meter waste:{" "}
+                <strong>{materialSummary.wasteMeters.toFixed(2)} m</strong>
               </p>
               <p>
                 Bags made: <strong>{materialSummary.usedBags}</strong>
@@ -810,16 +944,19 @@ export default function ProductionOrderDetailPage() {
                 searchPlaceholder="Search worker..."
               />
             </FormField>
-            {assigning && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            {assigning && (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            )}
           </div>
         </div>
       </div>
 
       {(order.lines || []).map((line) => {
         const progress = getOrderLineProgressRows({ lines: [line] })[0];
-        const dims = line.heightMm || line.widthMm || line.baseMm
-          ? `${line.heightMm || 0} × ${line.widthMm || 0} × ${line.baseMm || 0} mm`
-          : "—";
+        const dims =
+          line.heightMm || line.widthMm || line.baseMm
+            ? `${line.heightMm || 0} × ${line.widthMm || 0} × ${line.baseMm || 0} mm`
+            : "—";
         const currentStage = getLineCurrentStage(line);
 
         return (
@@ -827,9 +964,14 @@ export default function ProductionOrderDetailPage() {
             <div className="border-b px-4 py-3 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3">
                 <p className="font-medium">
-                  Line #{line.lineNo}: <span className="font-mono text-primary font-semibold">{dims}</span>
+                  Line #{line.lineNo}:{" "}
+                  <span className="font-mono text-primary font-semibold">
+                    {dims}
+                  </span>
                 </p>
-                <span className="text-sm text-muted-foreground">{line.plannedQty} bags</span>
+                <span className="text-sm text-muted-foreground">
+                  {line.plannedQty} bags
+                </span>
                 {line.fileUrl && (
                   <a
                     href={line.fileUrl}
@@ -842,7 +984,10 @@ export default function ProductionOrderDetailPage() {
                 )}
               </div>
               {progress && (
-                <Badge variant="outline" className={cn("font-medium", progress.className)}>
+                <Badge
+                  variant="outline"
+                  className={cn("font-medium", progress.className)}
+                >
                   {progress.stageLabel}
                 </Badge>
               )}
@@ -850,22 +995,29 @@ export default function ProductionOrderDetailPage() {
             <div className="divide-y">
               {(line.stages || []).map((stage) => {
                 const isCurrent = stage.id === currentStage?.id;
-                const isPrevious = stage.status === "COMPLETED" || stage.sequence < (currentStage?.sequence || 0);
+                const isPrevious =
+                  stage.status === "COMPLETED" ||
+                  stage.sequence < (currentStage?.sequence || 0);
 
                 return (
                   <div
                     key={stage.id}
                     className={cn(
                       "flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between transition-colors",
-                      isCurrent && "bg-primary/5 dark:bg-primary/10"
+                      isCurrent && "bg-primary/5 dark:bg-primary/10",
                     )}
                   >
                     <div>
                       <p className="font-medium flex flex-wrap items-center gap-2">
-                        <span>{stage.sequence}. {getStageLabel(stage.stageType)}</span>
+                        <span>
+                          {stage.sequence}. {getStageLabel(stage.stageType)}
+                        </span>
                         <Badge
                           variant="outline"
-                          className={cn("font-medium", getStageStatusColor(stage.status))}
+                          className={cn(
+                            "font-medium",
+                            getStageStatusColor(stage.status),
+                          )}
                         >
                           {stage.status}
                         </Badge>
@@ -876,14 +1028,22 @@ export default function ProductionOrderDetailPage() {
                         )}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {stage.outputQty != null && `out ${stage.outputQty} ${stage.outputUnit || ""}`}
-                        {stage.wasteQty != null && Number(stage.wasteQty) > 0 && ` · waste ${stage.wasteQty}`}
+                        {stage.outputQty != null &&
+                          `out ${stage.outputQty} ${stage.outputUnit || ""}`}
+                        {stage.wasteQty != null &&
+                          Number(stage.wasteQty) > 0 &&
+                          ` · waste ${stage.wasteQty}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       {stage.status === "COMPLETED" && (
-                        <Button variant="outline" size="sm" onClick={() => setPreviewStage(stage)}>
-                          <Eye className="h-4 w-4 mr-1" />Preview Input
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPreviewStage(stage)}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          Preview Input
                         </Button>
                       )}
                       {isPrevious ? (
@@ -931,36 +1091,58 @@ export default function ProductionOrderDetailPage() {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {recordStage?.status === "COMPLETED" ? "Update Input — " : "Record — "}
+              {recordStage?.status === "COMPLETED"
+                ? "Update Input — "
+                : "Record — "}
               {recordStage ? getStageLabel(recordStage.stageType) : ""}
             </DialogTitle>
           </DialogHeader>
           {loadingContext || !recordContext ? (
-            <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>
+            <div className="py-8 flex justify-center">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
           ) : (
             <StageRecordForm
               orderId={id}
               stage={recordStage}
               context={recordContext}
-              onCancel={() => { setRecordStage(null); setRecordContext(null); }}
-              onDone={() => { setRecordStage(null); setRecordContext(null); load(); }}
+              onCancel={() => {
+                setRecordStage(null);
+                setRecordContext(null);
+              }}
+              onDone={() => {
+                setRecordStage(null);
+                setRecordContext(null);
+                load();
+              }}
             />
           )}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!previewStage} onOpenChange={(open) => !open && setPreviewStage(null)}>
+      <Dialog
+        open={!!previewStage}
+        onOpenChange={(open) => !open && setPreviewStage(null)}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
-              <span>Preview — {previewStage ? getStageLabel(previewStage.stageType) : ""}</span>
+              <span>
+                Preview —{" "}
+                {previewStage ? getStageLabel(previewStage.stageType) : ""}
+              </span>
             </DialogTitle>
           </DialogHeader>
           {previewStage && (
             <div className="space-y-4 text-sm py-2">
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40 border">
-                <span className="text-muted-foreground font-medium">Stage Status</span>
-                <Badge variant="outline" className={getStageStatusColor(previewStage.status)}>
+                <span className="text-muted-foreground font-medium">
+                  Stage Status
+                </span>
+                <Badge
+                  variant="outline"
+                  className={getStageStatusColor(previewStage.status)}
+                >
                   {previewStage.status}
                 </Badge>
               </div>
@@ -968,53 +1150,106 @@ export default function ProductionOrderDetailPage() {
               <div className="grid grid-cols-3 gap-3 p-3 rounded-lg border bg-card text-center">
                 <div>
                   <p className="text-xs text-muted-foreground">Input</p>
-                  <p className="font-semibold text-base">{previewStage.inputQty ?? "—"} <span className="text-xs text-muted-foreground">{previewStage.inputUnit}</span></p>
+                  <p className="font-semibold text-base">
+                    {previewStage.inputQty ?? "—"}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      {previewStage.inputUnit}
+                    </span>
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Output</p>
-                  <p className="font-semibold text-base text-emerald-600 dark:text-emerald-400">{previewStage.outputQty ?? "—"} <span className="text-xs text-muted-foreground">{previewStage.outputUnit}</span></p>
+                  <p className="font-semibold text-base text-emerald-600 dark:text-emerald-400">
+                    {previewStage.outputQty ?? "—"}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      {previewStage.outputUnit}
+                    </span>
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Waste</p>
-                  <p className="font-semibold text-base text-destructive">{previewStage.wasteQty ?? "—"}</p>
+                  <p className="font-semibold text-base text-destructive">
+                    {previewStage.wasteQty ?? "—"}
+                  </p>
                 </div>
               </div>
 
-              {(previewStage.cutWidthMm != null || previewStage.pieceCount != null || previewStage.lengthRestockQty != null) && (
+              {(previewStage.cutWidthMm != null ||
+                previewStage.pieceCount != null ||
+                previewStage.lengthRestockQty != null) && (
                 <div className="space-y-1.5 p-3 rounded-lg border bg-muted/20">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Slitting Details</p>
-                  {previewStage.cutWidthMm != null && <p>Cut Width: <strong>{previewStage.cutWidthMm} mm</strong></p>}
-                  {previewStage.pieceCount != null && <p>Pieces Across Width: <strong>{previewStage.pieceCount}</strong></p>}
-                  {previewStage.lengthRestockQty != null && <p>Length Restock: <strong>{previewStage.lengthRestockQty} m</strong></p>}
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Slitting Details
+                  </p>
+                  {previewStage.cutWidthMm != null && (
+                    <p>
+                      Cut Width: <strong>{previewStage.cutWidthMm} mm</strong>
+                    </p>
+                  )}
+                  {previewStage.pieceCount != null && (
+                    <p>
+                      Pieces Across Width:{" "}
+                      <strong>{previewStage.pieceCount}</strong>
+                    </p>
+                  )}
+                  {previewStage.lengthRestockQty != null && (
+                    <p>
+                      Length Restock:{" "}
+                      <strong>{previewStage.lengthRestockQty} m</strong>
+                    </p>
+                  )}
                   {previewStage.remainderAction && (
-                    <p>Width Leftover: <strong>{previewStage.remainderQty}</strong> → {previewStage.remainderAction}</p>
+                    <p>
+                      Width Leftover:{" "}
+                      <strong>{previewStage.remainderQty}</strong> →{" "}
+                      {previewStage.remainderAction}
+                    </p>
                   )}
                 </div>
               )}
 
               {previewStage.remarks && (
                 <div className="p-3 rounded-lg border bg-muted/20">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Remarks</p>
-                  <p className="text-foreground italic">{previewStage.remarks}</p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                    Remarks
+                  </p>
+                  <p className="text-foreground italic">
+                    {previewStage.remarks}
+                  </p>
                 </div>
               )}
 
-              {Array.isArray(previewStage.proofUrls) && previewStage.proofUrls.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Proof Images</p>
-                  <div className="flex flex-wrap gap-2">
-                    {previewStage.proofUrls.map((url) => (
-                      <a key={url} href={url} target="_blank" rel="noreferrer" className="group relative">
-                        <img src={url} alt="Proof" className="h-16 w-16 rounded-md object-cover border group-hover:opacity-80 transition-opacity" />
-                      </a>
-                    ))}
+              {Array.isArray(previewStage.proofUrls) &&
+                previewStage.proofUrls.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Proof Images
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {previewStage.proofUrls.map((url) => (
+                        <a
+                          key={url}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="group relative"
+                        >
+                          <img
+                            src={url}
+                            alt="Proof"
+                            className="h-16 w-16 rounded-md object-cover border group-hover:opacity-80 transition-opacity"
+                          />
+                        </a>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
             </div>
           )}
           <DialogFooter className="flex flex-row justify-between sm:justify-between items-center pt-2 border-t">
-            <Button variant="outline" onClick={() => setPreviewStage(null)}>Close</Button>
+            <Button variant="outline" onClick={() => setPreviewStage(null)}>
+              Close
+            </Button>
             <Button
               onClick={() => {
                 const target = previewStage;

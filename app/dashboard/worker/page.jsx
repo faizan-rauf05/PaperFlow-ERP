@@ -273,7 +273,7 @@ export default function WorkerMobileDashboard() {
       const fd = new FormData();
       fd.append("file", file);
 
-      const { data } = await api.post("/uploads/qc", fd, {
+      const { data } = await api.post("/uploads", fd, {
         headers: {
           "Content-Type": "multipart/form-data",
         },

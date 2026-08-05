@@ -65,7 +65,7 @@ import {
   generateMaterialCode,
   getMaterialSummary,
   materialToFormValues,
-  generatePaperRollBarcode
+  generatePaperRollBarcode,
 } from "@/lib/material-code";
 import {
   PAPER_COLORS,
@@ -97,8 +97,8 @@ const SORT_SELECT_OPTIONS = [
 
 function sortSelectLabel(sortBy, sortDir) {
   return (
-    SORT_SELECT_OPTIONS.find((o) => o.value === `${sortBy}:${sortDir}`)?.label ||
-    `${sortBy} (${sortDir === "desc" ? "desc" : "asc"})`
+    SORT_SELECT_OPTIONS.find((o) => o.value === `${sortBy}:${sortDir}`)
+      ?.label || `${sortBy} (${sortDir === "desc" ? "desc" : "asc"})`
   );
 }
 
@@ -184,7 +184,6 @@ const emptyForm = {
   weightKg: "",
   ropeColor: "",
   ropeLengthM: "",
-  ropeWeightKg: "",
   tapeType: "",
   sheetCount: "",
   cartonSize: "",
@@ -195,7 +194,8 @@ const emptyForm = {
 
 function TypeSpecificFields({ form, errors, patchForm }) {
   const [isCustomWidth, setIsCustomWidth] = useState(
-    form.paperWidthMm && !PAPER_WIDTH_PRESETS.includes(Number(form.paperWidthMm)),
+    form.paperWidthMm &&
+      !PAPER_WIDTH_PRESETS.includes(Number(form.paperWidthMm)),
   );
 
   switch (form.materialType) {
@@ -208,7 +208,9 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                 value={form.paperType}
                 onValueChange={(v) => patchForm("paperType", v)}
               >
-                <SelectTrigger className={selectTriggerClass(!!errors.paperType)}>
+                <SelectTrigger
+                  className={selectTriggerClass(!!errors.paperType)}
+                >
                   <SelectValue placeholder="Select paper type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -226,7 +228,9 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                 value={form.paperColor}
                 onValueChange={(v) => patchForm("paperColor", v)}
               >
-                <SelectTrigger className={selectTriggerClass(!!errors.paperColor)}>
+                <SelectTrigger
+                  className={selectTriggerClass(!!errors.paperColor)}
+                >
                   <SelectValue placeholder="Select paper color" />
                 </SelectTrigger>
                 <SelectContent>
@@ -241,12 +245,18 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Paper Width (mm)" required error={errors.paperWidthMm}>
+            <FormField
+              label="Paper Width (mm)"
+              required
+              error={errors.paperWidthMm}
+            >
               <Select
                 value={
                   isCustomWidth
                     ? "custom"
-                    : form.paperWidthMm ? String(form.paperWidthMm) : ""
+                    : form.paperWidthMm
+                      ? String(form.paperWidthMm)
+                      : ""
                 }
                 onValueChange={(v) => {
                   if (v === "custom") {
@@ -257,7 +267,9 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                   }
                 }}
               >
-                <SelectTrigger className={selectTriggerClass(!!errors.paperWidthMm)}>
+                <SelectTrigger
+                  className={selectTriggerClass(!!errors.paperWidthMm)}
+                >
                   <SelectValue placeholder="Select width" />
                 </SelectTrigger>
                 <SelectContent>
@@ -272,7 +284,11 @@ function TypeSpecificFields({ form, errors, patchForm }) {
             </FormField>
 
             {isCustomWidth && (
-              <FormField label="Custom Width (mm)" required error={errors.paperWidthMm}>
+              <FormField
+                label="Custom Width (mm)"
+                required
+                error={errors.paperWidthMm}
+              >
                 <Input
                   type="number"
                   min="1"
@@ -325,7 +341,10 @@ function TypeSpecificFields({ form, errors, patchForm }) {
             <FormField label="Bar code" error={errors.barCode}>
               <div className="flex gap-2">
                 <Input
-                  className={fieldClassName("font-mono text-xs", !!errors.barCode)}
+                  className={fieldClassName(
+                    "font-mono text-xs",
+                    !!errors.barCode,
+                  )}
                   value={form.barCode || ""}
                   onChange={(e) => patchForm("barCode", e.target.value)}
                   placeholder="Barcode number / string"
@@ -450,32 +469,16 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               </SelectContent>
             </Select>
           </FormField>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField label="Length (m)" required error={errors.ropeLengthM}>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                className={fieldClassName("", !!errors.ropeLengthM)}
-                value={form.ropeLengthM}
-                onChange={(e) => patchForm("ropeLengthM", e.target.value)}
-              />
-            </FormField>
-            <FormField
-              label="Rope Weight (kg)"
-              required
-              error={errors.ropeWeightKg}
-            >
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                className={fieldClassName("", !!errors.ropeWeightKg)}
-                value={form.ropeWeightKg}
-                onChange={(e) => patchForm("ropeWeightKg", e.target.value)}
-              />
-            </FormField>
-          </div>
+          <FormField label="Length (m)" required error={errors.ropeLengthM}>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              className={fieldClassName("", !!errors.ropeLengthM)}
+              value={form.ropeLengthM}
+              onChange={(e) => patchForm("ropeLengthM", e.target.value)}
+            />
+          </FormField>
         </>
       );
     case "KAPTON":
@@ -756,7 +759,7 @@ export default function MaterialsPage() {
               className={cn(
                 "pl-9 pr-8 transition-all",
                 searchQuery &&
-                "border-primary ring-1 ring-primary/30 bg-primary/5 font-medium",
+                  "border-primary ring-1 ring-primary/30 bg-primary/5 font-medium",
               )}
             />
             {searchQuery && (
@@ -788,7 +791,7 @@ export default function MaterialsPage() {
                   className={cn(
                     "w-[155px] h-9 text-xs transition-all",
                     groupBy !== "none" &&
-                    "border-primary bg-primary/10 font-semibold text-primary shadow-xs ring-1 ring-primary/30",
+                      "border-primary bg-primary/10 font-semibold text-primary shadow-xs ring-1 ring-primary/30",
                   )}
                 >
                   <SelectValue />

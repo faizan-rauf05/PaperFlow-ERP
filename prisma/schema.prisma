@@ -96,14 +96,15 @@ model Material {
   materialType      MaterialType
   name              String
   code              String                 @unique
-  supplier          String?
+  supplierId        String?
+  supplier          Supplier?              @relation(fields: [supplierId], references: [id])
   unit              String
   minimumStock      Decimal                @default(0) @db.Decimal(14, 4)
   kgPerMeter        Decimal?               @db.Decimal(14, 6)
   paperType         String?
   paperColor        String?
   paperLengthM      Decimal?               @db.Decimal(14, 4)
-  paperWidthMm      Decimal?               @db.Decimal(10, 2)
+  paperWidthCm      Decimal?               @db.Decimal(10, 2)
   gsm               Int?
   receivingDate     DateTime?
   barCode           String?
@@ -396,3 +397,15 @@ model YieldRecord {
 
   @@index([orderId])
 }
+
+model Supplier {
+  id           String   @id @default(cuid())
+  name         String
+  address      String?
+  contactNumber String?
+  isActive     Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  materials    Material[]
+}
+

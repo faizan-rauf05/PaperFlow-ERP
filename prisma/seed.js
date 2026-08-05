@@ -7,7 +7,8 @@ const { Pool } = require("pg");
 function getDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
   const prismaUrl = process.env.PRISMA_URL;
-  if (prismaUrl && (!databaseUrl || databaseUrl.startsWith("prisma+"))) return prismaUrl;
+  if (prismaUrl && (!databaseUrl || databaseUrl.startsWith("prisma+")))
+    return prismaUrl;
   return databaseUrl || prismaUrl || "";
 }
 
@@ -67,7 +68,6 @@ const MATERIALS = [
     unit: "PCS",
     ropeColor: "WHITE",
     ropeLengthM: 100,
-    ropeWeightKg: 2,
     minimumStock: 1000,
   },
 ];
@@ -75,7 +75,11 @@ const MATERIALS = [
 const MACHINES = [
   { machineCode: "SLIT-01", name: "Slitting Machine 1", stageType: "SLITTING" },
   { machineCode: "FLEXO-01", name: "Flexo Printer 1", stageType: "PRINTING" },
-  { machineCode: "HANDLE-01", name: "Handle Make & Paste 1", stageType: "HANDLE_MAKING_PASTING" },
+  {
+    machineCode: "HANDLE-01",
+    name: "Handle Make & Paste 1",
+    stageType: "HANDLE_MAKING_PASTING",
+  },
   { machineCode: "PACK-01", name: "Packing Line 1", stageType: "PACKING" },
 ];
 
@@ -86,10 +90,30 @@ const DEFECT_CATEGORIES = [
 ];
 
 const DEFECTS = [
-  { stageType: "PRINT_QC", code: "MISALIGNMENT", description: "Print misalignment", categoryCode: "PRINT" },
-  { stageType: "PRINT_QC", code: "SMUDGE", description: "Ink smudge", categoryCode: "PRINT" },
-  { stageType: "QUALITY_CHECK", code: "SIZE_VAR", description: "Size variation", categoryCode: "MATERIAL" },
-  { stageType: "QUALITY_CHECK", code: "HANDLE_DEF", description: "Handle defect", categoryCode: "HANDLE" },
+  {
+    stageType: "PRINT_QC",
+    code: "MISALIGNMENT",
+    description: "Print misalignment",
+    categoryCode: "PRINT",
+  },
+  {
+    stageType: "PRINT_QC",
+    code: "SMUDGE",
+    description: "Ink smudge",
+    categoryCode: "PRINT",
+  },
+  {
+    stageType: "QUALITY_CHECK",
+    code: "SIZE_VAR",
+    description: "Size variation",
+    categoryCode: "MATERIAL",
+  },
+  {
+    stageType: "QUALITY_CHECK",
+    code: "HANDLE_DEF",
+    description: "Handle defect",
+    categoryCode: "HANDLE",
+  },
 ];
 
 async function main() {
@@ -98,7 +122,12 @@ async function main() {
   for (const user of TEST_USERS) {
     await prisma.user.upsert({
       where: { email: user.email },
-      update: { name: user.name, role: user.role, passwordHash, isActive: true },
+      update: {
+        name: user.name,
+        role: user.role,
+        passwordHash,
+        isActive: true,
+      },
       create: { ...user, passwordHash, isActive: true },
     });
     console.log(`Seeded ${user.role}: ${user.email}`);
@@ -113,10 +142,18 @@ async function main() {
   }
   console.log("Seeded materials");
 
-  const kraft = await prisma.material.findUnique({ where: { code: "PAPER-BRN-80-1200" } });
-  const glueHot = await prisma.material.findUnique({ where: { code: "GLUE-HOT-25" } });
-  const glueCold = await prisma.material.findUnique({ where: { code: "GLUE-COLD-25" } });
-  const handleRope = await prisma.material.findUnique({ where: { code: "ROPE-WHT-100-2" } });
+  const kraft = await prisma.material.findUnique({
+    where: { code: "PAPER-BRN-80-1200" },
+  });
+  const glueHot = await prisma.material.findUnique({
+    where: { code: "GLUE-HOT-25" },
+  });
+  const glueCold = await prisma.material.findUnique({
+    where: { code: "GLUE-COLD-25" },
+  });
+  const handleRope = await prisma.material.findUnique({
+    where: { code: "ROPE-WHT-100-2" },
+  });
 
   for (const [code, mat, qty, id, unit] of [
     ["PAPER-BRN-80-1200", kraft, 10000, "seed-tx-paper", "METER"],
@@ -212,5 +249,11 @@ async function main() {
 }
 
 main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(async () => { await prisma.$disconnect(); await pool.end(); });
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+    await pool.end();
+  });
