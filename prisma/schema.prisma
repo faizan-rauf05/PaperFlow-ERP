@@ -114,6 +114,10 @@ model Material {
   ropeColor         String?
   ropeLengthM       Decimal?               @db.Decimal(14, 4)
   ropeWeightKg      Decimal?               @db.Decimal(14, 4)
+  ropeRolls         Int?
+  gluePacks         Int?
+  inkDrums          Int?
+  cartonQty         Int?
   tapeType          String?
   size              String?
   sheetCount        Int?
@@ -399,13 +403,17 @@ model YieldRecord {
 }
 
 model Supplier {
-  id           String   @id @default(cuid())
-  name         String
-  address      String?
+  id            String     @id @default(cuid())
+  name          String
+  companyName   String?
+  contactPerson String?
+  email         String?
   contactNumber String?
-  isActive     Boolean @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  materials    Material[]
+  address       String?
+  notes         String?
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  materials     Material[]
 }
 

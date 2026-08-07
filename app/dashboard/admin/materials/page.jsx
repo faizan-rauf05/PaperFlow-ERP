@@ -13,8 +13,6 @@ import {
   Search,
   X,
   Filter,
-  Clock,
-  Calendar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,18 +63,20 @@ import {
   generateMaterialCode,
   getMaterialSummary,
   materialToFormValues,
-  generatePaperRollBarcode,
 } from "@/lib/material-code";
 import {
-  PAPER_COLORS,
-  PAPER_WIDTH_PRESETS,
+  CARTON_SIZES,
   GLUE_TYPES,
+  GLUE_WEIGHT_PRESETS,
   INK_COLORS,
   KAPTON_TYPES,
   MATERIAL_TYPE_LABELS,
   MATERIAL_TYPES,
+  PAPER_COLORS,
   PAPER_TYPES,
+  PAPER_WIDTH_CM_PRESETS,
   ROPE_COLORS,
+  ROPE_LENGTH_PRESETS,
 } from "@/lib/material-constants";
 import { cn, formatDateTime } from "@/lib/utils";
 
@@ -175,27 +175,36 @@ const emptyForm = {
   unit: "",
   size: "",
   paperType: "",
+  paperColor: "",
   paperLengthM: "",
-  paperWidthMm: "",
+  paperWidthCm: "",
   gsm: "",
+  receivingDate: "",
+  barCode: "",
   glueType: "",
+  gluePacks: "",
   inkColor: "",
   inkColorCustom: "",
   weightKg: "",
+  inkDrums: "",
   ropeColor: "",
   ropeLengthM: "",
+  ropeLengthMCustom: "",
+  ropeRolls: "",
   tapeType: "",
   sheetCount: "",
   cartonSize: "",
-  cartonLength: "",
-  cartonWidth: "",
-  cartonHeight: "",
+  cartonQty: "",
 };
 
 function TypeSpecificFields({ form, errors, patchForm }) {
   const [isCustomWidth, setIsCustomWidth] = useState(
-    form.paperWidthMm &&
-      !PAPER_WIDTH_PRESETS.includes(Number(form.paperWidthMm)),
+    form.paperWidthCm &&
+      !PAPER_WIDTH_CM_PRESETS.includes(Number(form.paperWidthCm)),
+  );
+
+  const [isCustomGlueWeight, setIsCustomGlueWeight] = useState(
+    form.weightKg && !GLUE_WEIGHT_PRESETS.includes(Number(form.weightKg)),
   );
 
   switch (form.materialType) {
@@ -246,16 +255,16 @@ function TypeSpecificFields({ form, errors, patchForm }) {
 
           <div className="grid grid-cols-2 gap-4">
             <FormField
-              label="Paper Width (mm)"
+              label="Paper Width (cm)"
               required
-              error={errors.paperWidthMm}
+              error={errors.paperWidthCm}
             >
               <Select
                 value={
                   isCustomWidth
                     ? "custom"
-                    : form.paperWidthMm
-                      ? String(form.paperWidthMm)
+                    : form.paperWidthCm
+                      ? String(form.paperWidthCm)
                       : ""
                 }
                 onValueChange={(v) => {
@@ -263,19 +272,19 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                     setIsCustomWidth(true);
                   } else {
                     setIsCustomWidth(false);
-                    patchForm("paperWidthMm", v);
+                    patchForm("paperWidthCm", v);
                   }
                 }}
               >
                 <SelectTrigger
-                  className={selectTriggerClass(!!errors.paperWidthMm)}
+                  className={selectTriggerClass(!!errors.paperWidthCm)}
                 >
                   <SelectValue placeholder="Select width" />
                 </SelectTrigger>
                 <SelectContent>
-                  {PAPER_WIDTH_PRESETS.map((w) => (
+                  {PAPER_WIDTH_CM_PRESETS.map((w) => (
                     <SelectItem key={w} value={String(w)}>
-                      {w} mm
+                      {w} cm
                     </SelectItem>
                   ))}
                   <SelectItem value="custom">Custom…</SelectItem>
@@ -285,18 +294,18 @@ function TypeSpecificFields({ form, errors, patchForm }) {
 
             {isCustomWidth && (
               <FormField
-                label="Custom Width (mm)"
+                label="Custom Width (cm)"
                 required
-                error={errors.paperWidthMm}
+                error={errors.paperWidthCm}
               >
                 <Input
                   type="number"
-                  min="1"
-                  step="1"
-                  className={fieldClassName("", !!errors.paperWidthMm)}
-                  value={form.paperWidthMm}
-                  onChange={(e) => patchForm("paperWidthMm", e.target.value)}
-                  placeholder="Enter custom width"
+                  min="0.1"
+                  step="0.1"
+                  className={fieldClassName("", !!errors.paperWidthCm)}
+                  value={form.paperWidthCm}
+                  onChange={(e) => patchForm("paperWidthCm", e.target.value)}
+                  placeholder="Enter custom width in cm"
                 />
               </FormField>
             )}
@@ -338,35 +347,16 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               />
             </FormField>
 
-            <FormField label="Bar code" error={errors.barCode}>
-              <div className="flex gap-2">
-                <Input
-                  className={fieldClassName(
-                    "font-mono text-xs",
-                    !!errors.barCode,
-                  )}
-                  value={form.barCode || ""}
-                  onChange={(e) => patchForm("barCode", e.target.value)}
-                  placeholder="Barcode number / string"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    patchForm(
-                      "barCode",
-                      generatePaperRollBarcode({
-                        paperType: form.paperType,
-                        paperColor: form.paperColor,
-                        paperWidthMm: form.paperWidthMm,
-                      }),
-                    )
-                  }
-                >
-                  Gen
-                </Button>
-              </div>
+            <FormField label="Bar Code" error={errors.barCode}>
+              <Input
+                className={fieldClassName(
+                  "font-mono text-xs",
+                  !!errors.barCode,
+                )}
+                value={form.barCode || ""}
+                onChange={(e) => patchForm("barCode", e.target.value)}
+                placeholder="Barcode number / string"
+              />
             </FormField>
           </div>
         </>
@@ -391,16 +381,66 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               </SelectContent>
             </Select>
           </FormField>
-          <FormField label="Weight (kg)" required error={errors.weightKg}>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              className={fieldClassName("", !!errors.weightKg)}
-              value={form.weightKg}
-              onChange={(e) => patchForm("weightKg", e.target.value)}
-            />
-          </FormField>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Glue Weight (kg)" required error={errors.weightKg}>
+              <Select
+                value={
+                  isCustomGlueWeight
+                    ? "custom"
+                    : form.weightKg
+                      ? String(form.weightKg)
+                      : ""
+                }
+                onValueChange={(v) => {
+                  if (v === "custom") {
+                    setIsCustomGlueWeight(true);
+                  } else {
+                    setIsCustomGlueWeight(false);
+                    patchForm("weightKg", v);
+                  }
+                }}
+              >
+                <SelectTrigger className={selectTriggerClass(!!errors.weightKg)}>
+                  <SelectValue placeholder="Select weight" />
+                </SelectTrigger>
+                <SelectContent>
+                  {GLUE_WEIGHT_PRESETS.map((w) => (
+                    <SelectItem key={w} value={String(w)}>
+                      {w} kg
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="custom">Custom…</SelectItem>
+                </SelectContent>
+              </Select>
+            </FormField>
+
+            {isCustomGlueWeight && (
+              <FormField label="Custom Weight (kg)" required error={errors.weightKg}>
+                <Input
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  className={fieldClassName("", !!errors.weightKg)}
+                  value={form.weightKg}
+                  onChange={(e) => patchForm("weightKg", e.target.value)}
+                  placeholder="Enter custom weight"
+                />
+              </FormField>
+            )}
+
+            <FormField label="Number of Packs" error={errors.gluePacks}>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                className={fieldClassName("", !!errors.gluePacks)}
+                value={form.gluePacks}
+                onChange={(e) => patchForm("gluePacks", e.target.value)}
+                placeholder="Pack count"
+              />
+            </FormField>
+          </div>
         </>
       );
     case "INK":
@@ -437,16 +477,31 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               />
             </FormField>
           )}
-          <FormField label="Weight (kg)" required error={errors.weightKg}>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              className={fieldClassName("", !!errors.weightKg)}
-              value={form.weightKg}
-              onChange={(e) => patchForm("weightKg", e.target.value)}
-            />
-          </FormField>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Weight (kg)" required error={errors.weightKg}>
+              <Input
+                type="number"
+                min="0.1"
+                step="0.1"
+                className={fieldClassName("", !!errors.weightKg)}
+                value={form.weightKg}
+                onChange={(e) => patchForm("weightKg", e.target.value)}
+                placeholder="e.g. 18"
+              />
+            </FormField>
+            <FormField label="No. of Drums" error={errors.inkDrums}>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                className={fieldClassName("", !!errors.inkDrums)}
+                value={form.inkDrums}
+                onChange={(e) => patchForm("inkDrums", e.target.value)}
+                placeholder="Number of drums"
+              />
+            </FormField>
+          </div>
         </>
       );
     case "ROPE":
@@ -469,16 +524,53 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               </SelectContent>
             </Select>
           </FormField>
-          <FormField label="Length (m)" required error={errors.ropeLengthM}>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              className={fieldClassName("", !!errors.ropeLengthM)}
-              value={form.ropeLengthM}
-              onChange={(e) => patchForm("ropeLengthM", e.target.value)}
-            />
-          </FormField>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Roll Length (m)" required error={errors.ropeLengthM}>
+              <Select
+                value={form.ropeLengthM}
+                onValueChange={(v) => patchForm("ropeLengthM", v)}
+              >
+                <SelectTrigger className={selectTriggerClass(!!errors.ropeLengthM)}>
+                  <SelectValue placeholder="Select roll length" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROPE_LENGTH_PRESETS.map((len) => (
+                    <SelectItem key={len} value={String(len)}>
+                      {len} m
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="CUSTOM">Custom Number…</SelectItem>
+                </SelectContent>
+              </Select>
+            </FormField>
+
+            {form.ropeLengthM === "CUSTOM" && (
+              <FormField label="Custom Length (m)" required error={errors.ropeLengthMCustom}>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  className={fieldClassName("", !!errors.ropeLengthMCustom)}
+                  value={form.ropeLengthMCustom}
+                  onChange={(e) => patchForm("ropeLengthMCustom", e.target.value)}
+                  placeholder="Length in meters"
+                />
+              </FormField>
+            )}
+
+            <FormField label="Rope Rolls" error={errors.ropeRolls}>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                className={fieldClassName("", !!errors.ropeRolls)}
+                value={form.ropeRolls}
+                onChange={(e) => patchForm("ropeRolls", e.target.value)}
+                placeholder="No. of rolls"
+              />
+            </FormField>
+          </div>
         </>
       );
     case "KAPTON":
@@ -536,6 +628,39 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           />
         </FormField>
       );
+    case "CARTON":
+      return (
+        <>
+          <FormField label="Carton Size" required error={errors.cartonSize}>
+            <Select
+              value={form.cartonSize}
+              onValueChange={(v) => patchForm("cartonSize", v)}
+            >
+              <SelectTrigger className={selectTriggerClass(!!errors.cartonSize)}>
+                <SelectValue placeholder="Select carton size" />
+              </SelectTrigger>
+              <SelectContent>
+                {CARTON_SIZES.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
+          <FormField label="Number of Cartons" error={errors.cartonQty}>
+            <Input
+              type="number"
+              min="1"
+              step="1"
+              className={fieldClassName("", !!errors.cartonQty)}
+              value={form.cartonQty}
+              onChange={(e) => patchForm("cartonQty", e.target.value)}
+              placeholder="Quantity of cartons"
+            />
+          </FormField>
+        </>
+      );
     default:
       return null;
   }
@@ -543,6 +668,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
 
 export default function MaterialsPage() {
   const [materials, setMaterials] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -647,8 +773,12 @@ export default function MaterialsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/materials");
-      setMaterials(data.materials || []);
+      const [{ data: matData }, { data: supData }] = await Promise.all([
+        api.get("/materials"),
+        api.get("/suppliers").catch(() => ({ data: { suppliers: [] } })),
+      ]);
+      setMaterials(matData.materials || []);
+      setSuppliers(supData.suppliers || []);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -666,9 +796,11 @@ export default function MaterialsPage() {
   }
 
   function patchMaterialType(value) {
+    const defaultWeight = value === "INK" ? "18" : "";
     setForm({
       ...emptyForm,
       materialType: value,
+      weightKg: defaultWeight,
       name: form.name,
       supplier: form.supplier,
       codeSuffix: form.codeSuffix || createCodeSuffix(),
@@ -1134,12 +1266,38 @@ export default function MaterialsPage() {
             {hasType && (
               <>
                 <FormField label="Supplier" error={errors.supplier}>
-                  <Input
-                    className={fieldClassName("", !!errors.supplier)}
-                    value={form.supplier}
-                    onChange={(e) => patchForm("supplier", e.target.value)}
-                    placeholder="Supplier name"
-                  />
+                  {suppliers.length > 0 ? (
+                    <div className="space-y-2">
+                      <Select
+                        value={form.supplier}
+                        onValueChange={(v) => patchForm("supplier", v)}
+                      >
+                        <SelectTrigger className={selectTriggerClass(!!errors.supplier)}>
+                          <SelectValue placeholder="Select registered supplier" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {suppliers.map((s) => (
+                            <SelectItem key={s.id} value={s.name}>
+                              {s.name} {s.companyName ? `(${s.companyName})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        className={fieldClassName("text-xs", !!errors.supplier)}
+                        value={form.supplier}
+                        onChange={(e) => patchForm("supplier", e.target.value)}
+                        placeholder="Or enter custom supplier name"
+                      />
+                    </div>
+                  ) : (
+                    <Input
+                      className={fieldClassName("", !!errors.supplier)}
+                      value={form.supplier}
+                      onChange={(e) => patchForm("supplier", e.target.value)}
+                      placeholder="Supplier name"
+                    />
+                  )}
                 </FormField>
 
                 <FormField label="Code" error={errors.code}>

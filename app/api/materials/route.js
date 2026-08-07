@@ -85,6 +85,14 @@ export async function POST(request) {
     let initQty = 0;
     if (body.initialStock != null && Number(body.initialStock) > 0) {
       initQty = Number(body.initialStock);
+    } else if (data.cartonQty != null && Number(data.cartonQty) > 0) {
+      initQty = Number(data.cartonQty);
+    } else if (data.ropeRolls != null && Number(data.ropeRolls) > 0) {
+      initQty = Number(data.ropeRolls);
+    } else if (data.gluePacks != null && Number(data.gluePacks) > 0) {
+      initQty = Number(data.gluePacks);
+    } else if (data.inkDrums != null && Number(data.inkDrums) > 0) {
+      initQty = Number(data.inkDrums);
     } else if (data.paperLengthM != null && Number(data.paperLengthM) > 0) {
       initQty = Number(data.paperLengthM);
     } else if (data.weightKg != null && Number(data.weightKg) > 0) {

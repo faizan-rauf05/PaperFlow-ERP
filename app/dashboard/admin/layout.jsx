@@ -11,6 +11,7 @@ import {
   Factory,
   ShieldAlert,
   Contact,
+  Building2,
   Ruler,
 } from "lucide-react";
 
@@ -19,6 +20,7 @@ const navigation = [
   { name: "Users", href: "/dashboard/admin/users", icon: Users },
 
   { name: "Customers", href: "/dashboard/admin/customers", icon: Contact },
+  { name: "Suppliers", href: "/dashboard/admin/suppliers", icon: Building2 },
   { name: "Materials", href: "/dashboard/admin/materials", icon: Package },
   { name: "Inventory", href: "/dashboard/admin/inventory", icon: Warehouse },
   { name: "Orders", href: "/dashboard/admin/production", icon: Factory },
