@@ -26,51 +26,51 @@ const TEST_USERS = [
 
 const PASSWORD = "Admin1234!";
 
-const MATERIALS = [
-  {
-    materialType: "PAPER_ROLL",
-    code: "PAPER-BRN-80-1200",
-    name: "Brown Paper 80gsm 1200mm",
-    supplier: "PaperCo Ltd",
-    unit: "METER",
-    paperType: "BROWN",
-    paperLengthM: 10000,
-    paperWidthMm: 1200,
-    gsm: 80,
-    kgPerMeter: 0.12,
-    minimumStock: 500,
-  },
-  {
-    materialType: "GLUE",
-    code: "GLUE-HOT-25",
-    name: "Hot Glue 25kg",
-    supplier: "Adhesive Supplies",
-    unit: "KG",
-    glueType: "HOT",
-    weightKg: 25,
-    minimumStock: 50,
-  },
-  {
-    materialType: "GLUE",
-    code: "GLUE-COLD-25",
-    name: "Cold Glue 25kg",
-    supplier: "Adhesive Supplies",
-    unit: "KG",
-    glueType: "COLD",
-    weightKg: 25,
-    minimumStock: 50,
-  },
-  {
-    materialType: "ROPE",
-    code: "ROPE-WHT-100-2",
-    name: "White Rope 100m 2kg",
-    supplier: "Handle Materials Co",
-    unit: "PCS",
-    ropeColor: "WHITE",
-    ropeLengthM: 100,
-    minimumStock: 1000,
-  },
-];
+// const MATERIALS = [
+//   {
+//     materialType: "PAPER_ROLL",
+//     code: "PAPER-BRN-80-1200",
+//     name: "Brown Paper 80gsm 1200mm",
+//     supplier: "PaperCo Ltd",
+//     unit: "METER",
+//     paperType: "BROWN",
+//     paperLengthM: 10000,
+//     paperWidthMm: 1200,
+//     gsm: 80,
+//     kgPerMeter: 0.12,
+//     minimumStock: 500,
+//   },
+//   {
+//     materialType: "GLUE",
+//     code: "GLUE-HOT-25",
+//     name: "Hot Glue 25kg",
+//     supplier: "Adhesive Supplies",
+//     unit: "KG",
+//     glueType: "HOT",
+//     weightKg: 25,
+//     minimumStock: 50,
+//   },
+//   {
+//     materialType: "GLUE",
+//     code: "GLUE-COLD-25",
+//     name: "Cold Glue 25kg",
+//     supplier: "Adhesive Supplies",
+//     unit: "KG",
+//     glueType: "COLD",
+//     weightKg: 25,
+//     minimumStock: 50,
+//   },
+//   {
+//     materialType: "ROPE",
+//     code: "ROPE-WHT-100-2",
+//     name: "White Rope 100m 2kg",
+//     supplier: "Handle Materials Co",
+//     unit: "PCS",
+//     ropeColor: "WHITE",
+//     ropeLengthM: 100,
+//     minimumStock: 1000,
+//   },
+// ];
 
 const MACHINES = [
   { machineCode: "SLIT-01", name: "Slitting Machine 1", stageType: "SLITTING" },
@@ -133,49 +133,49 @@ async function main() {
     console.log(`Seeded ${user.role}: ${user.email}`);
   }
 
-  for (const m of MATERIALS) {
-    await prisma.material.upsert({
-      where: { code: m.code },
-      update: m,
-      create: m,
-    });
-  }
-  console.log("Seeded materials");
+  // for (const m of MATERIALS) {
+  //   await prisma.material.upsert({
+  //     where: { code: m.code },
+  //     update: m,
+  //     create: m,
+  //   });
+  // }
+  // console.log("Seeded materials");
 
-  const kraft = await prisma.material.findUnique({
-    where: { code: "PAPER-BRN-80-1200" },
-  });
-  const glueHot = await prisma.material.findUnique({
-    where: { code: "GLUE-HOT-25" },
-  });
-  const glueCold = await prisma.material.findUnique({
-    where: { code: "GLUE-COLD-25" },
-  });
-  const handleRope = await prisma.material.findUnique({
-    where: { code: "ROPE-WHT-100-2" },
-  });
+  // const kraft = await prisma.material.findUnique({
+  //   where: { code: "PAPER-BRN-80-1200" },
+  // });
+  // const glueHot = await prisma.material.findUnique({
+  //   where: { code: "GLUE-HOT-25" },
+  // });
+  // const glueCold = await prisma.material.findUnique({
+  //   where: { code: "GLUE-COLD-25" },
+  // });
+  // const handleRope = await prisma.material.findUnique({
+  //   where: { code: "ROPE-WHT-100-2" },
+  // });
 
-  for (const [code, mat, qty, id, unit] of [
-    ["PAPER-BRN-80-1200", kraft, 10000, "seed-tx-paper", "METER"],
-    ["GLUE-HOT-25", glueHot, 100, "seed-tx-glue-hot", "KG"],
-    ["GLUE-COLD-25", glueCold, 100, "seed-tx-glue-cold", "KG"],
-    ["ROPE-WHT-100-2", handleRope, 10000, "seed-tx-handle-rope", "PCS"],
-  ]) {
-    if (!mat) continue;
-    await prisma.inventoryTransaction.upsert({
-      where: { id },
-      update: {},
-      create: {
-        id,
-        materialId: mat.id,
-        transactionType: "STOCK_IN",
-        quantity: qty,
-        unit,
-        remarks: `Initial ${code} stock`,
-      },
-    });
-  }
-  console.log("Seeded material stock (no rolls)");
+  // for (const [code, mat, qty, id, unit] of [
+  //   ["PAPER-BRN-80-1200", kraft, 10000, "seed-tx-paper", "METER"],
+  //   ["GLUE-HOT-25", glueHot, 100, "seed-tx-glue-hot", "KG"],
+  //   ["GLUE-COLD-25", glueCold, 100, "seed-tx-glue-cold", "KG"],
+  //   ["ROPE-WHT-100-2", handleRope, 10000, "seed-tx-handle-rope", "PCS"],
+  // ]) {
+  //   if (!mat) continue;
+  //   await prisma.inventoryTransaction.upsert({
+  //     where: { id },
+  //     update: {},
+  //     create: {
+  //       id,
+  //       materialId: mat.id,
+  //       transactionType: "STOCK_IN",
+  //       quantity: qty,
+  //       unit,
+  //       remarks: `Initial ${code} stock`,
+  //     },
+  //   });
+  // }
+  // console.log("Seeded material stock (no rolls)");
 
   for (const m of MACHINES) {
     await prisma.machine.upsert({
@@ -212,27 +212,6 @@ async function main() {
     });
   }
   console.log("Seeded defect types");
-
-  await prisma.bagSpecification.upsert({
-    where: { code: "BAG-STD-01" },
-    update: {
-      handlesPerBag: 2,
-      sideGlueKgPerBag: 0.002,
-      bottomGlueKgPerBag: 0.001,
-      bagsPerMeter: 2.5,
-    },
-    create: {
-      name: "Standard Kraft Bag 8x10",
-      code: "BAG-STD-01",
-      bagWidthMm: 200,
-      repeatLengthMm: 400,
-      bagsPerMeter: 2.5,
-      handlesPerBag: 2,
-      sideGlueKgPerBag: 0.002,
-      bottomGlueKgPerBag: 0.001,
-      description: "Standard grocery bag",
-    },
-  });
 
   const customer = await prisma.customer.upsert({
     where: { id: "seed-customer-metro" },

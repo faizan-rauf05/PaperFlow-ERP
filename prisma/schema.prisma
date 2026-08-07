@@ -125,6 +125,7 @@ model Material {
   cartonLength      Decimal?               @db.Decimal(10, 2)
   cartonWidth       Decimal?               @db.Decimal(10, 2)
   cartonHeight      Decimal?               @db.Decimal(10, 2)
+  imageUrl          String?
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
   transactions      InventoryTransaction[]

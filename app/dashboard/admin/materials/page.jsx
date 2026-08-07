@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   Plus,
   Pencil,
@@ -13,6 +13,11 @@ import {
   Search,
   X,
   Filter,
+  Camera,
+  Sparkles,
+  Image as ImageIcon,
+  Building2,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +57,7 @@ import {
 import { FormField, fieldClassName } from "@/components/ui/form-field";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
-import { materialSchema } from "@/lib/validations/admin-forms";
+import { materialSchema, supplierSchema } from "@/lib/validations/admin-forms";
 import {
   validateForm,
   clearFieldError,
@@ -195,6 +200,7 @@ const emptyForm = {
   sheetCount: "",
   cartonSize: "",
   cartonQty: "",
+  imageUrl: "",
 };
 
 function TypeSpecificFields({ form, errors, patchForm }) {
@@ -347,7 +353,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               />
             </FormField>
 
-            <FormField label="Bar Code" error={errors.barCode}>
+            <FormField label="Bar Code (Customer Reference)" error={errors.barCode}>
               <Input
                 className={fieldClassName(
                   "font-mono text-xs",
@@ -355,7 +361,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                 )}
                 value={form.barCode || ""}
                 onChange={(e) => patchForm("barCode", e.target.value)}
-                placeholder="Barcode number / string"
+                placeholder="Longer customer reference barcode"
               />
             </FormField>
           </div>
@@ -682,6 +688,26 @@ export default function MaterialsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState({});
 
+  // Gemini AI Scanner States
+  const [scanDialogOpen, setScanDialogOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Supplier Creation Dialog State (from scan or inline "+ Add Supplier")
+  const [supplierDialogOpen, setSupplierDialogOpen] = useState(false);
+  const [supplierForm, setSupplierForm] = useState({
+    name: "",
+    companyName: "",
+    contactPerson: "",
+    contactNumber: "",
+    address: "",
+    notes: "",
+  });
+  const [supplierErrors, setSupplierErrors] = useState({});
+  const [savingSupplier, setSavingSupplier] = useState(false);
+
   const toggleGroup = useCallback((groupKey) => {
     setCollapsedGroups((prev) => ({
       ...prev,
@@ -803,6 +829,7 @@ export default function MaterialsPage() {
       weightKg: defaultWeight,
       name: form.name,
       supplier: form.supplier,
+      imageUrl: form.imageUrl,
       codeSuffix: form.codeSuffix || createCodeSuffix(),
     });
     setErrors({});
@@ -820,6 +847,138 @@ export default function MaterialsPage() {
     setForm(materialToFormValues(m));
     setErrors({});
     setDialogOpen(true);
+  }
+
+  function openNewSupplierDialog(initialValues = {}) {
+    setSupplierForm({
+      name: initialValues.name || "",
+      companyName: initialValues.companyName || "",
+      contactPerson: initialValues.contactPerson || "",
+      contactNumber: initialValues.contactNumber || "",
+      address: initialValues.address || "",
+      notes: initialValues.notes || "",
+    });
+    setSupplierErrors({});
+    setSupplierDialogOpen(true);
+  }
+
+  async function handleSaveSupplier() {
+    const result = validateForm(supplierSchema, supplierForm);
+    if (!result.success) {
+      setSupplierErrors(result.errors);
+      toast.error(firstErrorMessage(result.errors));
+      return;
+    }
+    setSavingSupplier(true);
+    try {
+      const { data } = await api.post("/suppliers", result.data);
+      toast.success("Supplier registered successfully");
+      const newSup = data.supplier;
+      setSuppliers((prev) => [...prev, newSup]);
+      patchForm("supplier", newSup.name);
+      setSupplierDialogOpen(false);
+    } catch (e) {
+      toast.error(getApiErrorMessage(e));
+    } finally {
+      setSavingSupplier(false);
+    }
+  }
+
+  // File Change for Scan Dialog
+  function handleFileSelect(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      setImagePreview(evt.target.result);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Trigger Gemini Flash Vision AI scan
+  async function handleScanWithAI() {
+    if (!imagePreview) {
+      toast.error("Please upload or capture a label image first");
+      return;
+    }
+    setScanning(true);
+    try {
+      const mimeType = selectedFile?.type || "image/jpeg";
+      const { data } = await api.post("/materials/scan-label", {
+        imageBase64: imagePreview,
+        mimeType,
+      });
+
+      const ext = data.extracted || {};
+      toast.success("Label analyzed successfully!");
+      setScanDialogOpen(false);
+
+      // Pre-fill form from scanned info
+      const mType = ext.materialType || "PAPER_ROLL";
+      const paperData = ext.paperRoll || {};
+      const glueData = ext.glue || {};
+      const inkData = ext.ink || {};
+      const ropeData = ext.rope || {};
+      const cartonData = ext.carton || {};
+
+      let selectedSupplierName = "";
+      // Match supplier if found in existing DB list
+      if (ext.supplier?.name) {
+        const targetName = ext.supplier.name.trim().toLowerCase();
+        const match = suppliers.find(
+          (s) =>
+            s.name.toLowerCase().includes(targetName) ||
+            targetName.includes(s.name.toLowerCase()) ||
+            (s.companyName && s.companyName.toLowerCase().includes(targetName)),
+        );
+        if (match) {
+          selectedSupplierName = match.name;
+          toast.info(`Supplier matched: ${match.name}`);
+        } else {
+          // Open prompt to create supplier with pre-filled details!
+          openNewSupplierDialog({
+            name: ext.supplier.name || "",
+            companyName: ext.supplier.companyName || ext.supplier.name || "",
+            contactNumber: ext.supplier.contactNumber || "",
+            address: ext.supplier.address || "",
+          });
+        }
+      }
+
+      setEditing(null);
+      setForm({
+        ...emptyForm,
+        materialType: mType,
+        supplier: selectedSupplierName,
+        imageUrl: imagePreview,
+        codeSuffix: createCodeSuffix(),
+        paperType: paperData.paperType || "VIRGIN",
+        paperColor: paperData.paperColor || "WHITE",
+        paperWidthCm: paperData.paperWidthCm ? String(paperData.paperWidthCm) : "",
+        paperLengthM: paperData.paperLengthM ? String(paperData.paperLengthM) : "",
+        gsm: paperData.gsm ? String(paperData.gsm) : "",
+        barCode: paperData.barCode || "",
+        receivingDate: paperData.receivingDate || "",
+        glueType: glueData.glueType || "",
+        weightKg: glueData.weightKg || inkData.weightKg || "",
+        gluePacks: glueData.gluePacks || "",
+        inkColor: inkData.inkColor || "",
+        inkColorCustom: inkData.inkColorCustom || "",
+        inkDrums: inkData.inkDrums || "",
+        ropeColor: ropeData.ropeColor || "",
+        ropeLengthM: ropeData.ropeLengthM ? String(ropeData.ropeLengthM) : "",
+        ropeRolls: ropeData.ropeRolls || "",
+        cartonSize: cartonData.cartonSize || "",
+        cartonQty: cartonData.cartonQty || "",
+      });
+      setErrors({});
+      setDialogOpen(true);
+    } catch (e) {
+      toast.error(getApiErrorMessage(e));
+    } finally {
+      setScanning(false);
+    }
   }
 
   async function handleSave() {
@@ -872,10 +1031,24 @@ export default function MaterialsPage() {
             Define raw materials and supplies by type
           </p>
         </div>
-        <Button onClick={openCreate} className="shrink-0">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Material
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSelectedFile(null);
+              setImagePreview("");
+              setScanDialogOpen(true);
+            }}
+            className="border-primary/50 text-primary hover:bg-primary/10"
+          >
+            <Sparkles className="h-4 w-4 mr-2" />
+            Add from Image AI
+          </Button>
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Material
+          </Button>
+        </div>
       </div>
 
       {/* Controls Bar */}
@@ -1044,13 +1217,7 @@ export default function MaterialsPage() {
                 sortDir={sortDir}
                 onSort={handleSort}
               />
-              <SortableHead
-                label="Modified At"
-                column="updatedAt"
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
+              <TableHead className="text-center">Label</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -1144,8 +1311,14 @@ export default function MaterialsPage() {
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                             {m.createdAt ? formatDateTime(m.createdAt) : "—"}
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                            {m.updatedAt ? formatDateTime(m.updatedAt) : "—"}
+                          <TableCell className="text-center">
+                            {m.imageUrl ? (
+                              <a href={m.imageUrl} target="_blank" rel="noreferrer" title="View label image">
+                                <img src={m.imageUrl} alt="Label" className="h-7 w-7 object-cover rounded border mx-auto hover:opacity-80 transition-opacity" />
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right space-x-1">
                             <Button
@@ -1205,8 +1378,14 @@ export default function MaterialsPage() {
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                     {m.createdAt ? formatDateTime(m.createdAt) : "—"}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                    {m.updatedAt ? formatDateTime(m.updatedAt) : "—"}
+                  <TableCell className="text-center">
+                    {m.imageUrl ? (
+                      <a href={m.imageUrl} target="_blank" rel="noreferrer" title="View label image">
+                        <img src={m.imageUrl} alt="Label" className="h-7 w-7 object-cover rounded border mx-auto hover:opacity-80 transition-opacity" />
+                      </a>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right space-x-1">
                     <Button
@@ -1231,6 +1410,7 @@ export default function MaterialsPage() {
         </Table>
       </div>
 
+      {/* Main Material Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
@@ -1265,9 +1445,10 @@ export default function MaterialsPage() {
 
             {hasType && (
               <>
-                <FormField label="Supplier" error={errors.supplier}>
-                  {suppliers.length > 0 ? (
-                    <div className="space-y-2">
+                {/* Strict Supplier Dropdown Only */}
+                <FormField label="Supplier" required error={errors.supplier}>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
                       <Select
                         value={form.supplier}
                         onValueChange={(v) => patchForm("supplier", v)}
@@ -1283,21 +1464,18 @@ export default function MaterialsPage() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <Input
-                        className={fieldClassName("text-xs", !!errors.supplier)}
-                        value={form.supplier}
-                        onChange={(e) => patchForm("supplier", e.target.value)}
-                        placeholder="Or enter custom supplier name"
-                      />
                     </div>
-                  ) : (
-                    <Input
-                      className={fieldClassName("", !!errors.supplier)}
-                      value={form.supplier}
-                      onChange={(e) => patchForm("supplier", e.target.value)}
-                      placeholder="Supplier name"
-                    />
-                  )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openNewSupplierDialog()}
+                      className="shrink-0 text-xs"
+                      title="Add new supplier"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" /> New
+                    </Button>
+                  </div>
                 </FormField>
 
                 <FormField label="Code" error={errors.code}>
@@ -1308,6 +1486,27 @@ export default function MaterialsPage() {
                     placeholder="Auto-generated from selections"
                   />
                 </FormField>
+
+                {form.imageUrl && (
+                  <div className="p-3 border rounded-md bg-muted/30 flex items-center gap-3">
+                    <img src={form.imageUrl} alt="Reference Label" className="h-14 w-14 object-cover rounded border" />
+                    <div className="text-xs space-y-1 flex-1">
+                      <p className="font-semibold flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                        <Check className="h-3.5 w-3.5" /> Scanned Label Attached
+                      </p>
+                      <p className="text-muted-foreground truncate max-w-[240px]">Reference image captured</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => patchForm("imageUrl", "")}
+                      className="text-xs text-muted-foreground hover:text-destructive"
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                )}
 
                 <TypeSpecificFields
                   form={form}
@@ -1328,6 +1527,140 @@ export default function MaterialsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* AI Label Scanner Upload Modal */}
+      <Dialog open={scanDialogOpen} onOpenChange={setScanDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" /> Scan Material Label with AI
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-xs text-muted-foreground">
+              Select or take a photo of a material label (e.g. Paper Roll Reel label). Gemini AI will extract specs, barcode, and supplier info automatically.
+            </p>
+
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+
+            {imagePreview ? (
+              <div className="relative border rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 p-2 flex flex-col items-center">
+                <img src={imagePreview} alt="Label preview" className="max-h-56 object-contain rounded" />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-2 text-xs"
+                >
+                  Change Image
+                </Button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full h-44 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-2 hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground"
+              >
+                <Camera className="h-8 w-8 text-primary" />
+                <span className="text-sm font-medium text-foreground">Click to upload or take picture</span>
+                <span className="text-xs">Supports JPG, PNG, WEBP label images</span>
+              </button>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScanDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleScanWithAI} disabled={scanning || !imagePreview}>
+              {scanning ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Analyzing with Gemini AI...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Extract & Pre-fill
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Supplier Creation Dialog (Triggered from Scan or inline "+ New Supplier") */}
+      <Dialog open={supplierDialogOpen} onOpenChange={setSupplierDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" /> Register New Supplier
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Supplier details captured from image. Confirm or edit details below to save.
+            </p>
+            <FormField label="Supplier Name" required error={supplierErrors.name}>
+              <Input
+                className={fieldClassName("", !!supplierErrors.name)}
+                value={supplierForm.name}
+                onChange={(e) => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="Supplier / Company Name"
+              />
+            </FormField>
+            <FormField label="Company Name" error={supplierErrors.companyName}>
+              <Input
+                className={fieldClassName("", !!supplierErrors.companyName)}
+                value={supplierForm.companyName}
+                onChange={(e) => setSupplierForm((prev) => ({ ...prev, companyName: e.target.value }))}
+                placeholder="Full Business Name"
+              />
+            </FormField>
+            <FormField label="Contact Person" error={supplierErrors.contactPerson}>
+              <Input
+                className={fieldClassName("", !!supplierErrors.contactPerson)}
+                value={supplierForm.contactPerson}
+                onChange={(e) => setSupplierForm((prev) => ({ ...prev, contactPerson: e.target.value }))}
+                placeholder="Representative name"
+              />
+            </FormField>
+            <FormField label="Phone / Contact Number" error={supplierErrors.contactNumber}>
+              <Input
+                className={fieldClassName("", !!supplierErrors.contactNumber)}
+                value={supplierForm.contactNumber}
+                onChange={(e) => setSupplierForm((prev) => ({ ...prev, contactNumber: e.target.value }))}
+                placeholder="Phone number"
+              />
+            </FormField>
+            <FormField label="Address" error={supplierErrors.address}>
+              <Input
+                className={fieldClassName("", !!supplierErrors.address)}
+                value={supplierForm.address}
+                onChange={(e) => setSupplierForm((prev) => ({ ...prev, address: e.target.value }))}
+                placeholder="Address"
+              />
+            </FormField>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSupplierDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveSupplier} disabled={savingSupplier}>
+              {savingSupplier && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save & Select Supplier
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Alert */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
