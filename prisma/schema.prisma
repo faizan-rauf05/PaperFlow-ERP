@@ -96,14 +96,15 @@ model Material {
   materialType      MaterialType
   name              String
   code              String                 @unique
-  supplier          String?
+  supplierId        String?
+  supplier          Supplier?              @relation(fields: [supplierId], references: [id])
   unit              String
   minimumStock      Decimal                @default(0) @db.Decimal(14, 4)
   kgPerMeter        Decimal?               @db.Decimal(14, 6)
   paperType         String?
   paperColor        String?
   paperLengthM      Decimal?               @db.Decimal(14, 4)
-  paperWidthMm      Decimal?               @db.Decimal(10, 2)
+  paperWidthCm      Decimal?               @db.Decimal(10, 2)
   gsm               Int?
   receivingDate     DateTime?
   barCode           String?
@@ -113,6 +114,10 @@ model Material {
   ropeColor         String?
   ropeLengthM       Decimal?               @db.Decimal(14, 4)
   ropeWeightKg      Decimal?               @db.Decimal(14, 4)
+  ropeRolls         Int?
+  gluePacks         Int?
+  inkDrums          Int?
+  cartonQty         Int?
   tapeType          String?
   size              String?
   sheetCount        Int?
@@ -120,6 +125,7 @@ model Material {
   cartonLength      Decimal?               @db.Decimal(10, 2)
   cartonWidth       Decimal?               @db.Decimal(10, 2)
   cartonHeight      Decimal?               @db.Decimal(10, 2)
+  imageUrl          String?
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
   transactions      InventoryTransaction[]
@@ -396,3 +402,19 @@ model YieldRecord {
 
   @@index([orderId])
 }
+
+model Supplier {
+  id            String     @id @default(cuid())
+  name          String
+  companyName   String?
+  contactPerson String?
+  email         String?
+  contactNumber String?
+  address       String?
+  notes         String?
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  materials     Material[]
+}
+

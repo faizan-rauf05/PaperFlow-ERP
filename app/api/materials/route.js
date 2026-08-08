@@ -5,7 +5,7 @@ import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
 import { buildMaterialRecord } from "@/lib/material-code";
 import { materialSchema } from "@/lib/validations/admin-forms";
-
+import { uploadImageToCloudinary } from "@/lib/cloudinary";
 import { Prisma } from "@prisma/client";
 
 const { Decimal } = Prisma;
@@ -23,6 +23,7 @@ export async function GET() {
     const materials = await prisma.material.findMany({
       orderBy: [{ materialType: "asc" }, { name: "asc" }],
       include: {
+        supplier: true,
         transactions: {
           select: {
             transactionType: true,
@@ -49,9 +50,11 @@ export async function GET() {
         }
       }
 
-      const { transactions, ...rest } = m;
+      const { transactions, supplier, ...rest } = m;
       return {
         ...rest,
+        supplier: supplier?.name || null,
+        supplierId: m.supplierId || null,
         initialStock: initialStock.toNumber(),
         availableStock: currentStock.toNumber(),
         isLowStock: currentStock.lessThan(m.minimumStock || 0),
@@ -80,11 +83,43 @@ export async function POST(request) {
     }
 
     const data = buildMaterialRecord(parsed.data);
+
+    // Resolve supplier relation to supplierId
+    const supplierName = data.supplier;
+    delete data.supplier;
+
+    if (supplierName) {
+      const sup = await prisma.supplier.findFirst({
+        where: {
+          OR: [
+            { name: { equals: supplierName, mode: "insensitive" } },
+            { companyName: { equals: supplierName, mode: "insensitive" } },
+          ],
+        },
+      });
+      data.supplierId = sup ? sup.id : null;
+    } else {
+      data.supplierId = null;
+    }
+
+    // Upload base64 label image to Cloudinary CDN if provided
+    if (data.imageUrl && data.imageUrl.startsWith("data:image")) {
+      data.imageUrl = await uploadImageToCloudinary(data.imageUrl, "materials");
+    }
+
     const material = await prisma.material.create({ data });
 
     let initQty = 0;
     if (body.initialStock != null && Number(body.initialStock) > 0) {
       initQty = Number(body.initialStock);
+    } else if (data.cartonQty != null && Number(data.cartonQty) > 0) {
+      initQty = Number(data.cartonQty);
+    } else if (data.ropeRolls != null && Number(data.ropeRolls) > 0) {
+      initQty = Number(data.ropeRolls);
+    } else if (data.gluePacks != null && Number(data.gluePacks) > 0) {
+      initQty = Number(data.gluePacks);
+    } else if (data.inkDrums != null && Number(data.inkDrums) > 0) {
+      initQty = Number(data.inkDrums);
     } else if (data.paperLengthM != null && Number(data.paperLengthM) > 0) {
       initQty = Number(data.paperLengthM);
     } else if (data.weightKg != null && Number(data.weightKg) > 0) {

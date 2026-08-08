@@ -7,7 +7,8 @@ const { Pool } = require("pg");
 function getDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
   const prismaUrl = process.env.PRISMA_URL;
-  if (prismaUrl && (!databaseUrl || databaseUrl.startsWith("prisma+"))) return prismaUrl;
+  if (prismaUrl && (!databaseUrl || databaseUrl.startsWith("prisma+")))
+    return prismaUrl;
   return databaseUrl || prismaUrl || "";
 }
 
@@ -25,57 +26,60 @@ const TEST_USERS = [
 
 const PASSWORD = "Admin1234!";
 
-const MATERIALS = [
-  {
-    materialType: "PAPER_ROLL",
-    code: "PAPER-BRN-80-1200",
-    name: "Brown Paper 80gsm 1200mm",
-    supplier: "PaperCo Ltd",
-    unit: "METER",
-    paperType: "BROWN",
-    paperLengthM: 10000,
-    paperWidthMm: 1200,
-    gsm: 80,
-    kgPerMeter: 0.12,
-    minimumStock: 500,
-  },
-  {
-    materialType: "GLUE",
-    code: "GLUE-HOT-25",
-    name: "Hot Glue 25kg",
-    supplier: "Adhesive Supplies",
-    unit: "KG",
-    glueType: "HOT",
-    weightKg: 25,
-    minimumStock: 50,
-  },
-  {
-    materialType: "GLUE",
-    code: "GLUE-COLD-25",
-    name: "Cold Glue 25kg",
-    supplier: "Adhesive Supplies",
-    unit: "KG",
-    glueType: "COLD",
-    weightKg: 25,
-    minimumStock: 50,
-  },
-  {
-    materialType: "ROPE",
-    code: "ROPE-WHT-100-2",
-    name: "White Rope 100m 2kg",
-    supplier: "Handle Materials Co",
-    unit: "PCS",
-    ropeColor: "WHITE",
-    ropeLengthM: 100,
-    ropeWeightKg: 2,
-    minimumStock: 1000,
-  },
-];
+// const MATERIALS = [
+//   {
+//     materialType: "PAPER_ROLL",
+//     code: "PAPER-BRN-80-1200",
+//     name: "Brown Paper 80gsm 1200mm",
+//     supplier: "PaperCo Ltd",
+//     unit: "METER",
+//     paperType: "BROWN",
+//     paperLengthM: 10000,
+//     paperWidthMm: 1200,
+//     gsm: 80,
+//     kgPerMeter: 0.12,
+//     minimumStock: 500,
+//   },
+//   {
+//     materialType: "GLUE",
+//     code: "GLUE-HOT-25",
+//     name: "Hot Glue 25kg",
+//     supplier: "Adhesive Supplies",
+//     unit: "KG",
+//     glueType: "HOT",
+//     weightKg: 25,
+//     minimumStock: 50,
+//   },
+//   {
+//     materialType: "GLUE",
+//     code: "GLUE-COLD-25",
+//     name: "Cold Glue 25kg",
+//     supplier: "Adhesive Supplies",
+//     unit: "KG",
+//     glueType: "COLD",
+//     weightKg: 25,
+//     minimumStock: 50,
+//   },
+//   {
+//     materialType: "ROPE",
+//     code: "ROPE-WHT-100-2",
+//     name: "White Rope 100m 2kg",
+//     supplier: "Handle Materials Co",
+//     unit: "PCS",
+//     ropeColor: "WHITE",
+//     ropeLengthM: 100,
+//     minimumStock: 1000,
+//   },
+// ];
 
 const MACHINES = [
   { machineCode: "SLIT-01", name: "Slitting Machine 1", stageType: "SLITTING" },
   { machineCode: "FLEXO-01", name: "Flexo Printer 1", stageType: "PRINTING" },
-  { machineCode: "HANDLE-01", name: "Handle Make & Paste 1", stageType: "HANDLE_MAKING_PASTING" },
+  {
+    machineCode: "HANDLE-01",
+    name: "Handle Make & Paste 1",
+    stageType: "HANDLE_MAKING_PASTING",
+  },
   { machineCode: "PACK-01", name: "Packing Line 1", stageType: "PACKING" },
 ];
 
@@ -86,10 +90,30 @@ const DEFECT_CATEGORIES = [
 ];
 
 const DEFECTS = [
-  { stageType: "PRINT_QC", code: "MISALIGNMENT", description: "Print misalignment", categoryCode: "PRINT" },
-  { stageType: "PRINT_QC", code: "SMUDGE", description: "Ink smudge", categoryCode: "PRINT" },
-  { stageType: "QUALITY_CHECK", code: "SIZE_VAR", description: "Size variation", categoryCode: "MATERIAL" },
-  { stageType: "QUALITY_CHECK", code: "HANDLE_DEF", description: "Handle defect", categoryCode: "HANDLE" },
+  {
+    stageType: "PRINT_QC",
+    code: "MISALIGNMENT",
+    description: "Print misalignment",
+    categoryCode: "PRINT",
+  },
+  {
+    stageType: "PRINT_QC",
+    code: "SMUDGE",
+    description: "Ink smudge",
+    categoryCode: "PRINT",
+  },
+  {
+    stageType: "QUALITY_CHECK",
+    code: "SIZE_VAR",
+    description: "Size variation",
+    categoryCode: "MATERIAL",
+  },
+  {
+    stageType: "QUALITY_CHECK",
+    code: "HANDLE_DEF",
+    description: "Handle defect",
+    categoryCode: "HANDLE",
+  },
 ];
 
 async function main() {
@@ -98,47 +122,60 @@ async function main() {
   for (const user of TEST_USERS) {
     await prisma.user.upsert({
       where: { email: user.email },
-      update: { name: user.name, role: user.role, passwordHash, isActive: true },
+      update: {
+        name: user.name,
+        role: user.role,
+        passwordHash,
+        isActive: true,
+      },
       create: { ...user, passwordHash, isActive: true },
     });
     console.log(`Seeded ${user.role}: ${user.email}`);
   }
 
-  for (const m of MATERIALS) {
-    await prisma.material.upsert({
-      where: { code: m.code },
-      update: m,
-      create: m,
-    });
-  }
-  console.log("Seeded materials");
+  // for (const m of MATERIALS) {
+  //   await prisma.material.upsert({
+  //     where: { code: m.code },
+  //     update: m,
+  //     create: m,
+  //   });
+  // }
+  // console.log("Seeded materials");
 
-  const kraft = await prisma.material.findUnique({ where: { code: "PAPER-BRN-80-1200" } });
-  const glueHot = await prisma.material.findUnique({ where: { code: "GLUE-HOT-25" } });
-  const glueCold = await prisma.material.findUnique({ where: { code: "GLUE-COLD-25" } });
-  const handleRope = await prisma.material.findUnique({ where: { code: "ROPE-WHT-100-2" } });
+  // const kraft = await prisma.material.findUnique({
+  //   where: { code: "PAPER-BRN-80-1200" },
+  // });
+  // const glueHot = await prisma.material.findUnique({
+  //   where: { code: "GLUE-HOT-25" },
+  // });
+  // const glueCold = await prisma.material.findUnique({
+  //   where: { code: "GLUE-COLD-25" },
+  // });
+  // const handleRope = await prisma.material.findUnique({
+  //   where: { code: "ROPE-WHT-100-2" },
+  // });
 
-  for (const [code, mat, qty, id, unit] of [
-    ["PAPER-BRN-80-1200", kraft, 10000, "seed-tx-paper", "METER"],
-    ["GLUE-HOT-25", glueHot, 100, "seed-tx-glue-hot", "KG"],
-    ["GLUE-COLD-25", glueCold, 100, "seed-tx-glue-cold", "KG"],
-    ["ROPE-WHT-100-2", handleRope, 10000, "seed-tx-handle-rope", "PCS"],
-  ]) {
-    if (!mat) continue;
-    await prisma.inventoryTransaction.upsert({
-      where: { id },
-      update: {},
-      create: {
-        id,
-        materialId: mat.id,
-        transactionType: "STOCK_IN",
-        quantity: qty,
-        unit,
-        remarks: `Initial ${code} stock`,
-      },
-    });
-  }
-  console.log("Seeded material stock (no rolls)");
+  // for (const [code, mat, qty, id, unit] of [
+  //   ["PAPER-BRN-80-1200", kraft, 10000, "seed-tx-paper", "METER"],
+  //   ["GLUE-HOT-25", glueHot, 100, "seed-tx-glue-hot", "KG"],
+  //   ["GLUE-COLD-25", glueCold, 100, "seed-tx-glue-cold", "KG"],
+  //   ["ROPE-WHT-100-2", handleRope, 10000, "seed-tx-handle-rope", "PCS"],
+  // ]) {
+  //   if (!mat) continue;
+  //   await prisma.inventoryTransaction.upsert({
+  //     where: { id },
+  //     update: {},
+  //     create: {
+  //       id,
+  //       materialId: mat.id,
+  //       transactionType: "STOCK_IN",
+  //       quantity: qty,
+  //       unit,
+  //       remarks: `Initial ${code} stock`,
+  //     },
+  //   });
+  // }
+  // console.log("Seeded material stock (no rolls)");
 
   for (const m of MACHINES) {
     await prisma.machine.upsert({
@@ -176,27 +213,6 @@ async function main() {
   }
   console.log("Seeded defect types");
 
-  await prisma.bagSpecification.upsert({
-    where: { code: "BAG-STD-01" },
-    update: {
-      handlesPerBag: 2,
-      sideGlueKgPerBag: 0.002,
-      bottomGlueKgPerBag: 0.001,
-      bagsPerMeter: 2.5,
-    },
-    create: {
-      name: "Standard Kraft Bag 8x10",
-      code: "BAG-STD-01",
-      bagWidthMm: 200,
-      repeatLengthMm: 400,
-      bagsPerMeter: 2.5,
-      handlesPerBag: 2,
-      sideGlueKgPerBag: 0.002,
-      bottomGlueKgPerBag: 0.001,
-      description: "Standard grocery bag",
-    },
-  });
-
   const customer = await prisma.customer.upsert({
     where: { id: "seed-customer-metro" },
     update: { name: "Metro Mart", kind: "COMPANY" },
@@ -212,5 +228,11 @@ async function main() {
 }
 
 main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(async () => { await prisma.$disconnect(); await pool.end(); });
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+    await pool.end();
+  });
