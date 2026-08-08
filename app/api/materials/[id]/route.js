@@ -5,6 +5,7 @@ import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
 import { buildMaterialRecord } from "@/lib/material-code";
 import { materialSchema } from "@/lib/validations/admin-forms";
+import { uploadImageToCloudinary } from "@/lib/cloudinary";
 
 export async function PUT(request, { params }) {
   try {
@@ -24,6 +25,30 @@ export async function PUT(request, { params }) {
     }
 
     const data = buildMaterialRecord(parsed.data);
+
+    // Resolve supplier relation to supplierId
+    const supplierName = data.supplier;
+    delete data.supplier;
+
+    if (supplierName) {
+      const sup = await prisma.supplier.findFirst({
+        where: {
+          OR: [
+            { name: { equals: supplierName, mode: "insensitive" } },
+            { companyName: { equals: supplierName, mode: "insensitive" } },
+          ],
+        },
+      });
+      data.supplierId = sup ? sup.id : null;
+    } else {
+      data.supplierId = null;
+    }
+
+    // Upload base64 label image to Cloudinary CDN if provided
+    if (data.imageUrl && data.imageUrl.startsWith("data:image")) {
+      data.imageUrl = await uploadImageToCloudinary(data.imageUrl, "materials");
+    }
+
     const material = await prisma.material.update({ where: { id }, data });
 
     await writeAuditLog({

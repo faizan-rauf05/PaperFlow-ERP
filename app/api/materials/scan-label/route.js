@@ -18,125 +18,141 @@ export async function POST(request) {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Gemini API key is not configured" },
+        { error: "OpenRouter API key is not configured" },
         { status: 500 },
       );
     }
 
-    const promptText = `You are an OCR extraction system. Analyze this industrial raw material label/document image carefully. Extract only information visible in the image. Extract all available material specifications and supplier details.
-Return ONLY a valid JSON object conforming strictly to this JSON structure:
+    const promptText = `You are an industrial OCR extraction system. Analyze this material label image carefully. Rely strictly on information visible in the image. Do NOT hallucinate or assume non-existent values.
+
+Return ONLY a valid JSON object matching this schema:
 
 {
-  "materialType": "PAPER_ROLL",
+  "materialType": "PAPER_ROLL" | "GLUE" | "INK" | "ROPE" | "CARTON" | "KAPTON" | "SPONGE",
   "supplier": {
-    "name": "Extracted company/manufacturer name e.g. Gulf Paper Manufacturing CO.",
+    "name": "Supplier or manufacturer company name (e.g. Gulf Paper Manufacturing CO.)",
     "companyName": "Full company name",
-    "address": "Full physical address e.g. Shuaiba Industrial Area, Mina Abdullah, Kuwait",
-    "contactNumber": "Extracted phone/fax numbers e.g. +965-2326 2069"
+    "address": "Full physical address, street, area, city, country",
+    "contactNumber": "Actual telephone or mobile number ONLY (e.g. +965-2326 2069). DO NOT include FAX numbers."
   },
   "paperRoll": {
-    "paperType": "VIRGIN",
-    "paperColor": "WHITE",
-    "paperWidthCm": 101,
-    "paperLengthM": 6096,
-    "gsm": 100,
-    "barCode": "Longer customer reference barcode string (e.g. 0140650248510010107396096). ALWAYS select the LONGEST barcode string containing customer reference numbers.",
-    "receivingDate": "2026-06-29"
+    "paperType": "VIRGIN" or "RECYCLED" (default to "VIRGIN" if unspecified),
+    "paperColor": "WHITE" or "BROWN" (decide based on label description e.g. White Kraft Paper -> WHITE),
+    "paperWidthCm": number (convert mm to cm, e.g., 1010 mm -> 101),
+    "paperLengthM": number (length in meters, e.g. 6096),
+    "gsm": number (substance gsm, e.g. 100),
+    "barCode": "String of the LONGEST barcode containing customer/reel reference (e.g. 0140650248510010107396096)",
+    "receivingDate": "YYYY-MM-DD format if date is visible (e.g. 29/06/2026 -> 2026-06-29), or null if not visible"
   },
   "glue": {
-    "glueType": "HOT",
-    "weightKg": 18,
-    "gluePacks": 1
+    "glueType": "HOT" | "COLD" | "CORE",
+    "weightKg": number,
+    "gluePacks": number
   },
   "ink": {
-    "inkColor": "CYAN",
-    "inkColorCustom": "",
-    "weightKg": 18,
-    "inkDrums": 1
+    "inkColor": "CYAN" | "MAGENTA" | "YELLOW" | "WHITE" | "VARNISH" | "BLACK" | "INK_FIXER" | "CUSTOM",
+    "inkColorCustom": "string",
+    "weightKg": number,
+    "inkDrums": number
   },
   "rope": {
-    "ropeColor": "WHITE",
-    "ropeLengthM": 5000,
-    "ropeRolls": 1
+    "ropeColor": "WHITE" | "BROWN" | "BLACK",
+    "ropeLengthM": number,
+    "ropeRolls": number
   },
   "carton": {
-    "cartonSize": "MEDIUM",
-    "cartonQty": 100
+    "cartonSize": "SMALL" | "MEDIUM" | "LARGE" | "EXTRA_LARGE",
+    "cartonQty": number
   }
 }
 
-Instructions:
-1. If the label is for Paper Roll (e.g. White Kraft Paper, Recycled Paper Reel), set materialType to "PAPER_ROLL". Convert Width from mm to cm (e.g. 1010 mm -> 101).
-2. For Barcode, locate the longer barcode string containing customer/reel reference (e.g. 0140650248510010107396096 or WKP-100-1010-107).
-3. If dates are present (e.g. 29/06/2026), format as YYYY-MM-DD (2026-06-29).
-4. Do not include markdown ticks around JSON if possible or output clean JSON only.`;
+Strict Rules:
+1. Detect material type from image (PAPER_ROLL, INK, GLUE, ROPE, CARTON, KAPTON, SPONGE).
+2. For contactNumber: Extract ONLY telephone/mobile numbers (e.g. Tel / Phone). Completely EXCLUDE Fax numbers.
+3. For paperRoll.paperColor: Determine directly from label text (e.g., "WHITE KRAFT PAPER" -> WHITE, "BROWN KRAFT" -> BROWN).
+4. For paperRoll.paperType: Default to "VIRGIN" if not explicitly specified as recycled.
+5. For receivingDate: Format as YYYY-MM-DD if present on label; if absent, return null.
+6. Do not include markdown code block syntax around output if possible, output clean JSON only.`;
 
-    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+    const cleanBase64 = imageBase64.replace(
+      /^data:image\/[\w.+-]+;base64,/i,
+      "",
+    );
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const finalMimeType = mimeType || "image/jpeg";
+    const imageDataUrl = `data:${finalMimeType};base64,${cleanBase64}`;
+
+    const url = "https://openrouter.ai/api/v1/chat/completions";
 
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": process.env.BASE_URL || "http://localhost:3000",
+        "X-Title": "Paper Flow ERP - Material Label Scanner",
+      },
       body: JSON.stringify({
-        contents: [
+        model: "openrouter/free",
+        messages: [
           {
-            parts: [
-              { text: promptText },
+            role: "user",
+            content: [
               {
-                inline_data: {
-                  mime_type: mimeType || "image/jpeg",
-                  data: cleanBase64,
+                type: "text",
+                text: promptText,
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: imageDataUrl,
                 },
               },
             ],
           },
         ],
-        generationConfig: {
-          response_mime_type: "application/json",
-          temperature: 0,
+        max_tokens: 2048,
+        temperature: 0,
+        response_format: {
+          type: "json_object",
         },
       }),
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Gemini API error:", errText);
-      return NextResponse.json(
-        { error: "Failed to analyze image with Gemini AI" },
-        { status: 500 },
-      );
-    }
-
     const resData = await response.json();
-    const rawContent = resData?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const rawContent = resData?.choices?.[0]?.message?.content;
 
     if (!rawContent) {
+      console.error("OpenRouter response:", resData);
       return NextResponse.json(
         { error: "No data returned from AI scanner" },
         { status: 500 },
       );
     }
 
-    let parsed = {};
+    let parsed;
     try {
       const cleanJson = rawContent
-        .replace(/```json/gi, "")
-        .replace(/```/g, "")
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/i, "")
+        .replace(/\s*```$/i, "")
         .trim();
+
       parsed = JSON.parse(cleanJson);
     } catch (e) {
-      console.error("Failed to parse Gemini JSON:", rawContent);
+      console.error("Failed to parse OpenRouter JSON:", rawContent);
       return NextResponse.json(
         { error: "Invalid JSON from AI scanner" },
         { status: 500 },
       );
     }
 
-    return NextResponse.json({ extracted: parsed });
+    return NextResponse.json({
+      extracted: parsed,
+    });
   } catch (error) {
     console.error("POST /api/materials/scan-label error:", error);
     return NextResponse.json(

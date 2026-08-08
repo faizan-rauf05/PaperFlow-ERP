@@ -284,7 +284,13 @@ export default function SuppliersPage() {
               <Input className={fieldClassName("", !!errors.email)} value={form.email} onChange={(e) => patchForm("email", e.target.value)} placeholder="supplier@domain.com" />
             </FormField>
             <FormField label="Address" error={errors.address}>
-              <Input className={fieldClassName("", !!errors.address)} value={form.address} onChange={(e) => patchForm("address", e.target.value)} placeholder="Office / Warehouse address" />
+              <textarea
+                rows={3}
+                className={fieldClassName("w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y", !!errors.address)}
+                value={form.address}
+                onChange={(e) => patchForm("address", e.target.value)}
+                placeholder="Office / Warehouse full address..."
+              />
             </FormField>
             <FormField label="Notes" error={errors.notes}>
               <Input className={fieldClassName("", !!errors.notes)} value={form.notes} onChange={(e) => patchForm("notes", e.target.value)} placeholder="Remarks / payment terms..." />
