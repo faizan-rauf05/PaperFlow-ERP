@@ -1,19 +1,19 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { 
-  Menu, 
-  Bell, 
-  Search, 
+import { useState } from "react";
+import {
+  Menu,
+  Bell,
+  Search,
   User,
   LogOut,
   Settings,
   ChevronDown,
   PanelLeftClose,
-  PanelLeft
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+  PanelLeft,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,20 +21,27 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { useSidebar } from './dashboard-shell'
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { useSidebar } from "./dashboard-shell";
 
-export function Header({ userName, userRole, onMenuClick, onToggleSidebar, onLogout }) {
-  const [searchQuery, setSearchQuery] = useState('')
-  const { sidebarOpen } = useSidebar()
+export function Header({
+  userName,
+  userRole,
+  onMenuClick,
+  onToggleSidebar,
+  onLogout,
+}) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const { sidebarOpen } = useSidebar();
 
-  const initials = userName
-    ?.split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase() || 'U'
+  const initials =
+    userName
+      ?.split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase() || "U";
 
   return (
     <header className="flex h-16 items-center gap-4 border-b bg-card px-4 lg:px-6">
@@ -61,7 +68,7 @@ export function Header({ userName, userRole, onMenuClick, onToggleSidebar, onLog
           <PanelLeft className="h-5 w-5" />
         )}
       </Button>
-        
+
       {/* Search */}
       <div className="flex-1 max-w-md">
         <div className="relative">
@@ -92,12 +99,18 @@ export function Header({ userName, userRole, onMenuClick, onToggleSidebar, onLog
             <DropdownMenuLabel>Notifications</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="flex flex-col items-start gap-1 py-3">
-              <span className="font-medium">Machine #3 requires maintenance</span>
-              <span className="text-xs text-muted-foreground">2 minutes ago</span>
+              <span className="font-medium">
+                Machine #3 requires maintenance
+              </span>
+              <span className="text-xs text-muted-foreground">
+                2 minutes ago
+              </span>
             </DropdownMenuItem>
             <DropdownMenuItem className="flex flex-col items-start gap-1 py-3">
               <span className="font-medium">Order #1234 completed</span>
-              <span className="text-xs text-muted-foreground">15 minutes ago</span>
+              <span className="text-xs text-muted-foreground">
+                15 minutes ago
+              </span>
             </DropdownMenuItem>
             <DropdownMenuItem className="flex flex-col items-start gap-1 py-3">
               <span className="font-medium">Low stock alert: Kraft paper</span>
@@ -113,7 +126,7 @@ export function Header({ userName, userRole, onMenuClick, onToggleSidebar, onLog
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="gap-2 pl-2 pr-3">
+            <Button variant="ghost" className="gap-2 pl-2 pr-3 group">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary text-primary-foreground text-sm">
                   {initials}
@@ -121,33 +134,35 @@ export function Header({ userName, userRole, onMenuClick, onToggleSidebar, onLog
               </Avatar>
               <div className="hidden md:flex flex-col items-start">
                 <span className="text-sm font-medium">{userName}</span>
-                <span className="text-xs text-muted-foreground capitalize">{userRole}</span>
+                <span className="text-xs text-muted-foreground capitalize group-hover:text-white">
+                  {userRole}
+                </span>
               </div>
-              <ChevronDown className="h-4 w-4 hidden md:block text-muted-foreground" />
+              <ChevronDown className="h-4 w-4 hidden md:block text-muted-foreground group-hover:text-white" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <User className="mr-2 h-4 w-4" />
+            <DropdownMenuItem className="group">
+              <User className="mr-2 h-4 w-4 group-hover:text-white" />
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Settings className="mr-2 h-4 w-4" />
+            <DropdownMenuItem className="group">
+              <Settings className="mr-2 h-4 w-4 group-hover:text-white" />
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="text-destructive"
+              className="text-destructive group"
               onClick={() => onLogout?.()}
             >
-              <LogOut className="mr-2 h-4 w-4" />
+              <LogOut className="mr-2 h-4 w-4 group-hover:text-white" />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
     </header>
-  )
+  );
 }
