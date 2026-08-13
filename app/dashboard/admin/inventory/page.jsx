@@ -15,6 +15,7 @@ import {
   Search,
   ArrowRight,
   Sparkles,
+  Newspaper
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -619,7 +620,7 @@ export default function InventoryPage() {
                                     setSelectedGroupKey(null);
                                     openDialog(m);
                                   }}
-                                  className="h-7 text-xs px-2 text-primary hover:bg-primary/10"
+                                  className="h-7 text-xs px-2 text-primary hover:bg-primary"
                                 >
                                   <Plus className="h-3 w-3 mr-1" /> Post
                                 </Button>

@@ -51,7 +51,12 @@ export function SearchableSelect({
           opt.machineCode ??
           val,
       );
-      const desc = opt.description || opt.code || opt.status || undefined;
+      const desc =
+        opt.description ||
+        opt.companyName ||
+        opt.code ||
+        opt.status ||
+        undefined;
       return { value: val, label: lbl, description: desc };
     });
   }, [options]);
@@ -107,14 +112,14 @@ export function SearchableSelect({
                     onValueChange(newValue);
                     setOpen(false);
                   }}
-                  className="cursor-pointer flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-accent hover:text-accent-foreground"
+                  className="cursor-pointer flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-accent hover:text-accent-foreground group"
                 >
                   <div className="flex flex-col min-w-0 pr-2">
                     <span className="truncate text-sm font-medium">
                       {opt.label}
                     </span>
                     {opt.description && (
-                      <span className="text-xs text-muted-foreground truncate">
+                      <span className="text-xs text-muted-foreground truncate group-hover:text-white group-data-[selected=true]:text-white">
                         {opt.description}
                       </span>
                     )}
