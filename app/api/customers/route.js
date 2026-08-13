@@ -7,7 +7,9 @@ export async function GET(request) {
   try {
     const authResult = await requireAdminOrManager();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+      return NextResponse.json(authResult.error.body, {
+        status: authResult.error.status,
+      });
     }
 
     const { searchParams } = new URL(request.url);
@@ -18,7 +20,6 @@ export async function GET(request) {
         ? {
             OR: [
               { name: { contains: q, mode: "insensitive" } },
-              { companyName: { contains: q, mode: "insensitive" } },
               { email: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
               { address: { contains: q, mode: "insensitive" } },
@@ -31,7 +32,10 @@ export async function GET(request) {
     return NextResponse.json({ customers: serializeModel(customers) });
   } catch (error) {
     console.error("GET /api/customers error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -39,7 +43,9 @@ export async function POST(request) {
   try {
     const authResult = await requireAdminOrManager();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+      return NextResponse.json(authResult.error.body, {
+        status: authResult.error.status,
+      });
     }
 
     const body = await request.json();
@@ -51,7 +57,6 @@ export async function POST(request) {
     const customer = await prisma.customer.create({
       data: {
         name,
-        companyName: body?.companyName?.trim() || null,
         phone: body?.phone?.trim() || null,
         email: body?.email?.trim() || null,
         address: body?.address?.trim() || null,
@@ -59,9 +64,15 @@ export async function POST(request) {
       },
     });
 
-    return NextResponse.json({ customer: serializeModel(customer) }, { status: 201 });
+    return NextResponse.json(
+      { customer: serializeModel(customer) },
+      { status: 201 },
+    );
   } catch (error) {
     console.error("POST /api/customers error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

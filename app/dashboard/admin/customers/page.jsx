@@ -1,30 +1,62 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Loader2, Search, X, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  Search,
+  X,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { FormField, fieldClassName } from "@/components/ui/form-field";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { customerSchema } from "@/lib/validations/admin-forms";
-import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validations/form-utils";
+import {
+  validateForm,
+  clearFieldError,
+  firstErrorMessage,
+} from "@/lib/validations/form-utils";
 import { cn } from "@/lib/utils";
 
-const emptyForm = { name: "", companyName: "", phone: "", email: "", address: "", notes: "" };
+const emptyForm = { name: "", phone: "", email: "", address: "", notes: "" };
 const PAGE_SIZE = 10;
 
 export default function CustomersPage() {
@@ -51,7 +83,9 @@ export default function CustomersPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const filteredCustomers = useMemo(() => {
     let list = customers;
@@ -59,13 +93,11 @@ export default function CustomersPage() {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter((c) => {
         const name = (c.name || "").toLowerCase();
-        const companyName = (c.companyName || "").toLowerCase();
         const phone = (c.phone || "").toLowerCase();
         const email = (c.email || "").toLowerCase();
         const address = (c.address || "").toLowerCase();
         return (
           name.includes(q) ||
-          companyName.includes(q) ||
           phone.includes(q) ||
           email.includes(q) ||
           address.includes(q)
@@ -101,7 +133,6 @@ export default function CustomersPage() {
     setEditing(c);
     setForm({
       name: c.name ?? "",
-      companyName: c.companyName ?? "",
       phone: c.phone ?? "",
       email: c.email ?? "",
       address: c.address ?? "",
@@ -153,10 +184,13 @@ export default function CustomersPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Customers</h1>
-          <p className="text-muted-foreground">Manage customer directory and delivery addresses</p>
+          <p className="text-muted-foreground">
+            Manage customer directory and delivery addresses
+          </p>
         </div>
         <Button onClick={openCreate} className="shrink-0">
-          <Plus className="h-4 w-4 mr-2" />Add Customer
+          <Plus className="h-4 w-4 mr-2" />
+          Add Customer
         </Button>
       </div>
 
@@ -165,7 +199,7 @@ export default function CustomersPage() {
         <div className="relative flex-1 w-full max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by name, company, phone, email, address..."
+            placeholder="Search by name, phone, email, address..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 pr-8"
@@ -191,7 +225,6 @@ export default function CustomersPage() {
             <TableRow>
               <TableHead className="w-[50px] text-center">#</TableHead>
               <TableHead>Customer Name</TableHead>
-              <TableHead>Company Name</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Delivery Address</TableHead>
@@ -200,25 +233,51 @@ export default function CustomersPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow>
-            ) : paginatedCustomers.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No customers found</TableCell></TableRow>
-            ) : paginatedCustomers.map((c, idx) => (
-              <TableRow key={c.id}>
-                <TableCell className="text-center font-mono text-xs text-muted-foreground">
-                  {(currentPage - 1) * PAGE_SIZE + idx + 1}
-                </TableCell>
-                <TableCell className="font-medium">{c.name}</TableCell>
-                <TableCell>{c.companyName || "—"}</TableCell>
-                <TableCell>{c.phone || "—"}</TableCell>
-                <TableCell>{c.email || "—"}</TableCell>
-                <TableCell className="max-w-[200px] truncate">{c.address || "—"}</TableCell>
-                <TableCell className="text-right space-x-1">
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(c)}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => setDeleteId(c.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : paginatedCustomers.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="text-center py-8 text-muted-foreground"
+                >
+                  No customers found
+                </TableCell>
+              </TableRow>
+            ) : (
+              paginatedCustomers.map((c, idx) => (
+                <TableRow key={c.id}>
+                  <TableCell className="text-center font-mono text-xs text-muted-foreground">
+                    {(currentPage - 1) * PAGE_SIZE + idx + 1}
+                  </TableCell>
+                  <TableCell className="font-medium">{c.name}</TableCell>
+                  <TableCell>{c.phone || "—"}</TableCell>
+                  <TableCell>{c.email || "—"}</TableCell>
+                  <TableCell className="max-w-[200px] truncate">
+                    {c.address || "—"}
+                  </TableCell>
+                  <TableCell className="text-right space-x-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEdit(c)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDeleteId(c.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
@@ -252,29 +311,54 @@ export default function CustomersPage() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{editing ? "Edit Customer" : "New Customer"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? "Edit Customer" : "New Customer"}
+            </DialogTitle>
+          </DialogHeader>
           <div className="space-y-4 py-2">
             <FormField label="Customer Name" required error={errors.name}>
-              <Input className={fieldClassName("", !!errors.name)} value={form.name} onChange={(e) => patchForm("name", e.target.value)} placeholder="Full name / Contact person" />
-            </FormField>
-            <FormField label="Company Name" error={errors.companyName}>
-              <Input className={fieldClassName("", !!errors.companyName)} value={form.companyName} onChange={(e) => patchForm("companyName", e.target.value)} placeholder="Company / Business name" />
+              <Input
+                className={fieldClassName("", !!errors.name)}
+                value={form.name}
+                onChange={(e) => patchForm("name", e.target.value)}
+                placeholder="Full name / Contact person"
+              />
             </FormField>
             <FormField label="Phone" error={errors.phone}>
-              <Input className={fieldClassName("", !!errors.phone)} value={form.phone} onChange={(e) => patchForm("phone", e.target.value)} />
+              <Input
+                className={fieldClassName("", !!errors.phone)}
+                value={form.phone}
+                onChange={(e) => patchForm("phone", e.target.value)}
+              />
             </FormField>
             <FormField label="Email" error={errors.email}>
-              <Input className={fieldClassName("", !!errors.email)} value={form.email} onChange={(e) => patchForm("email", e.target.value)} />
+              <Input
+                className={fieldClassName("", !!errors.email)}
+                value={form.email}
+                onChange={(e) => patchForm("email", e.target.value)}
+              />
             </FormField>
             <FormField label="Delivery Address" error={errors.address}>
-              <Input className={fieldClassName("", !!errors.address)} value={form.address} onChange={(e) => patchForm("address", e.target.value)} placeholder="Full delivery address" />
+              <Input
+                className={fieldClassName("", !!errors.address)}
+                value={form.address}
+                onChange={(e) => patchForm("address", e.target.value)}
+                placeholder="Full delivery address"
+              />
             </FormField>
             <FormField label="Notes" error={errors.notes}>
-              <Input className={fieldClassName("", !!errors.notes)} value={form.notes} onChange={(e) => patchForm("notes", e.target.value)} />
+              <Input
+                className={fieldClassName("", !!errors.notes)}
+                value={form.notes}
+                onChange={(e) => patchForm("notes", e.target.value)}
+              />
             </FormField>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save
             </Button>
@@ -286,11 +370,18 @@ export default function CustomersPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete customer?</AlertDialogTitle>
-            <AlertDialogDescription>Customers with orders cannot be deleted.</AlertDialogDescription>
+            <AlertDialogDescription>
+              Customers with orders cannot be deleted.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

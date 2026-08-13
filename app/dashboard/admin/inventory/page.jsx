@@ -19,7 +19,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -62,13 +68,55 @@ import { MATERIAL_TYPE_LABELS } from "@/lib/material-constants";
 import { cn, formatDateTime } from "@/lib/utils";
 
 const MATERIAL_GROUPS = [
-  { key: "PAPER_ROLL", label: "Paper Roll", icon: Package, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
-  { key: "INK", label: "Ink", icon: Palette, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10 border-purple-500/20" },
-  { key: "GLUE", label: "Glue", icon: Droplet, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
-  { key: "ROPE", label: "Rope", icon: Layers, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
-  { key: "CARTON", label: "Carton", icon: Box, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" },
-  { key: "KAPTON", label: "Kapton Tape", icon: FileText, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/20" },
-  { key: "SPONGE", label: "Sponge", icon: Sparkles, color: "text-pink-600 dark:text-pink-400", bg: "bg-pink-500/10 border-pink-500/20" },
+  {
+    key: "PAPER_ROLL",
+    label: "Paper Roll",
+    icon: Package,
+    color: "text-amber-600 dark:text-amber-400",
+    bg: "bg-amber-500/10 border-amber-500/20",
+  },
+  {
+    key: "INK",
+    label: "Ink",
+    icon: Palette,
+    color: "text-purple-600 dark:text-purple-400",
+    bg: "bg-purple-500/10 border-purple-500/20",
+  },
+  {
+    key: "GLUE",
+    label: "Glue",
+    icon: Droplet,
+    color: "text-blue-600 dark:text-blue-400",
+    bg: "bg-blue-500/10 border-blue-500/20",
+  },
+  {
+    key: "ROPE",
+    label: "Rope",
+    icon: Layers,
+    color: "text-emerald-600 dark:text-emerald-400",
+    bg: "bg-emerald-500/10 border-emerald-500/20",
+  },
+  {
+    key: "CARTON",
+    label: "Carton",
+    icon: Box,
+    color: "text-orange-600 dark:text-orange-400",
+    bg: "bg-orange-500/10 border-orange-500/20",
+  },
+  {
+    key: "KAPTON",
+    label: "Kapton Tape",
+    icon: FileText,
+    color: "text-indigo-600 dark:text-indigo-400",
+    bg: "bg-indigo-500/10 border-indigo-500/20",
+  },
+  {
+    key: "SPONGE",
+    label: "Sponge",
+    icon: Sparkles,
+    color: "text-pink-600 dark:text-pink-400",
+    bg: "bg-pink-500/10 border-pink-500/20",
+  },
 ];
 
 const emptyForm = {
@@ -170,7 +218,9 @@ export default function InventoryPage() {
 
   const activeGroup = useMemo(() => {
     if (!selectedGroupKey) return null;
-    return materialGroupSummaries.find((g) => g.key === selectedGroupKey) || null;
+    return (
+      materialGroupSummaries.find((g) => g.key === selectedGroupKey) || null
+    );
   }, [selectedGroupKey, materialGroupSummaries]);
 
   const filteredActiveGroupItems = useMemo(() => {
@@ -241,7 +291,8 @@ export default function InventoryPage() {
         <Card className="border-amber-500/50 bg-amber-500/5 shadow-xs">
           <CardHeader className="pb-2 py-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-700 dark:text-amber-400">
-              <AlertTriangle className="h-4 w-4" /> Global Low Stock Alerts ({lowStock.length} materials requiring attention)
+              <AlertTriangle className="h-4 w-4" /> Global Low Stock Alerts (
+              {lowStock.length} materials requiring attention)
             </CardTitle>
           </CardHeader>
           <CardContent className="pb-3 flex flex-wrap gap-2">
@@ -251,7 +302,8 @@ export default function InventoryPage() {
                 variant="outline"
                 className="border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-300 gap-1"
               >
-                <span className="font-semibold">{m.name}:</span> {m.currentStock} / {m.minimumStock} {m.unit}
+                <span className="font-semibold">{m.name}:</span>{" "}
+                {m.currentStock} / {m.minimumStock} {m.unit}
               </Badge>
             ))}
           </CardContent>
@@ -267,8 +319,10 @@ export default function InventoryPage() {
         ) : (
           materialGroupSummaries.map((grp) => {
             const GroupIcon = grp.icon || Package;
-            const hasAlerts = grp.lowStockItems.length > 0 || grp.outOfStockItems.length > 0;
-            const totalAlertCount = grp.lowStockItems.length + grp.outOfStockItems.length;
+            const hasAlerts =
+              grp.lowStockItems.length > 0 || grp.outOfStockItems.length > 0;
+            const totalAlertCount =
+              grp.lowStockItems.length + grp.outOfStockItems.length;
 
             return (
               <Card
@@ -292,7 +346,8 @@ export default function InventoryPage() {
                         {grp.label}
                       </CardTitle>
                       <p className="text-xs text-muted-foreground">
-                        {grp.items.length} {grp.items.length === 1 ? "variant" : "variants"}
+                        {grp.items.length}{" "}
+                        {grp.items.length === 1 ? "variant" : "variants"}
                       </p>
                     </div>
                   </div>
@@ -301,7 +356,9 @@ export default function InventoryPage() {
 
                 <CardContent className="px-4 py-2">
                   <div className="mt-1">
-                    <p className="text-xs text-muted-foreground font-medium">Total Available Stock</p>
+                    <p className="text-xs text-muted-foreground font-medium">
+                      Total Available Stock
+                    </p>
                     <div className="flex items-baseline gap-1.5 mt-0.5">
                       <span className="text-2xl font-bold font-mono tracking-tight text-foreground">
                         {grp.totalAvailableStock.toLocaleString()}
@@ -332,7 +389,8 @@ export default function InventoryPage() {
                   ) : grp.lowStockItems.length > 0 ? (
                     <span className="flex items-center gap-1.5 font-semibold">
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                      {grp.lowStockItems.length} low stock item{grp.lowStockItems.length > 1 ? "s" : ""}
+                      {grp.lowStockItems.length} low stock item
+                      {grp.lowStockItems.length > 1 ? "s" : ""}
                     </span>
                   ) : (
                     <span className="flex items-center gap-1.5 font-normal">
@@ -340,7 +398,9 @@ export default function InventoryPage() {
                       All {grp.items.length} items healthy
                     </span>
                   )}
-                  <span className="text-[11px] text-primary group-hover:underline">View details &rarr;</span>
+                  <span className="text-[11px] text-primary group-hover:underline">
+                    View details &rarr;
+                  </span>
                 </div>
               </Card>
             );
@@ -352,12 +412,16 @@ export default function InventoryPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between py-4">
           <div>
-            <CardTitle className="text-lg">Recent Inventory Transactions</CardTitle>
-            <p className="text-xs text-muted-foreground">Audit log of stock in, stock out, and manual adjustments</p>
+            <CardTitle className="text-lg">
+              Recent Inventory Transactions
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Audit log of stock in, stock out, and manual adjustments
+            </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openDialog()}>
+          {/* <Button variant="outline" size="sm" onClick={() => openDialog()}>
             <Plus className="h-3.5 w-3.5 mr-1" /> New Entry
-          </Button>
+          </Button> */}
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           <Table>
@@ -373,7 +437,10 @@ export default function InventoryPage() {
             <TableBody>
               {history.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell
+                    colSpan={5}
+                    className="text-center py-8 text-muted-foreground"
+                  >
                     No recent inventory transactions
                   </TableCell>
                 </TableRow>
@@ -401,7 +468,9 @@ export default function InventoryPage() {
                     <TableCell className="font-medium text-sm">
                       {t.material?.name || "—"}{" "}
                       {t.material?.code && (
-                        <span className="text-xs text-muted-foreground font-mono">({t.material.code})</span>
+                        <span className="text-xs text-muted-foreground font-mono">
+                          ({t.material.code})
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm font-semibold whitespace-nowrap">
@@ -419,15 +488,24 @@ export default function InventoryPage() {
       </Card>
 
       {/* Category Breakdown Itemized Dialog */}
-      <Dialog open={!!selectedGroupKey} onOpenChange={() => setSelectedGroupKey(null)}>
+      <Dialog
+        open={!!selectedGroupKey}
+        onOpenChange={() => setSelectedGroupKey(null)}
+      >
         <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
           {activeGroup && (
             <>
               <DialogHeader className="pb-3 border-b">
                 <div className="flex items-center justify-between pr-6">
                   <div className="flex items-center gap-3">
-                    <div className={cn("p-2 rounded-lg border", activeGroup.bg)}>
-                      {activeGroup.icon && <activeGroup.icon className={cn("h-5 w-5", activeGroup.color)} />}
+                    <div
+                      className={cn("p-2 rounded-lg border", activeGroup.bg)}
+                    >
+                      {activeGroup.icon && (
+                        <activeGroup.icon
+                          className={cn("h-5 w-5", activeGroup.color)}
+                        />
+                      )}
                     </div>
                     <div>
                       <DialogTitle className="text-lg flex items-center gap-2">
@@ -436,7 +514,8 @@ export default function InventoryPage() {
                       <p className="text-xs text-muted-foreground">
                         {activeGroup.items.length} materials · Total Stock:{" "}
                         <strong className="text-foreground">
-                          {activeGroup.totalAvailableStock.toLocaleString()} {activeGroup.primaryUnit}
+                          {activeGroup.totalAvailableStock.toLocaleString()}{" "}
+                          {activeGroup.primaryUnit}
                         </strong>
                       </p>
                     </div>
@@ -461,16 +540,27 @@ export default function InventoryPage() {
                     <TableHeader>
                       <TableRow className="bg-muted/50">
                         <TableHead className="text-xs">Code & Name</TableHead>
-                        <TableHead className="text-xs">Specifications</TableHead>
-                        <TableHead className="text-xs text-right">Available Stock</TableHead>
-                        <TableHead className="text-xs text-center">Status</TableHead>
-                        <TableHead className="text-xs text-right">Action</TableHead>
+                        <TableHead className="text-xs">
+                          Specifications
+                        </TableHead>
+                        <TableHead className="text-xs text-right">
+                          Available Stock
+                        </TableHead>
+                        <TableHead className="text-xs text-center">
+                          Status
+                        </TableHead>
+                        <TableHead className="text-xs text-right">
+                          Action
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredActiveGroupItems.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center py-6 text-xs text-muted-foreground">
+                          <TableCell
+                            colSpan={5}
+                            className="text-center py-6 text-xs text-muted-foreground"
+                          >
                             No materials found matching search
                           </TableCell>
                         </TableRow>
@@ -478,13 +568,19 @@ export default function InventoryPage() {
                         filteredActiveGroupItems.map((m) => {
                           const avail = Number(m.availableStock ?? 0);
                           const isOut = avail <= 0;
-                          const isLow = m.isLowStock || avail <= Number(m.minimumStock || 0);
+                          const isLow =
+                            m.isLowStock ||
+                            avail <= Number(m.minimumStock || 0);
 
                           return (
                             <TableRow key={m.id}>
                               <TableCell className="py-2.5">
-                                <p className="font-semibold text-xs text-foreground">{m.name}</p>
-                                <p className="font-mono text-[11px] text-muted-foreground">{m.code}</p>
+                                <p className="font-semibold text-xs text-foreground">
+                                  {m.name}
+                                </p>
+                                <p className="font-mono text-[11px] text-muted-foreground">
+                                  {m.code}
+                                </p>
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground py-2.5">
                                 {getMaterialSummary(m) || "—"}
@@ -494,15 +590,24 @@ export default function InventoryPage() {
                               </TableCell>
                               <TableCell className="text-center py-2.5">
                                 {isOut ? (
-                                  <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                  <Badge
+                                    variant="destructive"
+                                    className="text-[10px] px-1.5 py-0"
+                                  >
                                     Out of Stock
                                   </Badge>
                                 ) : isLow ? (
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] px-1.5 py-0 border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                  >
                                     Low Stock
                                   </Badge>
                                 ) : (
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] px-1.5 py-0 border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                  >
                                     In Stock
                                   </Badge>
                                 )}
@@ -530,7 +635,11 @@ export default function InventoryPage() {
               </div>
 
               <DialogFooter className="pt-2 border-t">
-                <Button variant="outline" size="sm" onClick={() => setSelectedGroupKey(null)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedGroupKey(null)}
+                >
                   Close Breakdown
                 </Button>
               </DialogFooter>
@@ -546,12 +655,18 @@ export default function InventoryPage() {
             <DialogTitle>Post Inventory Transaction</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <FormField label="Transaction Type" required error={errors.transactionType}>
+            <FormField
+              label="Transaction Type"
+              required
+              error={errors.transactionType}
+            >
               <Select
                 value={form.transactionType}
                 onValueChange={(v) => patchForm("transactionType", v)}
               >
-                <SelectTrigger className={cn(errors.transactionType && "border-destructive")}>
+                <SelectTrigger
+                  className={cn(errors.transactionType && "border-destructive")}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -576,8 +691,8 @@ export default function InventoryPage() {
                 }}
                 options={materials.map((m) => ({
                   value: m.id,
-                  label: `${m.name} (${m.code})`,
-                  description: `Unit: ${m.unit} · Type: ${m.materialType}`,
+                  label: `${m.name}`,
+                  description: `Unit: ${m.unit} · Type: ${m.materialType} · Barcode: ${m?.barCode}`,
                 }))}
                 placeholder="Select material"
                 searchPlaceholder="Search material..."
@@ -599,8 +714,13 @@ export default function InventoryPage() {
               </FormField>
 
               <FormField label="Unit" required error={errors.unit}>
-                <Select value={form.unit} onValueChange={(v) => patchForm("unit", v)}>
-                  <SelectTrigger className={cn(errors.unit && "border-destructive")}>
+                <Select
+                  value={form.unit}
+                  onValueChange={(v) => patchForm("unit", v)}
+                >
+                  <SelectTrigger
+                    className={cn(errors.unit && "border-destructive")}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

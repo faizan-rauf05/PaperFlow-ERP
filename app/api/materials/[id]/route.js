@@ -20,7 +20,8 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     const parsed = materialSchema.safeParse(body);
     if (!parsed.success) {
-      const message = parsed.error.errors[0]?.message ?? "Invalid material data";
+      const message =
+        parsed.error.errors[0]?.message ?? "Invalid material data";
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
@@ -33,10 +34,7 @@ export async function PUT(request, { params }) {
     if (supplierName) {
       const sup = await prisma.supplier.findFirst({
         where: {
-          OR: [
-            { name: { equals: supplierName, mode: "insensitive" } },
-            { companyName: { equals: supplierName, mode: "insensitive" } },
-          ],
+          name: { equals: supplierName, mode: "insensitive" },
         },
       });
       data.supplierId = sup ? sup.id : null;
@@ -56,13 +54,20 @@ export async function PUT(request, { params }) {
       action: ACTIONS.MATERIAL_UPDATED,
       model: "Material",
       recordId: id,
-      newValue: { code: material.code, name: material.name, materialType: material.materialType },
+      newValue: {
+        code: material.code,
+        name: material.name,
+        materialType: material.materialType,
+      },
     });
 
     return NextResponse.json({ material: serializeModel(material) });
   } catch (error) {
     if (error.code === "P2002") {
-      return NextResponse.json({ error: "Material code already exists" }, { status: 409 });
+      return NextResponse.json(
+        { error: "Material code already exists" },
+        { status: 409 },
+      );
     }
     console.error("PUT /api/materials/[id] error:", error);
     return NextResponse.json(
