@@ -34,7 +34,6 @@ Return ONLY a valid JSON object matching this schema:
   "materialType": "PAPER_ROLL" | "GLUE" | "INK" | "ROPE" | "CARTON" | "KAPTON" | "SPONGE",
   "supplier": {
     "name": "Supplier or manufacturer company name (e.g. Gulf Paper Manufacturing CO.)",
-    "companyName": "Full company name",
     "address": "Full physical address, street, area, city, country",
     "contactNumber": "Actual telephone or mobile number ONLY (e.g. +965-2326 2069). DO NOT include FAX numbers."
   },

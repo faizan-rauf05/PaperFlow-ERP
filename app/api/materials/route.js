@@ -17,7 +17,9 @@ export async function GET() {
   try {
     const authResult = await requireAdminOrManager();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+      return NextResponse.json(authResult.error.body, {
+        status: authResult.error.status,
+      });
     }
 
     const materials = await prisma.material.findMany({
@@ -64,7 +66,10 @@ export async function GET() {
     return NextResponse.json({ materials: serializeModel(enriched) });
   } catch (error) {
     console.error("GET /api/materials error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -72,13 +77,16 @@ export async function POST(request) {
   try {
     const authResult = await requireAdminOrManager();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+      return NextResponse.json(authResult.error.body, {
+        status: authResult.error.status,
+      });
     }
 
     const body = await request.json();
     const parsed = materialSchema.safeParse(body);
     if (!parsed.success) {
-      const message = parsed.error.errors[0]?.message ?? "Invalid material data";
+      const message =
+        parsed.error.errors[0]?.message ?? "Invalid material data";
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
@@ -90,12 +98,7 @@ export async function POST(request) {
 
     if (supplierName) {
       const sup = await prisma.supplier.findFirst({
-        where: {
-          OR: [
-            { name: { equals: supplierName, mode: "insensitive" } },
-            { companyName: { equals: supplierName, mode: "insensitive" } },
-          ],
-        },
+        where: { name: { equals: supplierName, mode: "insensitive" } },
       });
       data.supplierId = sup ? sup.id : null;
     } else {
@@ -131,7 +134,8 @@ export async function POST(request) {
     }
 
     if (initQty > 0) {
-      const { postInventoryTransaction } = await import("@/lib/services/inventory.service");
+      const { postInventoryTransaction } =
+        await import("@/lib/services/inventory.service");
       await postInventoryTransaction({
         materialId: material.id,
         transactionType: "STOCK_IN",
@@ -147,15 +151,29 @@ export async function POST(request) {
       action: ACTIONS.MATERIAL_CREATED,
       model: "Material",
       recordId: material.id,
-      newValue: { code: material.code, name: material.name, materialType: material.materialType, initialStock: initQty },
+      newValue: {
+        code: material.code,
+        name: material.name,
+        materialType: material.materialType,
+        initialStock: initQty,
+      },
     });
 
-    return NextResponse.json({ material: serializeModel(material) }, { status: 201 });
+    return NextResponse.json(
+      { material: serializeModel(material) },
+      { status: 201 },
+    );
   } catch (error) {
     if (error.code === "P2002") {
-      return NextResponse.json({ error: "Material code already exists" }, { status: 409 });
+      return NextResponse.json(
+        { error: "Material code already exists" },
+        { status: 409 },
+      );
     }
     console.error("POST /api/materials error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

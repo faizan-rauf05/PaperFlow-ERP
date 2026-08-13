@@ -218,12 +218,7 @@ export default function ProductionOrdersPage() {
                   </TableCell>
                   <TableCell className="pt-4">
                     <div className="space-y-0.5">
-                      <p className="font-medium">
-                        {o.customer?.name}{" "}
-                        {o.customer?.companyName
-                          ? `(${o.customer.companyName})`
-                          : ""}
-                      </p>
+                      <p className="font-medium">{o.customer?.name} </p>
                       {o.salesRep && (
                         <p className="text-xs text-muted-foreground">
                           Sales Rep:{" "}
@@ -301,7 +296,7 @@ export default function ProductionOrdersPage() {
                   onValueChange={(v) => patchForm("customerId", v)}
                   options={customers.map((c) => ({
                     value: c.id,
-                    label: `${c.name}${c.companyName ? ` (${c.companyName})` : ""}`,
+                    label: `${c.name}`,
                     description: c.phone || c.email || undefined,
                   }))}
                   placeholder="Select customer"

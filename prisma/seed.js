@@ -215,11 +215,10 @@ async function main() {
 
   const customer = await prisma.customer.upsert({
     where: { id: "seed-customer-metro" },
-    update: { name: "Metro Mart", kind: "COMPANY" },
+    update: { name: "Metro Mart" },
     create: {
       id: "seed-customer-metro",
       name: "Metro Mart",
-      kind: "COMPANY",
       phone: "+1-555-0100",
       email: "orders@metromart.example",
     },

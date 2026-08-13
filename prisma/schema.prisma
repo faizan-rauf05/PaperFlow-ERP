@@ -189,18 +189,10 @@ model MachineDowntime {
   @@index([machineId])
 }
 
-// ─── Customers & Production ────────────────────────────────────────────────
-
-enum CustomerKind {
-  PERSON
-  COMPANY
-}
 
 model Customer {
   id          String           @id @default(cuid())
   name        String
-  companyName String?
-  kind        CustomerKind     @default(COMPANY)
   phone       String?
   email       String?
   address     String?
@@ -406,7 +398,6 @@ model YieldRecord {
 model Supplier {
   id            String     @id @default(cuid())
   name          String
-  companyName   String?
   contactPerson String?
   email         String?
   contactNumber String?

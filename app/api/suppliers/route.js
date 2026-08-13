@@ -8,7 +8,9 @@ export async function GET(request) {
   try {
     const authResult = await requireAdminOrManager();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+      return NextResponse.json(authResult.error.body, {
+        status: authResult.error.status,
+      });
     }
 
     const { searchParams } = new URL(request.url);
@@ -19,7 +21,6 @@ export async function GET(request) {
         ? {
             OR: [
               { name: { contains: q, mode: "insensitive" } },
-              { companyName: { contains: q, mode: "insensitive" } },
               { contactPerson: { contains: q, mode: "insensitive" } },
               { email: { contains: q, mode: "insensitive" } },
               { contactNumber: { contains: q, mode: "insensitive" } },
@@ -33,7 +34,10 @@ export async function GET(request) {
     return NextResponse.json({ suppliers: serializeModel(suppliers) });
   } catch (error) {
     console.error("GET /api/suppliers error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -41,20 +45,22 @@ export async function POST(request) {
   try {
     const authResult = await requireAdminOrManager();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+      return NextResponse.json(authResult.error.body, {
+        status: authResult.error.status,
+      });
     }
 
     const body = await request.json();
     const parsed = supplierSchema.safeParse(body);
     if (!parsed.success) {
-      const message = parsed.error.errors[0]?.message ?? "Invalid supplier data";
+      const message =
+        parsed.error.errors[0]?.message ?? "Invalid supplier data";
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
     const supplier = await prisma.supplier.create({
       data: {
         name: parsed.data.name,
-        companyName: parsed.data.companyName || null,
         contactPerson: parsed.data.contactPerson || null,
         contactNumber: parsed.data.contactNumber || null,
         email: parsed.data.email || null,
@@ -64,9 +70,15 @@ export async function POST(request) {
       },
     });
 
-    return NextResponse.json({ supplier: serializeModel(supplier) }, { status: 201 });
+    return NextResponse.json(
+      { supplier: serializeModel(supplier) },
+      { status: 201 },
+    );
   } catch (error) {
     console.error("POST /api/suppliers error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

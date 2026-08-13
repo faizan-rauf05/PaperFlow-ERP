@@ -1,29 +1,57 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Loader2, Search, X, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  Search,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Building2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { FormField, fieldClassName } from "@/components/ui/form-field";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { supplierSchema } from "@/lib/validations/admin-forms";
-import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validations/form-utils";
+import {
+  validateForm,
+  clearFieldError,
+  firstErrorMessage,
+} from "@/lib/validations/form-utils";
 
 const emptyForm = {
   name: "",
-  companyName: "",
   contactPerson: "",
   contactNumber: "",
   email: "",
@@ -57,7 +85,9 @@ export default function SuppliersPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const filteredSuppliers = useMemo(() => {
     let list = suppliers;
@@ -65,14 +95,12 @@ export default function SuppliersPage() {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter((s) => {
         const name = (s.name || "").toLowerCase();
-        const companyName = (s.companyName || "").toLowerCase();
         const contactPerson = (s.contactPerson || "").toLowerCase();
         const contactNumber = (s.contactNumber || "").toLowerCase();
         const email = (s.email || "").toLowerCase();
         const address = (s.address || "").toLowerCase();
         return (
           name.includes(q) ||
-          companyName.includes(q) ||
           contactPerson.includes(q) ||
           contactNumber.includes(q) ||
           email.includes(q) ||
@@ -109,7 +137,6 @@ export default function SuppliersPage() {
     setEditing(s);
     setForm({
       name: s.name ?? "",
-      companyName: s.companyName ?? "",
       contactPerson: s.contactPerson ?? "",
       contactNumber: s.contactNumber ?? "",
       email: s.email ?? "",
@@ -165,10 +192,13 @@ export default function SuppliersPage() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Building2 className="h-6 w-6 text-primary" /> Suppliers
           </h1>
-          <p className="text-muted-foreground">Manage raw material suppliers directory and contact details</p>
+          <p className="text-muted-foreground">
+            Manage raw material suppliers directory and contact details
+          </p>
         </div>
         <Button onClick={openCreate} className="shrink-0">
-          <Plus className="h-4 w-4 mr-2" />Add Supplier
+          <Plus className="h-4 w-4 mr-2" />
+          Add Supplier
         </Button>
       </div>
 
@@ -177,7 +207,7 @@ export default function SuppliersPage() {
         <div className="relative flex-1 w-full max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by supplier name, company, phone, email..."
+            placeholder="Search by supplier name, phone, email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 pr-8"
@@ -203,7 +233,6 @@ export default function SuppliersPage() {
             <TableRow>
               <TableHead className="w-[50px] text-center">#</TableHead>
               <TableHead>Supplier Name</TableHead>
-              <TableHead>Company</TableHead>
               <TableHead>Contact Person</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Email</TableHead>
@@ -213,26 +242,52 @@ export default function SuppliersPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></TableCell></TableRow>
-            ) : paginatedSuppliers.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No suppliers found</TableCell></TableRow>
-            ) : paginatedSuppliers.map((s, idx) => (
-              <TableRow key={s.id}>
-                <TableCell className="text-center font-mono text-xs text-muted-foreground">
-                  {(currentPage - 1) * PAGE_SIZE + idx + 1}
-                </TableCell>
-                <TableCell className="font-medium">{s.name}</TableCell>
-                <TableCell>{s.companyName || "—"}</TableCell>
-                <TableCell>{s.contactPerson || "—"}</TableCell>
-                <TableCell>{s.contactNumber || "—"}</TableCell>
-                <TableCell>{s.email || "—"}</TableCell>
-                <TableCell className="max-w-[200px] truncate">{s.address || "—"}</TableCell>
-                <TableCell className="text-right space-x-1">
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => setDeleteId(s.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : paginatedSuppliers.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={8}
+                  className="text-center py-8 text-muted-foreground"
+                >
+                  No suppliers found
+                </TableCell>
+              </TableRow>
+            ) : (
+              paginatedSuppliers.map((s, idx) => (
+                <TableRow key={s.id}>
+                  <TableCell className="text-center font-mono text-xs text-muted-foreground">
+                    {(currentPage - 1) * PAGE_SIZE + idx + 1}
+                  </TableCell>
+                  <TableCell className="font-medium">{s.name}</TableCell>
+                  <TableCell>{s.contactPerson || "—"}</TableCell>
+                  <TableCell>{s.contactNumber || "—"}</TableCell>
+                  <TableCell>{s.email || "—"}</TableCell>
+                  <TableCell className="max-w-[200px] truncate">
+                    {s.address || "—"}
+                  </TableCell>
+                  <TableCell className="text-right space-x-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEdit(s)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDeleteId(s.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
@@ -266,38 +321,72 @@ export default function SuppliersPage() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader><DialogTitle>{editing ? "Edit Supplier" : "New Supplier"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? "Edit Supplier" : "New Supplier"}
+            </DialogTitle>
+          </DialogHeader>
           <div className="space-y-4 py-2">
             <FormField label="Supplier Name" required error={errors.name}>
-              <Input className={fieldClassName("", !!errors.name)} value={form.name} onChange={(e) => patchForm("name", e.target.value)} placeholder="Main supplier name" />
-            </FormField>
-            <FormField label="Company Name" error={errors.companyName}>
-              <Input className={fieldClassName("", !!errors.companyName)} value={form.companyName} onChange={(e) => patchForm("companyName", e.target.value)} placeholder="Business / Organization" />
+              <Input
+                className={fieldClassName("", !!errors.name)}
+                value={form.name}
+                onChange={(e) => patchForm("name", e.target.value)}
+                placeholder="Main supplier name"
+              />
             </FormField>
             <FormField label="Contact Person" error={errors.contactPerson}>
-              <Input className={fieldClassName("", !!errors.contactPerson)} value={form.contactPerson} onChange={(e) => patchForm("contactPerson", e.target.value)} placeholder="Primary representative name" />
+              <Input
+                className={fieldClassName("", !!errors.contactPerson)}
+                value={form.contactPerson}
+                onChange={(e) => patchForm("contactPerson", e.target.value)}
+                placeholder="Primary representative name"
+              />
             </FormField>
-            <FormField label="Phone / Contact Number" error={errors.contactNumber}>
-              <Input className={fieldClassName("", !!errors.contactNumber)} value={form.contactNumber} onChange={(e) => patchForm("contactNumber", e.target.value)} placeholder="+123..." />
+            <FormField
+              label="Phone / Contact Number"
+              error={errors.contactNumber}
+            >
+              <Input
+                className={fieldClassName("", !!errors.contactNumber)}
+                value={form.contactNumber}
+                onChange={(e) => patchForm("contactNumber", e.target.value)}
+                placeholder="+123..."
+              />
             </FormField>
             <FormField label="Email" error={errors.email}>
-              <Input className={fieldClassName("", !!errors.email)} value={form.email} onChange={(e) => patchForm("email", e.target.value)} placeholder="supplier@domain.com" />
+              <Input
+                className={fieldClassName("", !!errors.email)}
+                value={form.email}
+                onChange={(e) => patchForm("email", e.target.value)}
+                placeholder="supplier@domain.com"
+              />
             </FormField>
             <FormField label="Address" error={errors.address}>
               <textarea
                 rows={3}
-                className={fieldClassName("w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y", !!errors.address)}
+                className={fieldClassName(
+                  "w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y",
+                  !!errors.address,
+                )}
                 value={form.address}
                 onChange={(e) => patchForm("address", e.target.value)}
                 placeholder="Office / Warehouse full address..."
               />
             </FormField>
             <FormField label="Notes" error={errors.notes}>
-              <Input className={fieldClassName("", !!errors.notes)} value={form.notes} onChange={(e) => patchForm("notes", e.target.value)} placeholder="Remarks / payment terms..." />
+              <Input
+                className={fieldClassName("", !!errors.notes)}
+                value={form.notes}
+                onChange={(e) => patchForm("notes", e.target.value)}
+                placeholder="Remarks / payment terms..."
+              />
             </FormField>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save
             </Button>
@@ -309,11 +398,18 @@ export default function SuppliersPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete supplier?</AlertDialogTitle>
-            <AlertDialogDescription>Suppliers linked to existing raw materials cannot be deleted.</AlertDialogDescription>
+            <AlertDialogDescription>
+              Suppliers linked to existing raw materials cannot be deleted.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+} from "react";
 import {
   Plus,
   Pencil,
@@ -358,7 +365,10 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               />
             </FormField>
 
-            <FormField label="Bar Code (Customer Reference)" error={errors.barCode}>
+            <FormField
+              label="Bar Code (Customer Reference)"
+              error={errors.barCode}
+            >
               <Input
                 className={fieldClassName(
                   "font-mono text-xs",
@@ -394,7 +404,11 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </FormField>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Glue Weight (kg)" required error={errors.weightKg}>
+            <FormField
+              label="Glue Weight (kg)"
+              required
+              error={errors.weightKg}
+            >
               <Select
                 value={
                   isCustomGlueWeight
@@ -412,7 +426,9 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                   }
                 }}
               >
-                <SelectTrigger className={selectTriggerClass(!!errors.weightKg)}>
+                <SelectTrigger
+                  className={selectTriggerClass(!!errors.weightKg)}
+                >
                   <SelectValue placeholder="Select weight" />
                 </SelectTrigger>
                 <SelectContent>
@@ -427,7 +443,11 @@ function TypeSpecificFields({ form, errors, patchForm }) {
             </FormField>
 
             {isCustomGlueWeight && (
-              <FormField label="Custom Weight (kg)" required error={errors.weightKg}>
+              <FormField
+                label="Custom Weight (kg)"
+                required
+                error={errors.weightKg}
+              >
                 <Input
                   type="number"
                   min="0.1"
@@ -537,12 +557,18 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </FormField>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Roll Length (m)" required error={errors.ropeLengthM}>
+            <FormField
+              label="Roll Length (m)"
+              required
+              error={errors.ropeLengthM}
+            >
               <Select
                 value={form.ropeLengthM}
                 onValueChange={(v) => patchForm("ropeLengthM", v)}
               >
-                <SelectTrigger className={selectTriggerClass(!!errors.ropeLengthM)}>
+                <SelectTrigger
+                  className={selectTriggerClass(!!errors.ropeLengthM)}
+                >
                   <SelectValue placeholder="Select roll length" />
                 </SelectTrigger>
                 <SelectContent>
@@ -557,14 +583,20 @@ function TypeSpecificFields({ form, errors, patchForm }) {
             </FormField>
 
             {form.ropeLengthM === "CUSTOM" && (
-              <FormField label="Custom Length (m)" required error={errors.ropeLengthMCustom}>
+              <FormField
+                label="Custom Length (m)"
+                required
+                error={errors.ropeLengthMCustom}
+              >
                 <Input
                   type="number"
                   min="1"
                   step="1"
                   className={fieldClassName("", !!errors.ropeLengthMCustom)}
                   value={form.ropeLengthMCustom}
-                  onChange={(e) => patchForm("ropeLengthMCustom", e.target.value)}
+                  onChange={(e) =>
+                    patchForm("ropeLengthMCustom", e.target.value)
+                  }
                   placeholder="Length in meters"
                 />
               </FormField>
@@ -647,7 +679,9 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               value={form.cartonSize}
               onValueChange={(v) => patchForm("cartonSize", v)}
             >
-              <SelectTrigger className={selectTriggerClass(!!errors.cartonSize)}>
+              <SelectTrigger
+                className={selectTriggerClass(!!errors.cartonSize)}
+              >
                 <SelectValue placeholder="Select carton size" />
               </SelectTrigger>
               <SelectContent>
@@ -710,7 +744,6 @@ export default function MaterialsPage() {
   const [supplierDialogOpen, setSupplierDialogOpen] = useState(false);
   const [supplierForm, setSupplierForm] = useState({
     name: "",
-    companyName: "",
     contactPerson: "",
     contactNumber: "",
     address: "",
@@ -795,11 +828,7 @@ export default function MaterialsPage() {
   const filteredSuppliersForSelect = useMemo(() => {
     if (!supplierSearchFilter.trim()) return suppliers;
     const q = supplierSearchFilter.trim().toLowerCase();
-    return suppliers.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.companyName && s.companyName.toLowerCase().includes(q)),
-    );
+    return suppliers.filter((s) => s.name.toLowerCase().includes(q));
   }, [suppliers, supplierSearchFilter]);
 
   function handleSort(column) {
@@ -875,7 +904,6 @@ export default function MaterialsPage() {
   function openNewSupplierDialog(initialValues = {}) {
     setSupplierForm({
       name: initialValues.name || "",
-      companyName: initialValues.companyName || "",
       contactPerson: initialValues.contactPerson || "",
       contactNumber: initialValues.contactNumber || "",
       address: initialValues.address || "",
@@ -956,8 +984,7 @@ export default function MaterialsPage() {
         const match = suppliers.find(
           (s) =>
             s.name.toLowerCase().includes(targetName) ||
-            targetName.includes(s.name.toLowerCase()) ||
-            (s.companyName && s.companyName.toLowerCase().includes(targetName)),
+            targetName.includes(s.name.toLowerCase()),
         );
         if (match) {
           selectedSupplierName = match.name;
@@ -965,7 +992,6 @@ export default function MaterialsPage() {
         } else {
           openNewSupplierDialog({
             name: ext.supplier.name || "",
-            companyName: ext.supplier.companyName || ext.supplier.name || "",
             contactNumber: ext.supplier.contactNumber || "",
             address: ext.supplier.address || "",
           });
@@ -984,8 +1010,12 @@ export default function MaterialsPage() {
         codeSuffix: createCodeSuffix(),
         paperType: paperData.paperType || "VIRGIN",
         paperColor: paperData.paperColor || "WHITE",
-        paperWidthCm: paperData.paperWidthCm ? String(paperData.paperWidthCm) : "",
-        paperLengthM: paperData.paperLengthM ? String(paperData.paperLengthM) : "",
+        paperWidthCm: paperData.paperWidthCm
+          ? String(paperData.paperWidthCm)
+          : "",
+        paperLengthM: paperData.paperLengthM
+          ? String(paperData.paperLengthM)
+          : "",
         gsm: paperData.gsm ? String(paperData.gsm) : "",
         barCode: paperData.barCode || "",
         receivingDate: recDate,
@@ -1341,7 +1371,9 @@ export default function MaterialsPage() {
                                 />
                               </button>
                             ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
+                              <span className="text-xs text-muted-foreground">
+                                —
+                              </span>
                             )}
                           </TableCell>
                           <TableCell className="text-right space-x-1">
@@ -1501,7 +1533,9 @@ export default function MaterialsPage() {
                         value={form.supplier}
                         onValueChange={(v) => patchForm("supplier", v)}
                       >
-                        <SelectTrigger className={selectTriggerClass(!!errors.supplier)}>
+                        <SelectTrigger
+                          className={selectTriggerClass(!!errors.supplier)}
+                        >
                           <SelectValue placeholder="Select supplier..." />
                         </SelectTrigger>
                         <SelectContent className="max-w-[320px]">
@@ -1509,7 +1543,9 @@ export default function MaterialsPage() {
                             <Input
                               placeholder="Search supplier..."
                               value={supplierSearchFilter}
-                              onChange={(e) => setSupplierSearchFilter(e.target.value)}
+                              onChange={(e) =>
+                                setSupplierSearchFilter(e.target.value)
+                              }
                               className="h-8 text-xs"
                             />
                           </div>
@@ -1520,7 +1556,9 @@ export default function MaterialsPage() {
                           ) : (
                             filteredSuppliersForSelect.map((s) => (
                               <SelectItem key={s.id} value={s.name}>
-                                <span className="truncate block max-w-[250px]">{s.name}</span>
+                                <span className="truncate block max-w-[250px]">
+                                  {s.name}
+                                </span>
                               </SelectItem>
                             ))
                           )}
@@ -1556,7 +1594,11 @@ export default function MaterialsPage() {
                       onClick={() => openImagePreview(form.imageUrl)}
                       className="relative group shrink-0"
                     >
-                      <img src={form.imageUrl} alt="Reference Label" className="h-14 w-14 object-cover rounded border group-hover:opacity-80 transition-opacity" />
+                      <img
+                        src={form.imageUrl}
+                        alt="Reference Label"
+                        className="h-14 w-14 object-cover rounded border group-hover:opacity-80 transition-opacity"
+                      />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 group-hover:opacity-100 transition-opacity rounded">
                         <Eye className="h-4 w-4" />
                       </div>
@@ -1565,7 +1607,9 @@ export default function MaterialsPage() {
                       <p className="font-semibold flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                         <Check className="h-3.5 w-3.5" /> Scanned Label Attached
                       </p>
-                      <p className="text-muted-foreground text-xs">Click image to open zoomable preview</p>
+                      <p className="text-muted-foreground text-xs">
+                        Click image to open zoomable preview
+                      </p>
                     </div>
                     <Button
                       type="button"
@@ -1587,8 +1631,8 @@ export default function MaterialsPage() {
               </>
             )}
           </div>
-          <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
-            <Button
+          <DialogFooter className="flex items-center justify-between sm:justify-end w-full">
+            {/* <Button
               type="button"
               variant="outline"
               size="sm"
@@ -1601,13 +1645,14 @@ export default function MaterialsPage() {
             >
               <Sparkles className="h-3.5 w-3.5" />
               Scan Material Label
-            </Button>
-            <div className="flex items-center gap-2">
+            </Button> */}
+            <div className="flex items-center justify-end gap-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
               <Button onClick={handleSave} disabled={saving || !hasType}>
-                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save
+                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save
               </Button>
             </div>
           </DialogFooter>
@@ -1619,12 +1664,15 @@ export default function MaterialsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" /> Scan Material Label with AI
+              <Sparkles className="h-5 w-5 text-primary" /> Scan Material Label
+              with AI
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-xs text-muted-foreground">
-              Select or capture a material label image (Paper Roll, Ink, Glue, Rope, Carton, etc.). AI will extract specifications, barcode, and supplier details automatically.
+              Select or capture a material label image (Paper Roll, Ink, Glue,
+              Rope, Carton, etc.). AI will extract specifications, barcode, and
+              supplier details automatically.
             </p>
 
             <input
@@ -1638,7 +1686,11 @@ export default function MaterialsPage() {
 
             {imagePreview ? (
               <div className="relative border rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 p-2 flex flex-col items-center">
-                <img src={imagePreview} alt="Label preview" className="max-h-56 object-contain rounded" />
+                <img
+                  src={imagePreview}
+                  alt="Label preview"
+                  className="max-h-56 object-contain rounded"
+                />
                 <Button
                   type="button"
                   variant="secondary"
@@ -1656,8 +1708,12 @@ export default function MaterialsPage() {
                 className="w-full h-44 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-2 hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground"
               >
                 <Camera className="h-8 w-8 text-primary" />
-                <span className="text-sm font-medium text-foreground">Click to upload or take picture</span>
-                <span className="text-xs">Supports JPG, PNG, WEBP label images</span>
+                <span className="text-sm font-medium text-foreground">
+                  Click to upload or take picture
+                </span>
+                <span className="text-xs">
+                  Supports JPG, PNG, WEBP label images
+                </span>
               </button>
             )}
           </div>
@@ -1665,7 +1721,10 @@ export default function MaterialsPage() {
             <Button variant="outline" onClick={() => setScanDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleScanWithAI} disabled={scanning || !imagePreview}>
+            <Button
+              onClick={handleScanWithAI}
+              disabled={scanning || !imagePreview}
+            >
               {scanning ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -1687,61 +1746,90 @@ export default function MaterialsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-primary" /> Register New Supplier
+              <Building2 className="h-5 w-5 text-primary" /> Register New
+              Supplier
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-xs text-muted-foreground">
-              Supplier details captured from label. Confirm or edit details below to save.
+              Supplier details captured from label. Confirm or edit details
+              below to save.
             </p>
-            <FormField label="Supplier Name" required error={supplierErrors.name}>
+            <FormField
+              label="Supplier Name"
+              required
+              error={supplierErrors.name}
+            >
               <Input
                 className={fieldClassName("", !!supplierErrors.name)}
                 value={supplierForm.name}
-                onChange={(e) => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="Supplier / Company Name"
+                onChange={(e) =>
+                  setSupplierForm((prev) => ({ ...prev, name: e.target.value }))
+                }
+                placeholder="Supplier"
               />
             </FormField>
-            <FormField label="Company Name" error={supplierErrors.companyName}>
-              <Input
-                className={fieldClassName("", !!supplierErrors.companyName)}
-                value={supplierForm.companyName}
-                onChange={(e) => setSupplierForm((prev) => ({ ...prev, companyName: e.target.value }))}
-                placeholder="Full Business Name"
-              />
-            </FormField>
-            <FormField label="Contact Person" error={supplierErrors.contactPerson}>
+            <FormField
+              label="Contact Person"
+              error={supplierErrors.contactPerson}
+            >
               <Input
                 className={fieldClassName("", !!supplierErrors.contactPerson)}
                 value={supplierForm.contactPerson}
-                onChange={(e) => setSupplierForm((prev) => ({ ...prev, contactPerson: e.target.value }))}
+                onChange={(e) =>
+                  setSupplierForm((prev) => ({
+                    ...prev,
+                    contactPerson: e.target.value,
+                  }))
+                }
                 placeholder="Representative name"
               />
             </FormField>
-            <FormField label="Phone / Contact Number (No Fax)" error={supplierErrors.contactNumber}>
+            <FormField
+              label="Phone / Contact Number (No Fax)"
+              error={supplierErrors.contactNumber}
+            >
               <Input
                 className={fieldClassName("", !!supplierErrors.contactNumber)}
                 value={supplierForm.contactNumber}
-                onChange={(e) => setSupplierForm((prev) => ({ ...prev, contactNumber: e.target.value }))}
+                onChange={(e) =>
+                  setSupplierForm((prev) => ({
+                    ...prev,
+                    contactNumber: e.target.value,
+                  }))
+                }
                 placeholder="Telephone / Phone number"
               />
             </FormField>
             <FormField label="Address" error={supplierErrors.address}>
               <textarea
                 rows={3}
-                className={fieldClassName("w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y", !!supplierErrors.address)}
+                className={fieldClassName(
+                  "w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y",
+                  !!supplierErrors.address,
+                )}
                 value={supplierForm.address}
-                onChange={(e) => setSupplierForm((prev) => ({ ...prev, address: e.target.value }))}
+                onChange={(e) =>
+                  setSupplierForm((prev) => ({
+                    ...prev,
+                    address: e.target.value,
+                  }))
+                }
                 placeholder="Physical address, street, city..."
               />
             </FormField>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSupplierDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setSupplierDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button onClick={handleSaveSupplier} disabled={savingSupplier}>
-              {savingSupplier && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {savingSupplier && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Save & Select Supplier
             </Button>
           </DialogFooter>
@@ -1749,12 +1837,16 @@ export default function MaterialsPage() {
       </Dialog>
 
       {/* Interactive Freely Zoomable Image Lightbox Modal */}
-      <Dialog open={!!previewImageUrl} onOpenChange={() => setPreviewImageUrl(null)}>
+      <Dialog
+        open={!!previewImageUrl}
+        onOpenChange={() => setPreviewImageUrl(null)}
+      >
         <DialogContent className="sm:max-w-3xl p-4 max-h-[92vh] overflow-hidden flex flex-col">
           <DialogHeader className="pb-2 border-b">
             <div className="flex items-center justify-between gap-2 pr-6">
               <DialogTitle className="flex items-center gap-2 text-sm">
-                <ImageIcon className="h-4 w-4 text-primary" /> Reference Material Label Image
+                <ImageIcon className="h-4 w-4 text-primary" /> Reference
+                Material Label Image
               </DialogTitle>
               {/* Zoom & Rotation Controls Bar */}
               <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-md">
@@ -1825,9 +1917,16 @@ export default function MaterialsPage() {
           </div>
           <DialogFooter className="pt-2">
             <div className="text-xs text-muted-foreground flex-1 flex items-center gap-2">
-              <span>Use controls above to zoom (50% – 400%) or rotate the scanned label.</span>
+              <span>
+                Use controls above to zoom (50% – 400%) or rotate the scanned
+                label.
+              </span>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setPreviewImageUrl(null)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPreviewImageUrl(null)}
+            >
               Close Preview
             </Button>
           </DialogFooter>

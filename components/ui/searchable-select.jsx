@@ -49,9 +49,9 @@ export function SearchableSelect({
           opt.code ??
           opt.rollNo ??
           opt.machineCode ??
-          val
+          val,
       );
-      const desc = opt.description || opt.companyName || opt.code || opt.status || undefined;
+      const desc = opt.description || opt.code || opt.status || undefined;
       return { value: val, label: lbl, description: desc };
     });
   }, [options]);
@@ -73,7 +73,7 @@ export function SearchableSelect({
             "w-full justify-between font-normal text-left h-10 px-3 bg-background",
             !selectedOption && "text-muted-foreground",
             error && "border-destructive focus-visible:ring-destructive",
-            className
+            className,
           )}
         >
           <span className="truncate">
@@ -96,16 +96,23 @@ export function SearchableSelect({
               {normalizedOptions.map((opt) => (
                 <CommandItem
                   key={opt.value}
-                  value={opt.label + " " + (opt.description || "") + " " + opt.value}
+                  value={
+                    opt.label + " " + (opt.description || "") + " " + opt.value
+                  }
                   onSelect={() => {
-                    const newValue = String(opt.value) === String(value) ? "" : String(opt.value);
+                    const newValue =
+                      String(opt.value) === String(value)
+                        ? ""
+                        : String(opt.value);
                     onValueChange(newValue);
                     setOpen(false);
                   }}
                   className="cursor-pointer flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-accent hover:text-accent-foreground"
                 >
                   <div className="flex flex-col min-w-0 pr-2">
-                    <span className="truncate text-sm font-medium">{opt.label}</span>
+                    <span className="truncate text-sm font-medium">
+                      {opt.label}
+                    </span>
                     {opt.description && (
                       <span className="text-xs text-muted-foreground truncate">
                         {opt.description}
@@ -115,7 +122,9 @@ export function SearchableSelect({
                   <Check
                     className={cn(
                       "h-4 w-4 shrink-0",
-                      String(value) === String(opt.value) ? "opacity-100 text-primary" : "opacity-0"
+                      String(value) === String(opt.value)
+                        ? "opacity-100 text-primary"
+                        : "opacity-0",
                     )}
                   />
                 </CommandItem>

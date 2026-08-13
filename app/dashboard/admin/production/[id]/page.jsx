@@ -880,12 +880,7 @@ export default function ProductionOrderDetailPage() {
           <div>
             <h1 className="text-2xl font-bold font-mono">{order.orderNo}</h1>
             <p className="text-muted-foreground flex flex-wrap items-center gap-2">
-              <span>
-                {order.customer?.name}{" "}
-                {order.customer?.companyName
-                  ? `(${order.customer.companyName})`
-                  : ""}
-              </span>
+              <span>{order.customer?.name}</span>
               {order.salesRep && (
                 <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-medium">
                   Sales Rep: {order.salesRep}
