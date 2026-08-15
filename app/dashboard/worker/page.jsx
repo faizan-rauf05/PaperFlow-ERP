@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, Factory } from "lucide-react";
+import { LogOut, Factory, Hand, CheckCircle2, FileDown, Clock, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { computeSlittingPreview } from "@/lib/slitting-math";
 import { workerStyles } from "./worker-dashboard.styles";
 import { TaskList } from "./components/task-list";
 import { StageForm } from "./components/stage-form";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 function formatTimer(seconds) {
   const m = Math.floor(seconds / 60);
@@ -18,6 +20,10 @@ function formatTimer(seconds) {
 
 export default function WorkerMobileDashboard() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState("available"); // "available" or "my_tasks"
+  const [availableOrders, setAvailableOrders] = useState([]);
+  const [pickingOrderId, setPickingOrderId] = useState(null);
+
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [startingTaskId, setStartingTaskId] = useState(null);
@@ -59,11 +65,15 @@ export default function WorkerMobileDashboard() {
   const [downtimeReason, setDowntimeReason] = useState("");
   const [errors, setErrors] = useState({});
 
-  const loadTasks = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/production/my-tasks");
-      setTasks(data.tasks || []);
+      const [availRes, tasksRes] = await Promise.all([
+        api.get("/orders/available").catch(() => ({ data: { orders: [] } })),
+        api.get("/production/my-tasks").catch(() => ({ data: { tasks: [] } })),
+      ]);
+      setAvailableOrders(availRes.data.orders || []);
+      setTasks(tasksRes.data.tasks || []);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -72,8 +82,8 @@ export default function WorkerMobileDashboard() {
   }, []);
 
   useEffect(() => {
-    loadTasks();
-  }, [loadTasks]);
+    loadData();
+  }, [loadData]);
 
   // Timer interval for active task
   useEffect(() => {
@@ -88,6 +98,21 @@ export default function WorkerMobileDashboard() {
   async function handleLogout() {
     await fetch("/api/auth/signout", { method: "POST" });
     router.push("/login");
+  }
+
+  // Pick an available approved order
+  async function handlePickOrder(orderId) {
+    setPickingOrderId(orderId);
+    try {
+      await api.post(`/orders/${orderId}/pick`);
+      toast.success("Order picked & assigned to you!");
+      await loadData();
+      setActiveTab("my_tasks");
+    } catch (e) {
+      toast.error(getApiErrorMessage(e));
+    } finally {
+      setPickingOrderId(null);
+    }
   }
 
   async function handleStartTask(task) {
@@ -138,7 +163,7 @@ export default function WorkerMobileDashboard() {
 
       setContext(ctx);
 
-      // Auto-populate form values if previously entered or available in context
+      // Auto-populate form values
       setMaterialId(task.stageType === "PACKING" ? "" : stg.materialId || "");
       setCartonMaterialId(
         task.stageType === "PACKING" ? stg.materialId || "" : "",
@@ -180,7 +205,6 @@ export default function WorkerMobileDashboard() {
       );
 
       setErrors({});
-
       setSelectedTask(task);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
@@ -215,7 +239,6 @@ export default function WorkerMobileDashboard() {
     lengthRestockQty,
   ]);
 
-  // Keep output/piece fields in sync with the live slitting preview
   useEffect(() => {
     if (!slitPreview) return;
     setOutputQty(String(slitPreview.usableMeters ?? ""));
@@ -266,19 +289,13 @@ export default function WorkerMobileDashboard() {
 
   async function handleProofUpload(file) {
     if (!file) return;
-
     setUploadingProof(true);
-
     try {
       const fd = new FormData();
       fd.append("file", file);
-
       const { data } = await api.post("/uploads", fd, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
+        headers: { "Content-Type": "multipart/form-data" },
       });
-
       setProofPhotoUrl(data.photoUrl);
       clearError("proofPhoto");
       toast.success("Proof photo uploaded");
@@ -358,7 +375,7 @@ export default function WorkerMobileDashboard() {
       toast.success("Stage recorded successfully!");
       setSelectedTask(null);
       setContext(null);
-      loadTasks();
+      loadData();
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -375,10 +392,8 @@ export default function WorkerMobileDashboard() {
               <div className={workerStyles.logoIcon}>
                 <Factory size={18} className="text-white" />
               </div>
-
               <span className={workerStyles.logoName}>
-                PaperFlow{" "}
-                <span className={workerStyles.logoAccent}>Worker</span>
+                PaperFlow <span className={workerStyles.logoAccent}>Worker</span>
               </span>
             </div>
 
@@ -392,6 +407,30 @@ export default function WorkerMobileDashboard() {
             </button>
           </div>
         </header>
+
+        {/* Tab Navigation Controls */}
+        {!selectedTask && (
+          <div className="p-3 bg-muted/40 border-b flex items-center justify-center gap-2">
+            <Button
+              variant={activeTab === "available" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("available")}
+              className="text-xs font-semibold"
+            >
+              <Hand className="h-3.5 w-3.5 mr-1.5" />
+              Available Orders ({availableOrders.length})
+            </Button>
+            <Button
+              variant={activeTab === "my_tasks" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("my_tasks")}
+              className="text-xs font-semibold"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+              My Assigned Tasks ({tasks.length})
+            </Button>
+          </div>
+        )}
 
         <main className={workerStyles.main}>
           {selectedTask ? (
@@ -453,7 +492,112 @@ export default function WorkerMobileDashboard() {
               onSubmit={handleSubmitStage}
               onReportDowntime={handleReportDowntime}
             />
+          ) : activeTab === "available" ? (
+            /* Available Approved Orders Queue */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold text-sm text-foreground flex items-center gap-2">
+                  <Hand className="h-4 w-4 text-primary" /> Approved Orders Ready to Pick
+                </h2>
+                <span className="text-xs text-muted-foreground">
+                  Pick an order to assign it to yourself
+                </span>
+              </div>
+
+              {loading ? (
+                <div className={workerStyles.loadingBox}>
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                  <p>Loading available orders…</p>
+                </div>
+              ) : availableOrders.length === 0 ? (
+                <div className="p-8 border border-dashed rounded-lg text-center space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    No approved orders available for picking right now.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Check back when a manager approves new paper bag orders!
+                  </p>
+                </div>
+              ) : (
+                availableOrders.map((ord) => (
+                  <div
+                    key={ord.id}
+                    className="p-4 border rounded-xl bg-card shadow-xs space-y-3"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-base text-foreground">
+                            {ord.orderNo}
+                          </span>
+                          {ord.priority && ord.priority !== "NORMAL" && (
+                            <Badge className="text-[10px] bg-amber-500/20 text-amber-800 dark:text-amber-300">
+                              {ord.priority}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs font-semibold text-muted-foreground mt-0.5">
+                          Customer: {ord.customer?.name || "Standard Client"}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs">
+                        Ready for Work
+                      </Badge>
+                    </div>
+
+                    {/* Specifications */}
+                    <div className="border rounded-lg p-2.5 bg-muted/40 text-xs space-y-1.5">
+                      {(ord.lines || []).map((l, lIdx) => (
+                        <div key={lIdx} className="flex items-center justify-between">
+                          <span>
+                            Line #{l.lineNo || lIdx + 1}:{" "}
+                            <strong>
+                              {l.widthCm || (l.widthMm ? l.widthMm / 10 : 30)}×
+                              {l.heightCm || (l.heightMm ? l.heightMm / 10 : 40)}×
+                              {l.baseCm || (l.baseMm ? l.baseMm / 10 : 12)}cm
+                            </strong>{" "}
+                            ({l.paperType || "Brown"}, {l.colorCount ?? 0} colors,{" "}
+                            {l.withHandle ? "With Handle" : "No Handle"})
+                          </span>
+                          <span className="font-mono font-bold">
+                            {Number(l.quantity || l.plannedQty || 0).toLocaleString()} bags
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {ord.notes && (
+                      <p className="text-xs text-muted-foreground italic">
+                        Notes: "{ord.notes}"
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] text-muted-foreground">
+                        {ord.deliveryDate
+                          ? `Delivery: ${new Date(ord.deliveryDate).toLocaleDateString()}`
+                          : "Standard Schedule"}
+                      </span>
+                      <Button
+                        size="sm"
+                        onClick={() => handlePickOrder(ord.id)}
+                        disabled={pickingOrderId === ord.id}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs h-9 px-4 shadow-xs"
+                      >
+                        {pickingOrderId === ord.id ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <Hand className="h-4 w-4 mr-1.5" />
+                        )}
+                        Pick This Order
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           ) : (
+            /* My Picked / Assigned Tasks */
             <TaskList
               tasks={tasks}
               loading={loading}
