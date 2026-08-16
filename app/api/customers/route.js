@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdminOrManager } from "@/lib/apiAuth";
+import { requireAuth } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
 
 export async function GET(request) {
   try {
-    const authResult = await requireAdminOrManager();
+    const authResult = await requireAuth();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, {
         status: authResult.error.status,
@@ -41,7 +41,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const authResult = await requireAdminOrManager();
+    const authResult = await requireAuth();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, {
         status: authResult.error.status,

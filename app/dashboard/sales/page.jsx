@@ -1,616 +1,1054 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { 
-  LogOut, 
-  MapPin, 
-  Camera,
-  Clock,
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import {
   Plus,
-  X,
+  Trash2,
   FileText,
   CheckCircle2,
-  TrendingUp,
-  Loader2
-} from 'lucide-react'
+  XCircle,
+  Clock,
+  Loader2,
+  Eye,
+  Edit,
+  Send,
+  Upload,
+  LogOut,
+  Building,
+  UserCheck,
+  FileDown,
+  Sparkles,
+  Search,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { FormField } from "@/components/ui/form-field";
+import { toast } from "sonner";
+import api, { getApiErrorMessage } from "@/lib/api/client";
+import { cn, formatDateTime } from "@/lib/utils";
 
-/* ─── static data (unchanged) ─────────────────────────────────────── */
-const recentVisits = [
-  { id: 1, customer: 'MegaMart Retail',   time: 'Today, 10:30 AM',    outcome: 'deal',       notes: 'Closed bulk order for 50,000 bags' },
-  { id: 2, customer: 'Green Grocers Ltd', time: 'Today, 9:15 AM',     outcome: 'followup',   notes: 'Interested in eco-friendly line' },
-  { id: 3, customer: 'Fashion Hub Store', time: 'Yesterday, 4:00 PM', outcome: 'noresponse', notes: 'Manager not available' },
-]
+const ORDER_STATUS_CONFIG = {
+  DRAFT: { label: "Draft", cls: "bg-gray-500/10 text-gray-700 dark:text-gray-300 border-gray-400/40" },
+  PENDING_APPROVAL: { label: "Pending Approval", cls: "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40 font-semibold" },
+  APPROVED: { label: "Approved", cls: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 font-semibold" },
+  READY_FOR_WORK: { label: "Ready for Work", cls: "bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-500/40 font-semibold" },
+  PICKED: { label: "Picked", cls: "bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border-indigo-500/40 font-semibold" },
+  IN_PROGRESS: { label: "In Progress", cls: "bg-purple-500/15 text-purple-800 dark:text-purple-300 border-purple-500/40 font-semibold" },
+  COMPLETED: { label: "Completed", cls: "bg-emerald-600/20 text-emerald-900 dark:text-emerald-200 border-emerald-600/50 font-bold" },
+  REJECTED: { label: "Rejected", cls: "bg-destructive/15 text-destructive border-destructive/40 font-semibold" },
+  CANCELLED: { label: "Cancelled", cls: "bg-gray-500/20 text-gray-500 border-gray-500/30" },
+};
 
-const quotations = [
-  { id: 'QT-2024-045', customer: 'Premium Retailers Co', amount: 185000, status: 'pending'  },
-  { id: 'QT-2024-044', customer: 'EcoStore Chain',        amount:  92500, status: 'approved' },
-]
+const PAPER_TYPES = [
+  { value: "VIRGIN", label: "Virgin Paper" },
+  { value: "RECYCLED", label: "Recycled Paper" },
+];
 
-const customers = [
-  { id: 1, name: 'MegaMart Retail' },
-  { id: 2, name: 'Green Grocers Ltd' },
-  { id: 3, name: 'Fashion Hub Store' },
-  { id: 4, name: 'Premium Retailers Co' },
-  { id: 5, name: 'EcoStore Chain' },
-  { id: 6, name: 'QuickShop Express' },
-]
+const PAPER_COLORS = [
+  { value: "WHITE", label: "White" },
+  { value: "BROWN", label: "Brown" },
+];
 
-const outcomeConfig = {
-  deal:       { label: 'Deal',        cls: 'badge-deal' },
-  followup:   { label: 'Follow-up',   cls: 'badge-followup' },
-  noresponse: { label: 'No Response', cls: 'badge-noresponse' },
-  other:      { label: 'Other',       cls: 'badge-other' },
-}
+const COLOR_COUNTS = [
+  { value: 0, label: "0 (Plain - No Print)" },
+  { value: 1, label: "1 Color" },
+  { value: 2, label: "2 Colors" },
+  { value: 3, label: "3 Colors" },
+  { value: 4, label: "4 Colors" },
+  { value: 5, label: "5+ Colors" },
+];
 
-const quoteStatusConfig = {
-  pending:  { label: 'Pending',  cls: 'qs-pending'  },
-  approved: { label: 'Approved', cls: 'qs-approved' },
-  rejected: { label: 'Rejected', cls: 'qs-rejected' },
-  draft:    { label: 'Draft',    cls: 'qs-draft'    },
-}
+const emptyLine = {
+  widthCm: "",
+  heightCm: "",
+  baseCm: "",
+  quantity: "",
+  withHandle: true,
+  paperType: "VIRGIN",
+  paperColor: "WHITE",
+  colorCount: 0,
+  unitPrice: "",
+  lineTotal: "",
+  referenceFiles: [],
+};
 
-/* ─── component ────────────────────────────────────────────────────── */
-export default function SalesDashboard() {
-  const [showVisitForm, setShowVisitForm]         = useState(false)
-  const [location, setLocation]                   = useState(null)
-  const [isCapturingLocation, setIsCapturingLocation] = useState(false)
-  const [photoUploaded, setPhotoUploaded]         = useState(false)
-  const [formData, setFormData]                   = useState({ customer: '', outcome: '', notes: '' })
+export default function SalesDashboardPage() {
+  const router = useRouter();
+  const { data: session } = useSession();
 
-  const handleCaptureLocation = () => {
-    setIsCapturingLocation(true)
-    setTimeout(() => {
-      setLocation({ lat: '31.5204', lng: '74.3587' })
-      setIsCapturingLocation(false)
-    }, 1500)
+  const [orders, setOrders] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+
+  // Order Create / Edit Modal State
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [uploadingLineIndex, setUploadingLineIndex] = useState(null);
+
+  // Form Fields
+  const [customerId, setCustomerId] = useState("");
+  const [priority, setPriority] = useState("NORMAL");
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [discount, setDiscount] = useState("0");
+  const [lines, setLines] = useState([]); // Empty by default
+
+  // Inspection Modal State
+  const [inspectOrder, setInspectOrder] = useState(null);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [ordersRes, custRes] = await Promise.all([
+        api.get("/orders"),
+        api.get("/customers").catch(() => ({ data: { customers: [] } })),
+      ]);
+
+      setOrders(ordersRes.data.orders || []);
+      setCustomers(custRes.data.customers || []);
+    } catch (e) {
+      toast.error(getApiErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  async function handleLogout() {
+    await fetch("/api/auth/signout", { method: "POST" });
+    router.push("/login");
   }
 
-  const handlePhotoUpload  = () => setPhotoUploaded(true)
-
-  const handleSubmit = () => {
-    setShowVisitForm(false)
-    setFormData({ customer: '', outcome: '', notes: '' })
-    setLocation(null)
-    setPhotoUploaded(false)
+  // Open Create Dialog
+  function openCreateOrder() {
+    setEditingOrder(null);
+    setCustomerId(customers[0]?.id || "");
+    setPriority("NORMAL");
+    setDeliveryDate("");
+    setNotes("");
+    setDiscount("0");
+    setLines([]); // No default lines
+    setDialogOpen(true);
   }
 
-  const isFormValid = formData.customer && formData.outcome
+  // Open Edit Dialog
+  function openEditOrder(order) {
+    setEditingOrder(order);
+    setCustomerId(order.customerId || "");
+    setPriority(order.priority || "NORMAL");
+    setDeliveryDate(order.deliveryDate ? order.deliveryDate.split("T")[0] : "");
+    setNotes(order.notes || "");
+    setDiscount(order.discount ? parseFloat(order.discount).toFixed(2) : "0.00");
+
+    if (Array.isArray(order.lines) && order.lines.length > 0) {
+      setLines(
+        order.lines.map((l) => ({
+          widthCm: l.widthCm ? String(l.widthCm) : "",
+          heightCm: l.heightCm ? String(l.heightCm) : "",
+          baseCm: l.baseCm ? String(l.baseCm) : "",
+          quantity: l.quantity ? String(l.quantity) : "",
+          withHandle: Boolean(l.withHandle),
+          paperType: l.paperType || "VIRGIN",
+          paperColor: l.paperColor || "WHITE",
+          colorCount: l.colorCount != null ? Number(l.colorCount) : 0,
+          unitPrice: l.unitPrice ? parseFloat(l.unitPrice).toFixed(2) : "",
+          lineTotal: l.lineTotal ? parseFloat(l.lineTotal).toFixed(2) : "",
+          referenceFiles: Array.isArray(l.referenceFiles)
+            ? l.referenceFiles
+            : l.fileUrl
+              ? [{ url: l.fileUrl, name: l.fileName || "Reference File" }]
+              : [],
+        })),
+      );
+    } else {
+      setLines([]);
+    }
+
+    setDialogOpen(true);
+  }
+
+  function addLine() {
+    setLines((prev) => [...prev, { ...emptyLine }]);
+  }
+
+  function removeLine(idx) {
+    setLines((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateLine(idx, field, value) {
+    setLines((prev) => {
+      const copy = [...prev];
+      const updated = { ...copy[idx], [field]: value };
+
+      // Auto calculation: lineTotal = qty * unitPrice or unitPrice = lineTotal / qty
+      if (field === "quantity" || field === "unitPrice") {
+        const qty = parseFloat(field === "quantity" ? value : updated.quantity) || 0;
+        const uPrice = parseFloat(field === "unitPrice" ? value : updated.unitPrice) || 0;
+        if (qty > 0 && uPrice > 0) {
+          updated.lineTotal = (qty * uPrice).toFixed(2);
+        }
+      } else if (field === "lineTotal") {
+        const total = parseFloat(value) || 0;
+        const qty = parseFloat(updated.quantity) || 0;
+        if (qty > 0 && total > 0) {
+          updated.unitPrice = (total / qty).toFixed(2);
+        }
+      }
+
+      copy[idx] = updated;
+      return copy;
+    });
+  }
+
+  const subtotal = lines.reduce((acc, l) => acc + (parseFloat(l.lineTotal) || 0), 0);
+  const discountVal = parseFloat(discount) || 0;
+  const proposedTotal = Math.max(subtotal - discountVal, 0);
+
+  // File upload handler for reference files (up to 5 per line)
+  async function handleFileUpload(lineIndex, files) {
+    if (!files || files.length === 0) return;
+    const currentFiles = lines[lineIndex].referenceFiles || [];
+    if (currentFiles.length + files.length > 5) {
+      toast.error("Maximum 5 reference files allowed per order line");
+      return;
+    }
+
+    setUploadingLineIndex(lineIndex);
+    try {
+      const uploadedList = [...currentFiles];
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const { data } = await api.post("/uploads", fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        uploadedList.push({
+          url: data.photoUrl,
+          name: file.name || "Design Reference",
+        });
+      }
+
+      updateLine(lineIndex, "referenceFiles", uploadedList);
+      toast.success("Reference file(s) attached");
+    } catch (e) {
+      toast.error(getApiErrorMessage(e));
+    } finally {
+      setUploadingLineIndex(null);
+    }
+  }
+
+  function removeReferenceFile(lineIndex, fileIdx) {
+    const currentFiles = lines[lineIndex].referenceFiles || [];
+    const filtered = currentFiles.filter((_, i) => i !== fileIdx);
+    updateLine(lineIndex, "referenceFiles", filtered);
+  }
+
+  // Submit Sales Order
+  async function handleSaveOrder(targetStatus = "PENDING_APPROVAL") {
+    if (!customerId) {
+      toast.error("Please select a customer");
+      return;
+    }
+    if (lines.length === 0) {
+      toast.error("Add at least one order line item");
+      return;
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (!l.widthCm || !l.heightCm || !l.baseCm) {
+        toast.error(`Line #${i + 1}: Enter width, height, and base in cm`);
+        return;
+      }
+      if (!l.quantity || parseFloat(l.quantity) <= 0) {
+        toast.error(`Line #${i + 1}: Enter a valid quantity`);
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        customerId,
+        salesRepId: session?.user?.id || undefined,
+        priority,
+        deliveryDate: deliveryDate || undefined,
+        notes: notes || undefined,
+        subtotal,
+        discount: discountVal,
+        total: proposedTotal,
+        proposedTotal,
+        lines,
+        status: targetStatus,
+      };
+
+      if (editingOrder) {
+        await api.put(`/orders/${editingOrder.id}`, payload);
+        toast.success(
+          targetStatus === "PENDING_APPROVAL"
+            ? "Order updated and submitted for manager approval"
+            : "Order draft saved",
+        );
+      } else {
+        await api.post("/orders", payload);
+        toast.success(
+          targetStatus === "PENDING_APPROVAL"
+            ? "Order proposal submitted for manager approval!"
+            : "Order saved as draft",
+        );
+      }
+
+      setDialogOpen(false);
+      loadData();
+    } catch (e) {
+      toast.error(getApiErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const filteredOrders = orders.filter((o) => {
+    if (statusFilter !== "ALL" && o.status !== statusFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      const customerName = (o.customer?.name || "").toLowerCase();
+      const orderNo = (o.orderNo || "").toLowerCase();
+      const salesRep = (o.salesRepUser?.name || o.salesRep || "").toLowerCase();
+      return customerName.includes(q) || orderNo.includes(q) || salesRep.includes(q);
+    }
+    return true;
+  });
 
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&display=swap');
-
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        .sd-root {
-          min-height: 100vh;
-          background: #f0f4f1;
-          font-family: 'DM Sans', sans-serif;
-          color: #0f1a12;
-        }
-
-        /* ── HEADER ── */
-        .sd-header {
-          background: linear-gradient(135deg, #1e3a5f 0%, #14532d 100%);
-          position: sticky; top: 0; z-index: 50;
-          padding: 0 16px;
-        }
-        .sd-header-inner {
-          max-width: 480px; margin: 0 auto;
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 14px 0;
-        }
-        .sd-avatar {
-          width: 38px; height: 38px; border-radius: 50%;
-          background: rgba(255,255,255,0.15);
-          border: 2px solid rgba(255,255,255,0.25);
-          display: flex; align-items: center; justify-content: center;
-          font-weight: 700; font-size: 14px; color: #fff;
-          margin-right: 10px; flex-shrink: 0;
-        }
-        .sd-user-name { font-size: 15px; font-weight: 600; color: #fff; line-height: 1.2; }
-        .sd-user-role { font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 1px; }
-        .sd-logout-btn {
-          background: rgba(255,255,255,0.1);
-          border: 1px solid rgba(255,255,255,0.18);
-          border-radius: 10px;
-          width: 36px; height: 36px;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; color: rgba(255,255,255,0.85);
-          transition: background 0.2s;
-        }
-        .sd-logout-btn:hover { background: rgba(255,255,255,0.2); }
-
-        /* header bottom wave */
-        .sd-header-wave {
-          height: 20px; overflow: hidden; line-height: 0;
-          background: linear-gradient(135deg, #1e3a5f 0%, #14532d 100%);
-        }
-        .sd-header-wave svg { display: block; }
-
-        /* ── MAIN ── */
-        .sd-main {
-          max-width: 480px; margin: 0 auto;
-          padding: 20px 16px 40px;
-          display: flex; flex-direction: column; gap: 20px;
-        }
-
-        /* ── LOG VISIT BUTTON ── */
-        .log-visit-btn {
-          width: 100%;
-          padding: 16px;
-          border-radius: 16px;
-          border: none; cursor: pointer;
-          background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
-          color: #fff;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 15px; font-weight: 600;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-          box-shadow: 0 4px 18px rgba(34,197,94,0.35);
-          transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
-        }
-        .log-visit-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(34,197,94,0.45); }
-        .log-visit-btn:active { transform: translateY(0); }
-
-        /* ── VISIT FORM CARD ── */
-        .form-card {
-          background: #fff;
-          border-radius: 20px;
-          border: 1.5px solid #d4e8d8;
-          overflow: hidden;
-          box-shadow: 0 4px 24px rgba(20,83,45,0.08);
-          animation: slideDown 0.22s ease;
-        }
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-10px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .form-card-header {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 18px 20px 0;
-        }
-        .form-card-title {
-          font-family: 'DM Serif Display', serif;
-          font-size: 18px; color: #14532d;
-        }
-        .form-close-btn {
-          background: #f0f4f1; border: none; border-radius: 8px;
-          width: 30px; height: 30px; cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          color: #6b7a6e; transition: background 0.2s, color 0.2s;
-        }
-        .form-close-btn:hover { background: #fee2e2; color: #dc2626; }
-
-        .form-body { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
-
-        .form-field { display: flex; flex-direction: column; gap: 6px; }
-        .form-label {
-          font-size: 12px; font-weight: 600; color: #1f2b22;
-          text-transform: uppercase; letter-spacing: 0.06em;
-        }
-        .form-label span { color: #22c55e; }
-
-        .form-select, .form-textarea {
-          width: 100%;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px; color: #0f1a12;
-          background: #f8fdf9;
-          border: 1.5px solid #d4e8d8;
-          border-radius: 12px;
-          outline: none;
-          transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
-        }
-        .form-select { height: 46px; padding: 0 14px; appearance: none; cursor: pointer; }
-        .form-textarea { padding: 12px 14px; resize: none; }
-        .form-select:focus, .form-textarea:focus {
-          border-color: #22c55e;
-          background: #fff;
-          box-shadow: 0 0 0 3px rgba(34,197,94,0.12);
-        }
-        .form-select::placeholder, .form-textarea::placeholder { color: #9bb5a0; }
-
-        .select-wrap { position: relative; }
-        .select-chevron {
-          position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-          pointer-events: none; color: #9bb5a0;
-        }
-
-        /* location / photo rows */
-        .capture-row {
-          display: flex; align-items: center; gap: 10px;
-          padding: 12px 14px;
-          border-radius: 12px;
-          border: 1.5px solid #d4e8d8;
-          background: #f8fdf9;
-          cursor: pointer;
-          transition: border-color 0.2s, background 0.2s;
-          font-size: 14px; color: #4b7060; font-weight: 500;
-        }
-        .capture-row:hover { border-color: #22c55e; background: #f0fdf4; }
-        .capture-row:disabled { opacity: 0.55; cursor: not-allowed; }
-        .capture-success {
-          display: flex; align-items: center; gap: 10px;
-          padding: 12px 14px;
-          border-radius: 12px;
-          border: 1.5px solid #bbf7d0;
-          background: #f0fdf4;
-          font-size: 14px; color: #15803d; font-weight: 500;
-        }
-
-        /* submit */
-        .form-submit {
-          width: 100%; height: 48px;
-          border-radius: 12px; border: none; cursor: pointer;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14.5px; font-weight: 600; color: #fff;
-          background: linear-gradient(135deg, #1e3a5f, #0f2642);
-          box-shadow: 0 4px 16px rgba(30,58,95,0.3);
-          transition: opacity 0.2s, transform 0.15s;
-        }
-        .form-submit:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
-        .form-submit:disabled { opacity: 0.45; cursor: not-allowed; }
-
-        /* ── SECTION HEADER ── */
-        .section-head {
-          display: flex; align-items: center; gap: 8px;
-          margin-bottom: 2px;
-        }
-        .section-title {
-          font-family: 'DM Serif Display', serif;
-          font-size: 19px; color: #0f1a12;
-        }
-        .section-count {
-          background: #14532d; color: #bbf7d0;
-          font-size: 11px; font-weight: 700;
-          border-radius: 20px; padding: 2px 8px;
-        }
-
-        /* ── VISIT CARD ── */
-        .visit-card {
-          background: #fff;
-          border-radius: 18px;
-          border: 1px solid #e2ede4;
-          padding: 16px;
-          box-shadow: 0 2px 12px rgba(20,83,45,0.05);
-          transition: box-shadow 0.2s, transform 0.15s;
-          animation: fadeUp 0.3s ease both;
-        }
-        .visit-card:hover { box-shadow: 0 6px 20px rgba(20,83,45,0.1); transform: translateY(-1px); }
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .visit-card:nth-child(1) { animation-delay: 0.05s; }
-        .visit-card:nth-child(2) { animation-delay: 0.1s; }
-        .visit-card:nth-child(3) { animation-delay: 0.15s; }
-
-        .visit-top {
-          display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;
-        }
-        .visit-customer { font-size: 15px; font-weight: 600; color: #0f1a12; }
-        .visit-time {
-          display: flex; align-items: center; gap: 4px;
-          font-size: 11.5px; color: #9bb5a0; margin-bottom: 8px;
-        }
-        .visit-notes { font-size: 13px; color: #4b7060; line-height: 1.5; }
-
-        /* left accent bar */
-        .visit-card-inner { display: flex; gap: 12px; }
-        .visit-accent-bar {
-          width: 3px; border-radius: 4px; flex-shrink: 0; align-self: stretch;
-        }
-        .accent-deal       { background: linear-gradient(to bottom, #22c55e, #15803d); }
-        .accent-followup   { background: linear-gradient(to bottom, #f59e0b, #d97706); }
-        .accent-noresponse { background: #cbd5e1; }
-        .accent-other      { background: linear-gradient(to bottom, #3b82f6, #1d4ed8); }
-
-        /* ── BADGES ── */
-        .badge {
-          padding: 4px 10px; border-radius: 20px;
-          font-size: 11px; font-weight: 600; white-space: nowrap;
-          flex-shrink: 0;
-        }
-        .badge-deal       { background: #dcfce7; color: #15803d; }
-        .badge-followup   { background: #fef3c7; color: #b45309; }
-        .badge-noresponse { background: #f1f5f9; color: #64748b; }
-        .badge-other      { background: #dbeafe; color: #1d4ed8; }
-
-        /* ── QUOTE CARD ── */
-        .quote-card {
-          background: #fff;
-          border-radius: 18px;
-          border: 1px solid #e2ede4;
-          padding: 16px;
-          box-shadow: 0 2px 12px rgba(20,83,45,0.05);
-          transition: box-shadow 0.2s, transform 0.15s;
-          animation: fadeUp 0.3s ease both;
-        }
-        .quote-card:hover { box-shadow: 0 6px 20px rgba(20,83,45,0.1); transform: translateY(-1px); }
-        .quote-card:nth-child(1) { animation-delay: 0.05s; }
-        .quote-card:nth-child(2) { animation-delay: 0.1s; }
-
-        .quote-top {
-          display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px;
-        }
-        .quote-id { font-size: 11px; color: #9bb5a0; font-weight: 500; margin-bottom: 2px; }
-        .quote-customer { font-size: 15px; font-weight: 600; color: #0f1a12; }
-        .quote-bottom {
-          display: flex; align-items: center; justify-content: space-between;
-          padding-top: 10px;
-          border-top: 1px solid #f0f4f1;
-        }
-        .quote-amount {
-          font-family: 'DM Serif Display', serif;
-          font-size: 20px; color: #14532d; line-height: 1;
-        }
-        .quote-currency { font-size: 11px; color: #9bb5a0; font-weight: 500; margin-bottom: 2px; }
-        .quote-view-btn {
-          display: flex; align-items: center; gap: 5px;
-          background: #f0f4f1; border: none; border-radius: 10px;
-          padding: 8px 14px; cursor: pointer;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 13px; font-weight: 500; color: #1e3a5f;
-          transition: background 0.2s, color 0.2s;
-        }
-        .quote-view-btn:hover { background: #dbeafe; color: #1d4ed8; }
-
-        .qs-pending  { background: #fef3c7; color: #b45309; }
-        .qs-approved { background: #dcfce7; color: #15803d; }
-        .qs-rejected { background: #fee2e2; color: #dc2626; }
-        .qs-draft    { background: #f1f5f9; color: #64748b; }
-
-        /* ── SUMMARY STRIP ── */
-        .summary-strip {
-          display: grid; grid-template-columns: 1fr 1fr 1fr;
-          gap: 10px; margin-bottom: 4px;
-        }
-        .summary-tile {
-          background: #fff;
-          border-radius: 14px;
-          border: 1px solid #e2ede4;
-          padding: 14px 12px;
-          text-align: center;
-          box-shadow: 0 2px 8px rgba(20,83,45,0.04);
-        }
-        .summary-value {
-          font-family: 'DM Serif Display', serif;
-          font-size: 22px; color: #14532d; line-height: 1;
-          margin-bottom: 4px;
-        }
-        .summary-label { font-size: 11px; color: #9bb5a0; font-weight: 500; }
-      `}</style>
-
-      <div className="sd-root">
-
-        {/* ── HEADER ── */}
-        <header className="sd-header">
-          <div className="sd-header-inner">
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div className="sd-avatar">ED</div>
-              <div>
-                <div className="sd-user-name">Emily Davis</div>
-                <div className="sd-user-role">Sales Representative</div>
-              </div>
-            </div>
-            <button className="sd-logout-btn" aria-label="Log out">
-              <LogOut size={16} />
-            </button>
-          </div>
-        </header>
-        {/* wave */}
-        <div className="sd-header-wave">
-          <svg viewBox="0 0 480 20" preserveAspectRatio="none" width="100%" height="20">
-            <path d="M0,0 Q240,20 480,0 L480,20 L0,20 Z" fill="#f0f4f1"/>
-          </svg>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <Building className="h-6 w-6 text-primary" /> Sales Order Management
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Create paper bag proposals, track approval status, and manage customer orders
+          </p>
         </div>
-
-        {/* ── MAIN ── */}
-        <main className="sd-main">
-
-          {/* summary strip */}
-          <div className="summary-strip">
-            <div className="summary-tile">
-              <div className="summary-value">3</div>
-              <div className="summary-label">Visits Today</div>
-            </div>
-            <div className="summary-tile">
-              <div className="summary-value">1</div>
-              <div className="summary-label">Deals Closed</div>
-            </div>
-            <div className="summary-tile">
-              <div className="summary-value">2</div>
-              <div className="summary-label">Quotations</div>
-            </div>
-          </div>
-
-          {/* LOG VISIT BUTTON */}
-          {!showVisitForm && (
-            <button className="log-visit-btn" onClick={() => setShowVisitForm(true)}>
-              <Plus size={18} />
-              Log a Visit
-            </button>
-          )}
-
-          {/* VISIT FORM */}
-          {showVisitForm && (
-            <div className="form-card">
-              <div className="form-card-header">
-                <span className="form-card-title">Log a Visit</span>
-                <button className="form-close-btn" onClick={() => setShowVisitForm(false)}>
-                  <X size={15} />
-                </button>
-              </div>
-
-              <div className="form-body">
-                {/* Customer */}
-                <div className="form-field">
-                  <label className="form-label">Customer <span>*</span></label>
-                  <div className="select-wrap">
-                    <select
-                      className="form-select"
-                      value={formData.customer}
-                      onChange={(e) => setFormData({ ...formData, customer: e.target.value })}
-                    >
-                      <option value="">Select customer…</option>
-                      {customers.map(c => (
-                        <option key={c.id} value={c.name}>{c.name}</option>
-                      ))}
-                    </select>
-                    <span className="select-chevron">▾</span>
-                  </div>
-                </div>
-
-                {/* Outcome */}
-                <div className="form-field">
-                  <label className="form-label">Outcome <span>*</span></label>
-                  <div className="select-wrap">
-                    <select
-                      className="form-select"
-                      value={formData.outcome}
-                      onChange={(e) => setFormData({ ...formData, outcome: e.target.value })}
-                    >
-                      <option value="">Select outcome…</option>
-                      <option value="deal">Deal</option>
-                      <option value="followup">Follow-up</option>
-                      <option value="noresponse">No Response</option>
-                      <option value="other">Other</option>
-                    </select>
-                    <span className="select-chevron">▾</span>
-                  </div>
-                </div>
-
-                {/* Notes */}
-                <div className="form-field">
-                  <label className="form-label">Notes</label>
-                  <textarea
-                    className="form-textarea"
-                    rows={3}
-                    placeholder="Add visit notes…"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  />
-                </div>
-
-                {/* Location */}
-                <div className="form-field">
-                  <label className="form-label">Location</label>
-                  {location ? (
-                    <div className="capture-success">
-                      <CheckCircle2 size={16} color="#15803d" />
-                      Lat: {location.lat}, Lng: {location.lng}
-                    </div>
-                  ) : (
-                    <button
-                      className="capture-row"
-                      onClick={handleCaptureLocation}
-                      disabled={isCapturingLocation}
-                    >
-                      {isCapturingLocation
-                        ? <Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} />
-                        : <MapPin size={16} />}
-                      {isCapturingLocation ? 'Capturing location…' : 'Capture Location'}
-                    </button>
-                  )}
-                </div>
-
-                {/* Photo */}
-                <div className="form-field">
-                  <label className="form-label">Photo</label>
-                  {photoUploaded ? (
-                    <div className="capture-success">
-                      <CheckCircle2 size={16} color="#15803d" />
-                      Photo uploaded successfully
-                    </div>
-                  ) : (
-                    <button className="capture-row" onClick={handlePhotoUpload}>
-                      <Camera size={16} />
-                      Upload Photo
-                    </button>
-                  )}
-                </div>
-
-                {/* Submit */}
-                <button
-                  className="form-submit"
-                  onClick={handleSubmit}
-                  disabled={!isFormValid}
-                >
-                  Submit Visit
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* RECENT VISITS */}
-          <div>
-            <div className="section-head" style={{ marginBottom: 12 }}>
-              <span className="section-title">Recent Visits</span>
-              <span className="section-count">{recentVisits.length}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {recentVisits.map(visit => (
-                <div key={visit.id} className="visit-card">
-                  <div className="visit-card-inner">
-                    <div className={`visit-accent-bar accent-${visit.outcome}`} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="visit-top">
-                        <span className="visit-customer">{visit.customer}</span>
-                        <span className={`badge ${outcomeConfig[visit.outcome].cls}`}>
-                          {outcomeConfig[visit.outcome].label}
-                        </span>
-                      </div>
-                      <div className="visit-time">
-                        <Clock size={11} />
-                        {visit.time}
-                      </div>
-                      <p className="visit-notes">{visit.notes}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* MY QUOTATIONS */}
-          <div>
-            <div className="section-head" style={{ marginBottom: 12 }}>
-              <span className="section-title">My Quotations</span>
-              <span className="section-count">{quotations.length}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {quotations.map(quote => (
-                <div key={quote.id} className="quote-card">
-                  <div className="quote-top">
-                    <div>
-                      <div className="quote-id">{quote.id}</div>
-                      <div className="quote-customer">{quote.customer}</div>
-                    </div>
-                    <span className={`badge ${quoteStatusConfig[quote.status].cls}`}>
-                      {quoteStatusConfig[quote.status].label}
-                    </span>
-                  </div>
-                  <div className="quote-bottom">
-                    <div>
-                      <div className="quote-currency">PKR</div>
-                      <div className="quote-amount">{quote.amount.toLocaleString()}</div>
-                    </div>
-                    <button className="quote-view-btn">
-                      <FileText size={14} />
-                      View
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-        </main>
+        <div className="flex items-center gap-3">
+          <Button onClick={openCreateOrder} className="shrink-0">
+            <Plus className="h-4 w-4 mr-2" /> New Order Proposal
+          </Button>
+          <Button variant="ghost" size="icon" onClick={handleLogout} title="Sign Out">
+            <LogOut className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+          </Button>
+        </div>
       </div>
 
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
-    </>
-  )
+      {/* KPI Cards */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase">Total Orders</p>
+              <span className="text-2xl font-bold">{orders.length}</span>
+            </div>
+            <FileText className="h-6 w-6 text-primary" />
+          </CardContent>
+        </Card>
+        <Card className="bg-amber-500/10 border-amber-500/30">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase">Pending Approval</p>
+              <span className="text-2xl font-bold text-amber-800 dark:text-amber-300">
+                {orders.filter((o) => o.status === "PENDING_APPROVAL").length}
+              </span>
+            </div>
+            <Clock className="h-6 w-6 text-amber-600" />
+          </CardContent>
+        </Card>
+        <Card className="bg-emerald-500/10 border-emerald-500/30">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase">Approved / Ready</p>
+              <span className="text-2xl font-bold text-emerald-800 dark:text-emerald-300">
+                {orders.filter((o) => ["APPROVED", "READY_FOR_WORK"].includes(o.status)).length}
+              </span>
+            </div>
+            <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+          </CardContent>
+        </Card>
+        <Card className="bg-destructive/10 border-destructive/30">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-destructive uppercase">Rejected</p>
+              <span className="text-2xl font-bold text-destructive">
+                {orders.filter((o) => o.status === "REJECTED").length}
+              </span>
+            </div>
+            <XCircle className="h-6 w-6 text-destructive" />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by Order #, Customer..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {["ALL", "DRAFT", "PENDING_APPROVAL", "APPROVED", "READY_FOR_WORK", "IN_PROGRESS", "COMPLETED", "REJECTED"].map((st) => (
+            <Button
+              key={st}
+              variant={statusFilter === st ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter(st)}
+              className="text-xs shrink-0"
+            >
+              {st === "ALL" ? "All Orders" : ORDER_STATUS_CONFIG[st]?.label || st}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Orders List Table */}
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-muted/50 border-b text-xs font-semibold text-muted-foreground uppercase">
+              <tr>
+                <th className="py-3 px-4">Order #</th>
+                <th className="py-3 px-4">Customer</th>
+                <th className="py-3 px-4">Sales Rep</th>
+                <th className="py-3 px-4">Lines & Specs</th>
+                <th className="py-3 px-4 text-right">Proposed Price</th>
+                <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+                  </td>
+                </tr>
+              ) : filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 text-muted-foreground">
+                    No orders found
+                  </td>
+                </tr>
+              ) : (
+                filteredOrders.map((o) => {
+                  const statusInfo = ORDER_STATUS_CONFIG[o.status] || {
+                    label: o.status,
+                    cls: "bg-gray-100",
+                  };
+                  const latestApproval = o.approvals?.[0];
+
+                  return (
+                    <tr key={o.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-semibold text-foreground">
+                        {o.orderNo}
+                        {o.priority && o.priority !== "NORMAL" && (
+                          <Badge className="ml-1.5 text-[10px] bg-amber-500/20 text-amber-800 dark:text-amber-300">
+                            {o.priority}
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 font-medium text-foreground">
+                        {o.customer?.name || "—"}
+                      </td>
+                      <td className="py-3.5 px-4 text-muted-foreground text-xs">
+                        {o.salesRepUser?.name || o.salesRep || "Unassigned"}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-muted-foreground">
+                        {o.lines?.length || 0} line(s) ·{" "}
+                        {o.lines?.[0]
+                          ? `${o.lines[0].widthCm}x${o.lines[0].heightCm}x${o.lines[0].baseCm}cm (${o.lines[0].paperColor || "White"} ${o.lines[0].paperType || "Virgin"})`
+                          : "Custom Paper Bag"}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-foreground">
+                        ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                        {o.approvedTotal && Number(o.approvedTotal) !== Number(o.proposedTotal) && (
+                          <span className="block text-[11px] text-emerald-600 font-normal">
+                            Approved: ${Number(o.approvedTotal).toFixed(2)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <Badge variant="outline" className={cn("text-xs py-0.5", statusInfo.cls)}>
+                          {statusInfo.label}
+                        </Badge>
+                        {latestApproval?.remarks && (
+                          <p className="text-[11px] text-muted-foreground italic truncate max-w-[140px] mx-auto mt-0.5">
+                            "{latestApproval.remarks}"
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-right space-x-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setInspectOrder(o)}
+                          className="h-8 text-xs"
+                          title="View Details & Approval History"
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-1" /> View
+                        </Button>
+                        {["DRAFT", "REJECTED", "PENDING_APPROVAL", "APPROVED"].includes(o.status) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditOrder(o)}
+                            className="h-8 text-xs border-primary/40 text-primary hover:bg-primary/10"
+                          >
+                            <Edit className="h-3.5 w-3.5 mr-1" /> Edit
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      {/* Create / Edit Order Modal */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              {editingOrder ? `Edit Order (${editingOrder.orderNo})` : "Create New Paper Bag Proposal"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            {/* Top Info Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-3 bg-muted/40 rounded-lg border">
+              <FormField label="Customer" required>
+                <Select value={customerId} onValueChange={setCustomerId}>
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="Select customer..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
+
+              {/* Sales Representative (Read-only for Sales Dashboard) */}
+              <FormField label="Sales Representative">
+                <Input
+                  value={session?.user?.name || "Sales Representative"}
+                  readOnly
+                  className="bg-muted font-medium cursor-not-allowed"
+                />
+              </FormField>
+
+              <FormField label="Order Priority">
+                <Select value={priority} onValueChange={setPriority}>
+                  <SelectTrigger className="bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="LOW">Low</SelectItem>
+                    <SelectItem value="NORMAL">Normal</SelectItem>
+                    <SelectItem value="HIGH">High</SelectItem>
+                    <SelectItem value="URGENT">Urgent ⚡</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+            </div>
+
+            {/* Order Lines Builder */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-sm flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" /> Order Line Items & Specifications
+                </h3>
+                <Button type="button" variant="outline" size="sm" onClick={addLine} className="text-xs">
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Line Item
+                </Button>
+              </div>
+
+              {lines.length === 0 ? (
+                <div className="p-8 border border-dashed rounded-lg text-center space-y-2 bg-muted/20">
+                  <p className="text-sm text-muted-foreground">
+                    No order line items added yet.
+                  </p>
+                  <Button type="button" variant="outline" size="sm" onClick={addLine} className="text-xs">
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Order Line Item
+                  </Button>
+                </div>
+              ) : (
+                lines.map((line, idx) => (
+                  <div key={idx} className="p-4 border rounded-lg bg-card space-y-3 relative shadow-2xs">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <span className="font-semibold text-xs text-primary font-mono">
+                        Line #{idx + 1}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeLine(idx)}
+                        className="h-7 text-xs text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
+                      </Button>
+                    </div>
+
+                    {/* Dimensions in cm (Step = 1) */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <FormField label="Width (cm)" required>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.widthCm}
+                          onChange={(e) => updateLine(idx, "widthCm", e.target.value)}
+                          placeholder="e.g. 30"
+                        />
+                      </FormField>
+                      <FormField label="Height (cm)" required>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.heightCm}
+                          onChange={(e) => updateLine(idx, "heightCm", e.target.value)}
+                          placeholder="e.g. 40"
+                        />
+                      </FormField>
+                      <FormField label="Gusset / Base (cm)" required>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.baseCm}
+                          onChange={(e) => updateLine(idx, "baseCm", e.target.value)}
+                          placeholder="e.g. 12"
+                        />
+                      </FormField>
+                    </div>
+
+                    {/* Qty, Paper Type, Paper Color, Color Count */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <FormField label="Quantity (Bags)" required>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.quantity}
+                          onChange={(e) => updateLine(idx, "quantity", e.target.value)}
+                          placeholder="e.g. 50000"
+                        />
+                      </FormField>
+
+                      <FormField label="Paper Type">
+                        <Select
+                          value={line.paperType}
+                          onValueChange={(v) => updateLine(idx, "paperType", v)}
+                        >
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PAPER_TYPES.map((p) => (
+                              <SelectItem key={p.value} value={p.value}>
+                                {p.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormField>
+
+                      <FormField label="Paper Color">
+                        <Select
+                          value={line.paperColor}
+                          onValueChange={(v) => updateLine(idx, "paperColor", v)}
+                        >
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PAPER_COLORS.map((c) => (
+                              <SelectItem key={c.value} value={c.value}>
+                                {c.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormField>
+
+                      <FormField label="Color Count">
+                        <Select
+                          value={String(line.colorCount)}
+                          onValueChange={(v) => updateLine(idx, "colorCount", Number(v))}
+                        >
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {COLOR_COUNTS.map((c) => (
+                              <SelectItem key={c.value} value={String(c.value)}>
+                                {c.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormField>
+                    </div>
+
+                    {/* Handle Option (Radio Choice) */}
+                    <div className="pt-1">
+                      <label className="text-xs font-medium text-muted-foreground block mb-1">
+                        Handle Option
+                      </label>
+                      <div className="flex items-center gap-4 text-xs font-medium">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`handle-${idx}`}
+                            checked={line.withHandle === true}
+                            onChange={() => updateLine(idx, "withHandle", true)}
+                            className="accent-primary"
+                          />
+                          <span>With Handle</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`handle-${idx}`}
+                            checked={line.withHandle === false}
+                            onChange={() => updateLine(idx, "withHandle", false)}
+                            className="accent-primary"
+                          />
+                          <span>Without Handle</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Pricing per line (Step = 0.01) */}
+                    <div className="grid grid-cols-2 gap-3 pt-2 border-t">
+                      <FormField label="Unit Price ($ / bag)">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.unitPrice}
+                          onChange={(e) => updateLine(idx, "unitPrice", e.target.value)}
+                          placeholder="0.00"
+                        />
+                      </FormField>
+
+                      <FormField label="Line Total ($)">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.lineTotal}
+                          onChange={(e) => updateLine(idx, "lineTotal", e.target.value)}
+                          placeholder="0.00"
+                        />
+                      </FormField>
+                    </div>
+
+                    {/* Reference / Design Files Upload */}
+                    <div className="pt-1">
+                      <label className="text-xs font-medium text-muted-foreground block mb-1">
+                        Reference / Design Files (Max 5 uploaded images or PDFs)
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(line.referenceFiles || []).map((f, fileIdx) => (
+                          <div
+                            key={fileIdx}
+                            className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs border"
+                          >
+                            <a
+                              href={f.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary hover:underline max-w-[120px] truncate"
+                            >
+                              {f.name || `File ${fileIdx + 1}`}
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => removeReferenceFile(idx, fileIdx)}
+                              className="text-muted-foreground hover:text-destructive ml-1"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+
+                        {(line.referenceFiles || []).length < 5 && (
+                          <label className="cursor-pointer border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 rounded px-2.5 py-1 text-xs text-primary font-medium flex items-center gap-1">
+                            <Upload className="h-3 w-3" />
+                            {uploadingLineIndex === idx ? "Uploading..." : "Attach File"}
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*,application/pdf"
+                              onChange={(e) => handleFileUpload(idx, e.target.files)}
+                              className="hidden"
+                              disabled={uploadingLineIndex === idx}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Commercial Pricing Summary */}
+            <div className="p-4 border rounded-lg bg-muted/40 space-y-3">
+              <h4 className="font-semibold text-sm">Commercial Proposal Pricing</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <span className="text-xs text-muted-foreground">Subtotal Sum</span>
+                  <p className="font-mono text-lg font-bold">${subtotal.toFixed(2)}</p>
+                </div>
+                <FormField label="Discount ($)">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </FormField>
+                <div>
+                  <span className="text-xs text-muted-foreground font-semibold text-primary">
+                    Proposed Commercial Total
+                  </span>
+                  <p className="font-mono text-xl font-bold text-primary">${proposedTotal.toFixed(2)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Notes & Delivery Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField label="Expected Delivery Date">
+                <Input
+                  type="date"
+                  value={deliveryDate}
+                  onChange={(e) => setDeliveryDate(e.target.value)}
+                />
+              </FormField>
+              <FormField label="Special Order Notes / Client Instructions">
+                <Input
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="e.g. Special packing requirement..."
+                />
+              </FormField>
+            </div>
+          </div>
+
+          <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleSaveOrder("DRAFT")}
+              disabled={saving}
+            >
+              Save as Draft
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => handleSaveOrder("PENDING_APPROVAL")} disabled={saving}>
+                {saving ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                Submit for Approval
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Inspection & Approval History Modal */}
+      <Dialog open={!!inspectOrder} onOpenChange={() => setInspectOrder(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          {inspectOrder && (
+            <>
+              <DialogHeader className="border-b pb-3">
+                <div className="flex items-center justify-between pr-6">
+                  <div>
+                    <DialogTitle className="font-mono text-lg flex items-center gap-2">
+                      Order #{inspectOrder.orderNo}
+                    </DialogTitle>
+                    <p className="text-xs text-muted-foreground">
+                      Customer: <strong className="text-foreground">{inspectOrder.customer?.name}</strong> · Sales Rep:{" "}
+                      <strong>{inspectOrder.salesRepUser?.name || inspectOrder.salesRep}</strong>
+                    </p>
+                  </div>
+                  <Badge variant="outline" className={cn(ORDER_STATUS_CONFIG[inspectOrder.status]?.cls)}>
+                    {ORDER_STATUS_CONFIG[inspectOrder.status]?.label || inspectOrder.status}
+                  </Badge>
+                </div>
+              </DialogHeader>
+
+              <div className="space-y-4 py-3">
+                {/* Line Items Details */}
+                <div>
+                  <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wide mb-2">
+                    Line Items & Specifications
+                  </h4>
+                  <div className="border rounded-md divide-y">
+                    {(inspectOrder.lines || []).map((l, i) => (
+                      <div key={i} className="p-3 text-xs space-y-1.5">
+                        <div className="flex items-center justify-between font-semibold">
+                          <span>
+                            Line #{l.lineNo || i + 1}: {l.widthCm || (l.widthMm ? l.widthMm / 10 : 30)}cm (W) × {l.heightCm || (l.heightMm ? l.heightMm / 10 : 40)}cm (H) × {l.baseCm || (l.baseMm ? l.baseMm / 10 : 12)}cm (Base)
+                          </span>
+                          <span className="font-mono text-foreground font-bold">
+                            {Number(l.quantity || l.plannedQty).toLocaleString()} bags
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+                          <span>Paper: <strong>{l.paperColor || "White"} ({l.paperType || "Virgin"})</strong></span>
+                          <span>Colors: <strong>{l.colorCount ?? 0}</strong></span>
+                          <span>Handle: <strong>{l.withHandle ? "Yes" : "No"}</strong></span>
+                          {l.lineTotal && (
+                            <span className="font-mono text-foreground font-medium">
+                              Line Total: ${Number(l.lineTotal).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Reference Files */}
+                        {Array.isArray(l.referenceFiles) && l.referenceFiles.length > 0 && (
+                          <div className="pt-1 flex flex-wrap items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground font-medium">Reference Files:</span>
+                            {l.referenceFiles.map((rf, rIdx) => (
+                              <a
+                                key={rIdx}
+                                href={rf.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20 hover:underline"
+                              >
+                                <FileDown className="h-3 w-3" /> {rf.name || `File ${rIdx + 1}`}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pricing Summary */}
+                <div className="p-3 bg-muted/50 rounded-md border flex items-center justify-between text-xs font-mono">
+                  <div>
+                    <span className="text-muted-foreground">Proposed Total:</span>{" "}
+                    <strong className="text-sm">${Number(inspectOrder.proposedTotal || inspectOrder.total || 0).toFixed(2)}</strong>
+                  </div>
+                  {inspectOrder.approvedTotal && (
+                    <div className="text-right">
+                      <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Approved Total:</span>{" "}
+                      <strong className="text-sm text-emerald-700 dark:text-emerald-400">${Number(inspectOrder.approvedTotal).toFixed(2)}</strong>
+                    </div>
+                  )}
+                </div>
+
+                {/* Approval History Audit Trail */}
+                <div>
+                  <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-primary" /> Manager Approval History Log
+                  </h4>
+                  {Array.isArray(inspectOrder.approvals) && inspectOrder.approvals.length > 0 ? (
+                    <div className="border rounded-md divide-y">
+                      {inspectOrder.approvals.map((app, aIdx) => (
+                        <div key={app.id || aIdx} className="p-3 text-xs space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold flex items-center gap-1.5">
+                              {app.status === "APPROVED" ? (
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                              ) : app.status === "REJECTED" ? (
+                                <XCircle className="h-3.5 w-3.5 text-destructive" />
+                              ) : (
+                                <Clock className="h-3.5 w-3.5 text-amber-600" />
+                              )}
+                              Approval Status: {app.status}
+                            </span>
+                            <span className="text-muted-foreground text-[11px]">
+                              {formatDateTime(app.reviewedAt || app.createdAt)}
+                            </span>
+                          </div>
+                          <p className="text-muted-foreground">
+                            Reviewed by: <strong>{app.reviewedBy?.name || app.reviewedBy?.email || "Manager"}</strong>
+                          </p>
+                          {app.remarks && (
+                            <p className="text-foreground bg-muted p-2 rounded text-xs mt-1 border">
+                              Remarks: "{app.remarks}"
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic border p-3 rounded">
+                      No approval history recorded yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setInspectOrder(null)}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }

@@ -2,10 +2,28 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, Plus, Trash2, Upload, Paperclip } from "lucide-react";
+import {
+  Factory,
+  ShoppingBag,
+  TrendingUp,
+  Eye,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  DollarSign,
+  FileDown,
+  Plus,
+  Trash2,
+  Upload,
+  Sparkles,
+  Send,
+  Edit,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -28,62 +46,92 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FormField, fieldClassName } from "@/components/ui/form-field";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { FormField } from "@/components/ui/form-field";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
-import { productionOrderSchema } from "@/lib/validations/admin-forms";
-import {
-  validateForm,
-  clearFieldError,
-  firstErrorMessage,
-} from "@/lib/validations/form-utils";
-import {
-  getOrderLineProgressRows,
-  ORDER_STATUS_COLORS,
-} from "@/lib/order-progress";
-import { cn } from "@/lib/utils";
+import { ORDER_STATUS_COLORS } from "@/lib/order-progress";
+import { cn, formatDateTime } from "@/lib/utils";
+
+const STATUS_COLORS = {
+  ...ORDER_STATUS_COLORS,
+  DRAFT: "bg-gray-500/10 text-gray-700 dark:text-gray-300 border-gray-400/40",
+  PENDING_APPROVAL: "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40 font-semibold",
+  APPROVED: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 font-semibold",
+  READY_FOR_WORK: "bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-500/40 font-semibold",
+  REJECTED: "bg-destructive/15 text-destructive border-destructive/40 font-semibold",
+};
+
+const PAPER_TYPES = [
+  { value: "VIRGIN", label: "Virgin Paper" },
+  { value: "RECYCLED", label: "Recycled Paper" },
+];
+
+const PAPER_COLORS = [
+  { value: "WHITE", label: "White" },
+  { value: "BROWN", label: "Brown" },
+];
+
+const COLOR_COUNTS = [
+  { value: 0, label: "0 (Plain - No Print)" },
+  { value: 1, label: "1 Color" },
+  { value: 2, label: "2 Colors" },
+  { value: 3, label: "3 Colors" },
+  { value: 4, label: "4 Colors" },
+  { value: 5, label: "5+ Colors" },
+];
 
 const emptyLine = {
-  heightMm: "",
-  widthMm: "",
-  baseMm: "",
-  plannedQty: "",
-  fileUrl: "",
-  fileName: "",
-};
-const emptyForm = {
-  customerId: "",
-  salesRep: "",
-  startDate: "",
-  deliveryDate: "",
-  assignedWorkerId: "",
-  notes: "",
-  lines: [{ ...emptyLine }],
+  widthCm: "",
+  heightCm: "",
+  baseCm: "",
+  quantity: "",
+  withHandle: true,
+  paperType: "VIRGIN",
+  paperColor: "WHITE",
+  colorCount: 0,
+  unitPrice: "",
+  lineTotal: "",
+  referenceFiles: [],
 };
 
-export default function ProductionOrdersPage() {
+export default function AdminProductionOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [workers, setWorkers] = useState([]);
+  const [salesReps, setSalesReps] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [uploadingIndex, setUploadingIndex] = useState(null);
-  const [form, setForm] = useState(emptyForm);
-  const [errors, setErrors] = useState({});
 
-  const load = useCallback(async () => {
+  // Create / Edit Modal State
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [uploadingLineIndex, setUploadingLineIndex] = useState(null);
+
+  // Form Fields
+  const [customerId, setCustomerId] = useState("");
+  const [salesRepId, setSalesRepId] = useState("");
+  const [priority, setPriority] = useState("NORMAL");
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [discount, setDiscount] = useState("0");
+  const [lines, setLines] = useState([]); // Empty by default
+
+  // Review / Approval Modal State
+  const [reviewOrder, setReviewOrder] = useState(null);
+  const [approvedTotal, setApprovedTotal] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [ordersRes, custRes, workersRes] = await Promise.all([
-        api.get("/production/orders"),
-        api.get("/customers"),
-        api.get("/workers"),
+      const [ordersRes, custRes, repsRes] = await Promise.all([
+        api.get("/orders"),
+        api.get("/customers").catch(() => ({ data: { customers: [] } })),
+        api.get("/users/sales-reps").catch(() => ({ data: { salesReps: [] } })),
       ]);
       setOrders(ordersRes.data.orders || []);
       setCustomers(custRes.data.customers || []);
-      setWorkers(workersRes.data.workers || []);
+      setSalesReps(repsRes.data.salesReps || []);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -92,75 +140,181 @@ export default function ProductionOrdersPage() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadData();
+  }, [loadData]);
 
-  function patchForm(field, value) {
-    setForm((prev) => ({ ...prev, [field]: value }));
-    setErrors((prev) => clearFieldError(prev, field));
+  const pendingApprovals = orders.filter((o) => o.status === "PENDING_APPROVAL");
+
+  function openCreateDialog() {
+    setEditingOrder(null);
+    setCustomerId(customers[0]?.id || "");
+    setSalesRepId(salesReps[0]?.id || "");
+    setPriority("NORMAL");
+    setDeliveryDate("");
+    setNotes("");
+    setDiscount("0");
+    setLines([]); // No default lines
+    setCreateDialogOpen(true);
   }
 
-  function patchLine(index, field, value) {
-    setForm((prev) => {
-      const lines = [...prev.lines];
-      lines[index] = { ...lines[index], [field]: value };
-      return { ...prev, lines };
-    });
+  function openEditDialog(o) {
+    setEditingOrder(o);
+    setCustomerId(o.customerId || "");
+    setSalesRepId(o.salesRepId || "");
+    setPriority(o.priority || "NORMAL");
+    setDeliveryDate(o.deliveryDate ? o.deliveryDate.split("T")[0] : "");
+    setNotes(o.notes || "");
+    setDiscount(o.discount ? parseFloat(o.discount).toFixed(2) : "0.00");
+
+    if (Array.isArray(o.lines) && o.lines.length > 0) {
+      setLines(
+        o.lines.map((l) => ({
+          widthCm: l.widthCm ? String(l.widthCm) : "",
+          heightCm: l.heightCm ? String(l.heightCm) : "",
+          baseCm: l.baseCm ? String(l.baseCm) : "",
+          quantity: l.quantity ? String(l.quantity) : "",
+          withHandle: Boolean(l.withHandle),
+          paperType: l.paperType || "VIRGIN",
+          paperColor: l.paperColor || "WHITE",
+          colorCount: l.colorCount != null ? Number(l.colorCount) : 0,
+          unitPrice: l.unitPrice ? parseFloat(l.unitPrice).toFixed(2) : "",
+          lineTotal: l.lineTotal ? parseFloat(l.lineTotal).toFixed(2) : "",
+          referenceFiles: Array.isArray(l.referenceFiles)
+            ? l.referenceFiles
+            : l.fileUrl
+              ? [{ url: l.fileUrl, name: l.fileName || "Reference File" }]
+              : [],
+        })),
+      );
+    } else {
+      setLines([]);
+    }
+
+    setCreateDialogOpen(true);
   }
 
   function addLine() {
-    setForm((prev) => ({ ...prev, lines: [...prev.lines, { ...emptyLine }] }));
+    setLines((prev) => [...prev, { ...emptyLine }]);
   }
 
-  function removeLine(index) {
-    setForm((prev) => ({
-      ...prev,
-      lines:
-        prev.lines.length <= 1
-          ? prev.lines
-          : prev.lines.filter((_, i) => i !== index),
-    }));
+  function removeLine(idx) {
+    setLines((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  async function handleLineFileUpload(index, file) {
-    if (!file) return;
-    setUploadingIndex(index);
+  function updateLine(idx, field, value) {
+    setLines((prev) => {
+      const copy = [...prev];
+      const updated = { ...copy[idx], [field]: value };
+
+      if (field === "quantity" || field === "unitPrice") {
+        const qty = parseFloat(field === "quantity" ? value : updated.quantity) || 0;
+        const uPrice = parseFloat(field === "unitPrice" ? value : updated.unitPrice) || 0;
+        if (qty > 0 && uPrice > 0) {
+          updated.lineTotal = (qty * uPrice).toFixed(2);
+        }
+      } else if (field === "lineTotal") {
+        const total = parseFloat(value) || 0;
+        const qty = parseFloat(updated.quantity) || 0;
+        if (qty > 0 && total > 0) {
+          updated.unitPrice = (total / qty).toFixed(2);
+        }
+      }
+
+      copy[idx] = updated;
+      return copy;
+    });
+  }
+
+  const subtotal = lines.reduce((acc, l) => acc + (parseFloat(l.lineTotal) || 0), 0);
+  const discountVal = parseFloat(discount) || 0;
+  const proposedTotal = Math.max(subtotal - discountVal, 0);
+
+  async function handleFileUpload(lineIndex, files) {
+    if (!files || files.length === 0) return;
+    const currentFiles = lines[lineIndex].referenceFiles || [];
+    if (currentFiles.length + files.length > 5) {
+      toast.error("Maximum 5 reference files allowed per order line");
+      return;
+    }
+
+    setUploadingLineIndex(lineIndex);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const { data } = await api.post("/uploads", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      patchLine(index, "fileUrl", data.photoUrl);
-      patchLine(index, "fileName", file.name);
-      toast.success("File attached");
+      const uploadedList = [...currentFiles];
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const { data } = await api.post("/uploads", fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        uploadedList.push({
+          url: data.photoUrl,
+          name: file.name || "Design Reference",
+        });
+      }
+
+      updateLine(lineIndex, "referenceFiles", uploadedList);
+      toast.success("Reference file(s) attached");
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
-      setUploadingIndex(null);
+      setUploadingLineIndex(null);
     }
   }
 
-  function openCreateDialog() {
-    setErrors({});
-    setForm(emptyForm);
-    setDialogOpen(true);
+  function removeReferenceFile(lineIndex, fileIdx) {
+    const currentFiles = lines[lineIndex].referenceFiles || [];
+    const filtered = currentFiles.filter((_, i) => i !== fileIdx);
+    updateLine(lineIndex, "referenceFiles", filtered);
   }
 
-  async function handleSave() {
-    const result = validateForm(productionOrderSchema, form);
-    if (!result.success) {
-      setErrors(result.errors);
-      toast.error(firstErrorMessage(result.errors));
+  async function handleSaveOrder(targetStatus = "PENDING_APPROVAL") {
+    if (!customerId) {
+      toast.error("Please select a customer");
       return;
     }
+    if (lines.length === 0) {
+      toast.error("Add at least one order line item");
+      return;
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (!l.widthCm || !l.heightCm || !l.baseCm) {
+        toast.error(`Line #${i + 1}: Enter width, height, and base in cm`);
+        return;
+      }
+      if (!l.quantity || parseFloat(l.quantity) <= 0) {
+        toast.error(`Line #${i + 1}: Enter a valid quantity`);
+        return;
+      }
+    }
+
     setSaving(true);
     try {
-      await api.post("/production/orders", result.data);
-      toast.success("Production order created");
-      setDialogOpen(false);
-      setForm(emptyForm);
-      load();
+      const payload = {
+        customerId,
+        salesRepId: salesRepId || undefined,
+        priority,
+        deliveryDate: deliveryDate || undefined,
+        notes: notes || undefined,
+        subtotal,
+        discount: discountVal,
+        total: proposedTotal,
+        proposedTotal,
+        lines,
+        status: targetStatus,
+      };
+
+      if (editingOrder) {
+        await api.put(`/orders/${editingOrder.id}`, payload);
+        toast.success("Order updated");
+      } else {
+        await api.post("/orders", payload);
+        toast.success("Order created successfully!");
+      }
+
+      setCreateDialogOpen(false);
+      loadData();
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -168,328 +322,725 @@ export default function ProductionOrdersPage() {
     }
   }
 
+  function openReviewModal(o) {
+    setReviewOrder(o);
+    setApprovedTotal(
+      o.proposedTotal || o.total
+        ? parseFloat(o.proposedTotal || o.total).toFixed(2)
+        : "",
+    );
+    setRemarks("");
+  }
+
+  async function handleApproveOrReject(action) {
+    if (!reviewOrder) return;
+    if (action === "REJECT" && !remarks.trim()) {
+      toast.error("Please enter a reason / remarks for rejecting the order");
+      return;
+    }
+
+    setSubmittingReview(true);
+    try {
+      await api.post(`/orders/${reviewOrder.id}/approve`, {
+        action,
+        approvedTotal: action === "APPROVE" ? approvedTotal || undefined : undefined,
+        remarks: remarks.trim() || undefined,
+      });
+
+      toast.success(
+        action === "APPROVE"
+          ? "Order approved & marked Ready for Work!"
+          : "Order proposal rejected",
+      );
+      setReviewOrder(null);
+      loadData();
+    } catch (e) {
+      toast.error(getApiErrorMessage(e));
+    } finally {
+      setSubmittingReview(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
         <div>
-          <h1 className="text-2xl font-bold">Production Orders</h1>
-          <p className="text-muted-foreground">
-            Sales Rep · Assign worker · Order Line dimensions & files
+          <h1 className="text-2xl font-bold">Admin Production & Sales Orders</h1>
+          <p className="text-muted-foreground text-sm">
+            Manage paper bag sales proposals, review commercial pricing, and assign orders
           </p>
         </div>
-        <Button onClick={openCreateDialog}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Order
+        <Button onClick={openCreateDialog} className="shrink-0">
+          <Plus className="h-4 w-4 mr-2" /> New Order Proposal
         </Button>
       </div>
 
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Order</TableHead>
-              <TableHead>Customer / Sales Rep / Worker</TableHead>
-              <TableHead>Order Lines (Dimensions)</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Open</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
+      {/* Pending Approvals Queue */}
+      {pendingApprovals.length > 0 && (
+        <Card className="border-amber-500/40 bg-amber-500/5 shadow-xs">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2 text-amber-800 dark:text-amber-300">
+              <Clock className="h-5 w-5 text-amber-600 animate-pulse" /> Pending Approval Queue ({pendingApprovals.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Order #</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Sales Rep</TableHead>
+                  <TableHead>Proposed Total</TableHead>
+                  <TableHead>Line Summary</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingApprovals.map((o) => (
+                  <TableRow key={o.id}>
+                    <TableCell className="font-mono font-bold">{o.orderNo}</TableCell>
+                    <TableCell className="font-medium">{o.customer?.name || "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {o.salesRepUser?.name || o.salesRep || "Unassigned"}
+                    </TableCell>
+                    <TableCell className="font-mono font-bold text-amber-800 dark:text-amber-300">
+                      ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {o.lines?.length || 0} line(s) · {o.lines?.[0]?.paperColor || "White"} {o.lines?.[0]?.paperType || "Virgin"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        onClick={() => openReviewModal(o)}
+                        className="bg-amber-600 hover:bg-amber-700 text-white text-xs"
+                      >
+                        Review Proposal &rarr;
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Main Orders Table */}
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-                </TableCell>
+                <TableHead>Order No</TableHead>
+                <TableHead>Customer / Sales Rep</TableHead>
+                <TableHead>Lines & Specifications</TableHead>
+                <TableHead>Commercial Price</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ) : orders.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="text-center py-8 text-muted-foreground"
-                >
-                  No orders yet
-                </TableCell>
-              </TableRow>
-            ) : (
-              orders.map((o) => (
-                <TableRow key={o.id} className="align-top">
-                  <TableCell className="font-mono text-sm pt-4">
-                    {o.orderNo}
-                  </TableCell>
-                  <TableCell className="pt-4">
-                    <div className="space-y-0.5">
-                      <p className="font-medium">{o.customer?.name} </p>
-                      {o.salesRep && (
-                        <p className="text-xs text-muted-foreground">
-                          Sales Rep:{" "}
-                          <strong className="text-foreground font-medium">
-                            {o.salesRep}
-                          </strong>
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        Worker: {o.assignedWorker?.name || "Unassigned"}
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell className="pt-3">
-                    <div className="space-y-2">
-                      {getOrderLineProgressRows(o).map((row) => (
-                        <div
-                          key={row.key}
-                          className="flex flex-wrap items-center gap-2 text-sm"
-                        >
-                          <span className="text-muted-foreground">
-                            L{row.lineNo}
-                          </span>
-                          <span className="font-mono font-medium">
-                            {row.bagSpecName}
-                          </span>
-                          <span className="text-muted-foreground">
-                            · {row.plannedQty} bags
-                          </span>
-                          <Badge
-                            variant="outline"
-                            className={cn("font-medium", row.className)}
-                          >
-                            {row.stageLabel}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </TableCell>
-                  <TableCell className="pt-4">
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "font-medium",
-                        ORDER_STATUS_COLORS[o.status],
-                      )}
-                    >
-                      {o.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right pt-4">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/dashboard/admin/production/${o.id}`}>
-                        View
-                      </Link>
-                    </Button>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ) : orders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    No orders found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                orders.map((o) => (
+                  <TableRow key={o.id} className="align-top">
+                    <TableCell className="font-mono font-medium pt-4">
+                      {o.orderNo}
+                      {o.priority && o.priority !== "NORMAL" && (
+                        <Badge className="ml-1 text-[10px] bg-amber-500/20 text-amber-800 dark:text-amber-300">
+                          {o.priority}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="pt-4">
+                      <div className="space-y-0.5">
+                        <p className="font-semibold text-sm">{o.customer?.name || "—"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Rep: {o.salesRepUser?.name || o.salesRep || "Unassigned"}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="pt-3">
+                      <div className="space-y-1.5 text-xs">
+                        {(o.lines || []).map((l, lIdx) => (
+                          <div key={lIdx} className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-medium text-foreground">
+                              L{l.lineNo || lIdx + 1}: {l.widthCm || (l.widthMm ? l.widthMm / 10 : 30)}×
+                              {l.heightCm || (l.heightMm ? l.heightMm / 10 : 40)}×
+                              {l.baseCm || (l.baseMm ? l.baseMm / 10 : 12)}cm
+                            </span>
+                            <span className="text-muted-foreground">
+                              · {Number(l.quantity || l.plannedQty || 0).toLocaleString()} bags
+                            </span>
+                            <Badge variant="outline" className="text-[10px] py-0">
+                              {l.paperColor || "White"} {l.paperType || "Virgin"} ({l.colorCount ?? 0} colors)
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell className="pt-4 font-mono text-sm">
+                      <div>
+                        Proposed: ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                      </div>
+                      {o.approvedTotal && (
+                        <div className="text-xs text-emerald-600 font-semibold">
+                          Approved: ${Number(o.approvedTotal).toFixed(2)}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="pt-4">
+                      <Badge variant="outline" className={cn("font-medium text-xs", STATUS_COLORS[o.status] || "")}>
+                        {o.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right pt-4 space-x-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openReviewModal(o)}
+                        className="h-8 text-xs"
+                      >
+                        <Eye className="h-4 w-4 mr-1" /> View
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEditDialog(o)}
+                        className="h-8 text-xs border-primary/40 text-primary"
+                      >
+                        <Edit className="h-4 w-4 mr-1" /> Edit
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+      {/* Create / Edit Modal */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Production Order</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <FileDown className="h-5 w-5 text-primary" />
+              {editingOrder ? `Edit Order (${editingOrder.orderNo})` : "Create New Production / Sales Order"}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="Customer" required error={errors.customerId}>
-                <SearchableSelect
-                  value={form.customerId}
-                  onValueChange={(v) => patchForm("customerId", v)}
-                  options={customers.map((c) => ({
-                    value: c.id,
-                    label: `${c.name}`,
-                    description: c.phone || c.email || undefined,
-                  }))}
-                  placeholder="Select customer"
-                  searchPlaceholder="Search customer..."
-                  error={!!errors.customerId}
-                />
+
+          <div className="space-y-5 py-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-3 bg-muted/40 rounded-lg border">
+              <FormField label="Customer" required>
+                <Select value={customerId} onValueChange={setCustomerId}>
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="Select customer..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </FormField>
 
-              <FormField label="Sales Rep" error={errors.salesRep}>
-                <Input
-                  className={fieldClassName("", !!errors.salesRep)}
-                  value={form.salesRep}
-                  onChange={(e) => patchForm("salesRep", e.target.value)}
-                  placeholder="Sales Rep Name"
-                />
+              <FormField label="Sales Representative">
+                <Select value={salesRepId} onValueChange={setSalesRepId}>
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="Select sales rep..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {salesReps.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name} ({s.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
+
+              <FormField label="Order Priority">
+                <Select value={priority} onValueChange={setPriority}>
+                  <SelectTrigger className="bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="LOW">Low</SelectItem>
+                    <SelectItem value="NORMAL">Normal</SelectItem>
+                    <SelectItem value="HIGH">High</SelectItem>
+                    <SelectItem value="URGENT">Urgent ⚡</SelectItem>
+                  </SelectContent>
+                </Select>
               </FormField>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="Start Date" error={errors.startDate}>
-                <Input
-                  type="date"
-                  className={fieldClassName("", !!errors.startDate)}
-                  value={form.startDate}
-                  onChange={(e) => patchForm("startDate", e.target.value)}
-                />
-              </FormField>
-
-              <FormField label="Delivery Date" error={errors.deliveryDate}>
-                <Input
-                  type="date"
-                  className={fieldClassName("", !!errors.deliveryDate)}
-                  value={form.deliveryDate}
-                  onChange={(e) => patchForm("deliveryDate", e.target.value)}
-                />
-              </FormField>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">Order Lines (Bag Specs)</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addLine}
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Add line
+            {/* Order Lines Builder */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-sm flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" /> Order Line Items & Specifications
+                </h3>
+                <Button type="button" variant="outline" size="sm" onClick={addLine} className="text-xs">
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Line Item
                 </Button>
               </div>
 
-              {form.lines.map((line, index) => (
-                <div
-                  key={index}
-                  className="space-y-3 rounded-lg border p-3 bg-muted/20"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-muted-foreground">
-                      Line #{index + 1}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeLine(index)}
-                      disabled={form.lines.length <= 1}
-                      className="h-7 text-xs text-destructive"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
-                    </Button>
-                  </div>
+              {lines.length === 0 ? (
+                <div className="p-8 border border-dashed rounded-lg text-center space-y-2 bg-muted/20">
+                  <p className="text-sm text-muted-foreground">
+                    No order line items added yet.
+                  </p>
+                  <Button type="button" variant="outline" size="sm" onClick={addLine} className="text-xs">
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Order Line Item
+                  </Button>
+                </div>
+              ) : (
+                lines.map((line, idx) => (
+                  <div key={idx} className="p-4 border rounded-lg bg-card space-y-3 relative shadow-2xs">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <span className="font-semibold text-xs text-primary font-mono">
+                        Line #{idx + 1}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeLine(idx)}
+                        className="h-7 text-xs text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
+                      </Button>
+                    </div>
 
-                  <div className="grid grid-cols-4 gap-2">
-                    <FormField label="Height (mm)" required>
-                      <Input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={line.heightMm}
-                        onChange={(e) =>
-                          patchLine(index, "heightMm", e.target.value)
-                        }
-                        placeholder="Height"
-                      />
-                    </FormField>
-                    <FormField label="Width (mm)" required>
-                      <Input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={line.widthMm}
-                        onChange={(e) =>
-                          patchLine(index, "widthMm", e.target.value)
-                        }
-                        placeholder="Width"
-                      />
-                    </FormField>
-                    <FormField label="Base (mm)" required>
-                      <Input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={line.baseMm}
-                        onChange={(e) =>
-                          patchLine(index, "baseMm", e.target.value)
-                        }
-                        placeholder="Base"
-                      />
-                    </FormField>
-                    <FormField label="Qty (bags)" required>
-                      <Input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={line.plannedQty}
-                        onChange={(e) =>
-                          patchLine(index, "plannedQty", e.target.value)
-                        }
-                        placeholder="Qty"
-                      />
-                    </FormField>
-                  </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <FormField label="Width (cm)" required>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.widthCm}
+                          onChange={(e) => updateLine(idx, "widthCm", e.target.value)}
+                          placeholder="e.g. 30"
+                        />
+                      </FormField>
+                      <FormField label="Height (cm)" required>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.heightCm}
+                          onChange={(e) => updateLine(idx, "heightCm", e.target.value)}
+                          placeholder="e.g. 40"
+                        />
+                      </FormField>
+                      <FormField label="Gusset / Base (cm)" required>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.baseCm}
+                          onChange={(e) => updateLine(idx, "baseCm", e.target.value)}
+                          placeholder="e.g. 12"
+                        />
+                      </FormField>
+                    </div>
 
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="file"
-                        className="text-xs w-[220px]"
-                        onChange={(e) =>
-                          e.target.files?.[0] &&
-                          handleLineFileUpload(index, e.target.files[0])
-                        }
-                      />
-                      {uploadingIndex === index && (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      )}
-                      {line.fileUrl && (
-                        <a
-                          href={line.fileUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-primary underline flex items-center gap-1"
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <FormField label="Quantity (Bags)" required>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.quantity}
+                          onChange={(e) => updateLine(idx, "quantity", e.target.value)}
+                          placeholder="e.g. 50000"
+                        />
+                      </FormField>
+
+                      <FormField label="Paper Type">
+                        <Select
+                          value={line.paperType}
+                          onValueChange={(v) => updateLine(idx, "paperType", v)}
                         >
-                          <Paperclip className="h-3 w-3" />
-                          {line.fileName || "View Attachment"}
-                        </a>
-                      )}
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PAPER_TYPES.map((p) => (
+                              <SelectItem key={p.value} value={p.value}>
+                                {p.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormField>
+
+                      <FormField label="Paper Color">
+                        <Select
+                          value={line.paperColor}
+                          onValueChange={(v) => updateLine(idx, "paperColor", v)}
+                        >
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PAPER_COLORS.map((c) => (
+                              <SelectItem key={c.value} value={c.value}>
+                                {c.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormField>
+
+                      <FormField label="Color Count">
+                        <Select
+                          value={String(line.colorCount)}
+                          onValueChange={(v) => updateLine(idx, "colorCount", Number(v))}
+                        >
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {COLOR_COUNTS.map((c) => (
+                              <SelectItem key={c.value} value={String(c.value)}>
+                                {c.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormField>
+                    </div>
+
+                    {/* Handle Option (Radio Choice) */}
+                    <div className="pt-1">
+                      <label className="text-xs font-medium text-muted-foreground block mb-1">
+                        Handle Option
+                      </label>
+                      <div className="flex items-center gap-4 text-xs font-medium">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`admin-handle-${idx}`}
+                            checked={line.withHandle === true}
+                            onChange={() => updateLine(idx, "withHandle", true)}
+                            className="accent-primary"
+                          />
+                          <span>With Handle</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`admin-handle-${idx}`}
+                            checked={line.withHandle === false}
+                            onChange={() => updateLine(idx, "withHandle", false)}
+                            className="accent-primary"
+                          />
+                          <span>Without Handle</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Pricing */}
+                    <div className="grid grid-cols-2 gap-3 pt-2 border-t">
+                      <FormField label="Unit Price ($ / bag)">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.unitPrice}
+                          onChange={(e) => updateLine(idx, "unitPrice", e.target.value)}
+                          placeholder="0.00"
+                        />
+                      </FormField>
+
+                      <FormField label="Line Total ($)">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.lineTotal}
+                          onChange={(e) => updateLine(idx, "lineTotal", e.target.value)}
+                          placeholder="0.00"
+                        />
+                      </FormField>
+                    </div>
+
+                    {/* Reference Files */}
+                    <div className="pt-1">
+                      <label className="text-xs font-medium text-muted-foreground block mb-1">
+                        Reference / Design Files (Max 5 uploaded images or PDFs)
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(line.referenceFiles || []).map((f, fileIdx) => (
+                          <div
+                            key={fileIdx}
+                            className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs border"
+                          >
+                            <a
+                              href={f.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary hover:underline max-w-[120px] truncate"
+                            >
+                              {f.name || `File ${fileIdx + 1}`}
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => removeReferenceFile(idx, fileIdx)}
+                              className="text-muted-foreground hover:text-destructive ml-1"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+
+                        {(line.referenceFiles || []).length < 5 && (
+                          <label className="cursor-pointer border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 rounded px-2.5 py-1 text-xs text-primary font-medium flex items-center gap-1">
+                            <Upload className="h-3 w-3" />
+                            {uploadingLineIndex === idx ? "Uploading..." : "Attach File"}
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*,application/pdf"
+                              onChange={(e) => handleFileUpload(idx, e.target.files)}
+                              className="hidden"
+                              disabled={uploadingLineIndex === idx}
+                            />
+                          </label>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-              {errors.lines && (
-                <p className="text-xs text-destructive">{errors.lines}</p>
+                ))
               )}
             </div>
 
-            <FormField
-              label="Assign worker"
-              required
-              error={errors.assignedWorkerId}
-            >
-              <SearchableSelect
-                value={form.assignedWorkerId}
-                onValueChange={(v) => patchForm("assignedWorkerId", v)}
-                options={workers.map((w) => ({
-                  value: w.id,
-                  label: w.name,
-                  description: w.email,
-                }))}
-                placeholder="Select responsible worker"
-                searchPlaceholder="Search worker..."
-                error={!!errors.assignedWorkerId}
-              />
-            </FormField>
+            {/* Commercial Pricing Summary */}
+            <div className="p-4 border rounded-lg bg-muted/40 space-y-3">
+              <h4 className="font-semibold text-sm">Commercial Proposal Pricing</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <span className="text-xs text-muted-foreground">Subtotal Sum</span>
+                  <p className="font-mono text-lg font-bold">${subtotal.toFixed(2)}</p>
+                </div>
+                <FormField label="Discount ($)">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </FormField>
+                <div>
+                  <span className="text-xs text-muted-foreground font-semibold text-primary">
+                    Proposed Commercial Total
+                  </span>
+                  <p className="font-mono text-xl font-bold text-primary">${proposedTotal.toFixed(2)}</p>
+                </div>
+              </div>
+            </div>
 
-            <FormField label="Notes" error={errors.notes}>
-              <Input
-                className={fieldClassName("", !!errors.notes)}
-                value={form.notes}
-                onChange={(e) => patchForm("notes", e.target.value)}
-                placeholder="Optional order notes"
-              />
-            </FormField>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField label="Expected Delivery Date">
+                <Input
+                  type="date"
+                  value={deliveryDate}
+                  onChange={(e) => setDeliveryDate(e.target.value)}
+                />
+              </FormField>
+              <FormField label="Special Order Notes / Client Instructions">
+                <Input
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="e.g. Special packing requirement..."
+                />
+              </FormField>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
+
+          <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleSaveOrder("DRAFT")}
+              disabled={saving}
+            >
+              Save as Draft
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Create Order
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" onClick={() => setCreateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => handleSaveOrder("READY_FOR_WORK")} disabled={saving}>
+                {saving ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                Create & Approve Order
+              </Button>
+            </div>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Review Modal */}
+      <Dialog open={!!reviewOrder} onOpenChange={() => setReviewOrder(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          {reviewOrder && (
+            <>
+              <DialogHeader className="border-b pb-3">
+                <div className="flex items-center justify-between pr-6">
+                  <div>
+                    <DialogTitle className="font-mono text-lg flex items-center gap-2">
+                      Order Details: {reviewOrder.orderNo}
+                    </DialogTitle>
+                    <p className="text-xs text-muted-foreground">
+                      Customer: <strong>{reviewOrder.customer?.name}</strong> · Sales Rep:{" "}
+                      <strong>{reviewOrder.salesRepUser?.name || reviewOrder.salesRep}</strong>
+                    </p>
+                  </div>
+                  <Badge variant="outline" className={cn(STATUS_COLORS[reviewOrder.status])}>
+                    {reviewOrder.status}
+                  </Badge>
+                </div>
+              </DialogHeader>
+
+              <div className="space-y-4 py-3">
+                {/* Specifications */}
+                <div>
+                  <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wide mb-2">
+                    Order Lines Specifications
+                  </h4>
+                  <div className="border rounded-md divide-y">
+                    {(reviewOrder.lines || []).map((l, i) => (
+                      <div key={i} className="p-3 text-xs space-y-1.5">
+                        <div className="flex items-center justify-between font-semibold">
+                          <span>
+                            Line #{l.lineNo || i + 1}: {l.widthCm || l.widthMm / 10}cm (W) × {l.heightCm || l.heightMm / 10}cm (H) × {l.baseCm || l.baseMm / 10}cm (Gusset)
+                          </span>
+                          <span className="font-mono text-foreground font-bold">
+                            {Number(l.quantity || l.plannedQty).toLocaleString()} bags
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+                          <span>Paper Color: <strong>{l.paperColor || "White"}</strong></span>
+                          <span>Paper Type: <strong>{l.paperType || "Virgin"}</strong></span>
+                          <span>Colors: <strong>{l.colorCount ?? 0} Print Color(s)</strong></span>
+                          <span>Handle: <strong>{l.withHandle ? "Yes" : "No"}</strong></span>
+                          {l.lineTotal && (
+                            <span className="font-mono text-foreground font-medium">
+                              Line Price: ${Number(l.lineTotal).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Reference Files */}
+                        {Array.isArray(l.referenceFiles) && l.referenceFiles.length > 0 && (
+                          <div className="pt-1 flex flex-wrap items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground font-medium">Attached Design Files:</span>
+                            {l.referenceFiles.map((rf, rIdx) => (
+                              <a
+                                key={rIdx}
+                                href={rf.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20 hover:underline"
+                              >
+                                <FileDown className="h-3 w-3" /> {rf.name || `File ${rIdx + 1}`}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pricing Review */}
+                <div className="p-4 border rounded-lg bg-muted/40 space-y-3">
+                  <h4 className="font-semibold text-sm flex items-center gap-1.5">
+                    <DollarSign className="h-4 w-4 text-emerald-600" /> Commercial Price Review
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-xs text-muted-foreground">Proposed Price</span>
+                      <p className="font-mono text-lg font-bold text-foreground">
+                        ${Number(reviewOrder.proposedTotal || reviewOrder.total || 0).toFixed(2)}
+                      </p>
+                    </div>
+
+                    <FormField label="Approved Price ($)">
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={approvedTotal}
+                        onChange={(e) => setApprovedTotal(e.target.value)}
+                        placeholder="Approved total"
+                        className="font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-background"
+                      />
+                    </FormField>
+                  </div>
+
+                  <FormField label="Manager/Admin Remarks">
+                    <Input
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
+                      placeholder="Notes..."
+                      className="bg-background"
+                    />
+                  </FormField>
+                </div>
+              </div>
+
+              <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => handleApproveOrReject("REJECT")}
+                  disabled={submittingReview}
+                >
+                  <XCircle className="h-4 w-4 mr-2" /> Reject Proposal
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => setReviewOrder(null)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => handleApproveOrReject("APPROVE")}
+                    disabled={submittingReview}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    {submittingReview ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                    )}
+                    Approve Order
+                  </Button>
+                </div>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

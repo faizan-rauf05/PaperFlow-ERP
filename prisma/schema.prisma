@@ -30,6 +30,10 @@ model User {
   inventoryTransactions InventoryTransaction[]
   productionStages      ProductionStage[]      @relation("StageWorker")
   assignedOrders        ProductionOrder[]      @relation("OrderAssignee")
+  salesOrders           ProductionOrder[]      @relation("OrderSalesRep")
+  requestedApprovals    OrderApproval[]        @relation("ApprovalRequester")
+  reviewedApprovals     OrderApproval[]        @relation("ApprovalReviewer")
+  orderAssignments      OrderAssignment[]      @relation("WorkerAssignments")
   qcRecords             QCRecord[]
   machineDowntimes      MachineDowntime[]
 }
@@ -223,10 +227,37 @@ enum StageStatus {
 }
 
 enum ProductionOrderStatus {
-  PENDING
-  RUNNING
+  DRAFT
+  PENDING_APPROVAL
+  REJECTED
+  APPROVED
+  READY_FOR_WORK
+  PICKED
+  IN_PROGRESS
   COMPLETED
   CANCELLED
+  PENDING
+  RUNNING
+}
+
+enum OrderPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AssignmentStatus {
+  PICKED
+  IN_PROGRESS
+  COMPLETED
+  RELEASED
 }
 
 enum RemainderAction {
@@ -239,40 +270,100 @@ model ProductionOrder {
   orderNo           String                @unique
   customerId        String
   customer          Customer              @relation(fields: [customerId], references: [id])
+  salesRepId        String?
+  salesRepUser      User?                 @relation("OrderSalesRep", fields: [salesRepId], references: [id], onDelete: SetNull)
   salesRep          String?
   assignedWorkerId  String?
   assignedWorker    User?                 @relation("OrderAssignee", fields: [assignedWorkerId], references: [id], onDelete: SetNull)
+  priority          OrderPriority         @default(NORMAL)
   startDate         DateTime?
   deliveryDate      DateTime?
-  status            ProductionOrderStatus @default(PENDING)
+  status            ProductionOrderStatus @default(DRAFT)
+  subtotal          Decimal?              @db.Decimal(14, 4)
+  discount          Decimal?              @default(0) @db.Decimal(14, 4)
+  total             Decimal?              @db.Decimal(14, 4)
+  proposedTotal     Decimal?              @db.Decimal(14, 4)
+  approvedTotal     Decimal?              @db.Decimal(14, 4)
   notes             String?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
   lines             OrderLine[]
   yieldRecords      YieldRecord[]
+  approvals         OrderApproval[]
+  assignments       OrderAssignment[]
 
   @@index([status])
   @@index([customerId])
+  @@index([salesRepId])
   @@index([assignedWorkerId])
+  @@index([priority])
 }
 
 model OrderLine {
-  id          String           @id @default(cuid())
-  orderId     String
-  order       ProductionOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  heightMm    Decimal?         @db.Decimal(10, 2)
-  widthMm     Decimal?         @db.Decimal(10, 2)
-  baseMm      Decimal?         @db.Decimal(10, 2)
-  fileUrl     String?
-  fileName    String?
-  plannedQty  Decimal          @db.Decimal(14, 4)
-  lineNo      Int
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  stages      ProductionStage[]
+  id              String           @id @default(cuid())
+  orderId         String
+  order           ProductionOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  heightMm        Decimal?         @db.Decimal(10, 2)
+  widthMm         Decimal?         @db.Decimal(10, 2)
+  baseMm          Decimal?         @db.Decimal(10, 2)
+  heightCm        Decimal?         @db.Decimal(10, 2)
+  widthCm         Decimal?         @db.Decimal(10, 2)
+  baseCm          Decimal?         @db.Decimal(10, 2)
+  quantity        Decimal?         @db.Decimal(14, 4)
+  withHandle      Boolean          @default(false)
+  paperType       String?
+  paperColor      String?
+  colorCount      Int              @default(0)
+  referenceFiles  Json?
+  unitPrice       Decimal?         @db.Decimal(14, 4)
+  lineTotal       Decimal?         @db.Decimal(14, 4)
+  fileUrl         String?
+  fileName        String?
+  plannedQty      Decimal          @db.Decimal(14, 4)
+  lineNo          Int
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  stages          ProductionStage[]
 
   @@unique([orderId, lineNo])
   @@index([orderId])
+}
+
+model OrderApproval {
+  id            String          @id @default(cuid())
+  orderId       String
+  order         ProductionOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  requestedById String?
+  requestedBy   User?           @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  reviewedById  String?
+  reviewedBy    User?           @relation("ApprovalReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  status        ApprovalStatus  @default(PENDING)
+  proposedTotal Decimal?        @db.Decimal(14, 4)
+  approvedTotal Decimal?        @db.Decimal(14, 4)
+  reason        String?
+  remarks       String?
+  createdAt     DateTime        @default(now())
+  reviewedAt    DateTime?
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model OrderAssignment {
+  id          String           @id @default(cuid())
+  orderId     String
+  order       ProductionOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  workerId    String
+  worker      User             @relation("WorkerAssignments", fields: [workerId], references: [id], onDelete: Cascade)
+  status      AssignmentStatus @default(PICKED)
+  assignedAt  DateTime         @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  releasedAt  DateTime?
+
+  @@index([orderId])
+  @@index([workerId])
+  @@index([status])
 }
 
 model ProductionStage {
