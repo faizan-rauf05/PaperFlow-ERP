@@ -218,6 +218,23 @@ function TypeSpecificFields({ form, errors, patchForm }) {
     form.weightKg && !GLUE_WEIGHT_PRESETS.includes(Number(form.weightKg)),
   );
 
+  useEffect(() => {
+    setIsCustomWidth(
+      Boolean(
+        form.paperWidthCm &&
+          !PAPER_WIDTH_CM_PRESETS.includes(Number(form.paperWidthCm)),
+      ),
+    );
+  }, [form.paperWidthCm]);
+
+  useEffect(() => {
+    setIsCustomGlueWeight(
+      Boolean(
+        form.weightKg && !GLUE_WEIGHT_PRESETS.includes(Number(form.weightKg)),
+      ),
+    );
+  }, [form.weightKg]);
+
   switch (form.materialType) {
     case "PAPER_ROLL":
       return (
@@ -705,6 +722,8 @@ export default function MaterialsPage() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [scanStepText, setScanStepText] = useState("");
   const fileInputRef = useRef(null);
 
   // Supplier Creation Dialog State (from scan or inline "+ New")
@@ -930,13 +949,31 @@ export default function MaterialsPage() {
     reader.readAsDataURL(file);
   }
 
-  // Trigger OpenRouter AI scan
+  // Trigger AI scan with progress indicator
   async function handleScanWithAI() {
     if (!imagePreview) {
       toast.error("Please upload or capture a label image first");
       return;
     }
     setScanning(true);
+    setScanProgress(5);
+    setScanStepText("Optimizing label image...");
+
+    let currentProgress = 5;
+    const interval = setInterval(() => {
+      currentProgress += currentProgress < 30 ? 6 : currentProgress < 75 ? 4 : 1;
+      if (currentProgress > 94) currentProgress = 94;
+      setScanProgress(currentProgress);
+
+      if (currentProgress < 30) {
+        setScanStepText("Optimizing label image...");
+      } else if (currentProgress < 75) {
+        setScanStepText("Analyzing label with AI...");
+      } else {
+        setScanStepText("Extracting specifications...");
+      }
+    }, 100);
+
     try {
       const mimeType = selectedFile?.type || "image/jpeg";
       const { data } = await api.post("/materials/scan-label", {
@@ -944,9 +981,12 @@ export default function MaterialsPage() {
         mimeType,
       });
 
+      clearInterval(interval);
+      setScanProgress(100);
+      setScanStepText("Extracted!");
+
       const ext = data.extracted || {};
       toast.success("Label analyzed successfully!");
-      setScanDialogOpen(false);
 
       // Pre-fill form from scanned info
       const mType = ext.materialType || "PAPER_ROLL";
@@ -958,23 +998,44 @@ export default function MaterialsPage() {
 
       let selectedSupplierName = "";
       if (ext.supplier?.name) {
-        const targetName = ext.supplier.name.trim().toLowerCase();
-        const match = suppliers.find(
-          (s) =>
-            s.name.toLowerCase().includes(targetName) ||
-            targetName.includes(s.name.toLowerCase()) ||
-            (s.companyName && s.companyName.toLowerCase().includes(targetName)),
-        );
-        if (match) {
-          selectedSupplierName = match.name;
-          toast.info(`Supplier matched: ${match.name}`);
-        } else {
-          openNewSupplierDialog({
-            name: ext.supplier.name || "",
-            companyName: ext.supplier.companyName || ext.supplier.name || "",
-            contactNumber: ext.supplier.contactNumber || "",
-            address: ext.supplier.address || "",
-          });
+        const rawSupName = String(ext.supplier.name || "").trim();
+        if (rawSupName) {
+          const targetName = rawSupName.toLowerCase();
+          const match = Array.isArray(suppliers)
+            ? suppliers.find((s) => {
+                const sName = String(s?.name || "").toLowerCase();
+                const sComp = String(s?.companyName || "").toLowerCase();
+                return (
+                  (sName && (sName.includes(targetName) || targetName.includes(sName))) ||
+                  (sComp && sComp.includes(targetName))
+                );
+              })
+            : null;
+
+          if (match?.name) {
+            selectedSupplierName = match.name;
+            toast.info(`Supplier matched: ${match.name}`);
+          } else {
+            try {
+              const newSupRes = await api.post("/suppliers", {
+                name: rawSupName,
+                companyName: ext.supplier.companyName || rawSupName,
+                contactNumber: ext.supplier.contactNumber || "",
+                address: ext.supplier.address || "",
+              });
+              const newSup = newSupRes.data?.supplier;
+              if (newSup?.name) {
+                setSuppliers((prev) => [...(Array.isArray(prev) ? prev : []), newSup]);
+                selectedSupplierName = newSup.name;
+                toast.success(`Registered new supplier: ${newSup.name}`);
+              } else {
+                selectedSupplierName = rawSupName;
+              }
+            } catch (supErr) {
+              console.warn("Auto supplier creation warning (continuing scan):", supErr);
+              selectedSupplierName = rawSupName;
+            }
+          }
         }
       }
 
@@ -1008,11 +1069,17 @@ export default function MaterialsPage() {
         cartonQty: cartonData.cartonQty || "",
       });
       setErrors({});
-      setDialogOpen(true);
+
+      setTimeout(() => {
+        setScanDialogOpen(false);
+        setDialogOpen(true);
+      }, 200);
     } catch (e) {
+      clearInterval(interval);
       toast.error(getApiErrorMessage(e));
     } finally {
       setScanning(false);
+      setScanProgress(0);
     }
   }
 
@@ -1638,8 +1705,8 @@ export default function MaterialsPage() {
               </>
             )}
           </div>
-          <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
-            <Button
+          <DialogFooter className="flex items-center justify-between sm:justify-end w-full">
+            {/* <Button
               type="button"
               variant="outline"
               size="sm"
@@ -1652,7 +1719,7 @@ export default function MaterialsPage() {
             >
               <Sparkles className="h-3.5 w-3.5" />
               Scan Material Label
-            </Button>
+            </Button> */}
             <div className="flex items-center gap-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel
@@ -1716,11 +1783,22 @@ export default function MaterialsPage() {
             <Button variant="outline" onClick={() => setScanDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleScanWithAI} disabled={scanning || !imagePreview}>
+            <Button
+              onClick={handleScanWithAI}
+              disabled={scanning || !imagePreview}
+              className="relative overflow-hidden min-w-[220px]"
+            >
               {scanning ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Analyzing label with AI...
+                  <span
+                    className="absolute inset-0 bg-primary-foreground/25 transition-all duration-150 ease-out"
+                    style={{ width: `${scanProgress}%` }}
+                  />
+                  <span className="relative z-10 flex items-center justify-center gap-2 text-xs">
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    <span className="font-mono font-bold">{scanProgress}%</span>
+                    <span className="truncate">{scanStepText}</span>
+                  </span>
                 </>
               ) : (
                 <>
