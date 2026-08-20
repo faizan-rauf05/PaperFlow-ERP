@@ -11,9 +11,22 @@ const extractionSchema = {
   additionalProperties: false,
 
   properties: {
+    readable: {
+      type: "boolean",
+      description:
+        "false if the image is too blurry, too dark, cropped, or does not show a recognizable material label clearly enough to extract real values. When false, every other field must be left empty/0 — never guess.",
+    },
+    issueReason: {
+      type: "string",
+      description:
+        "Short plain-language reason when readable=false (e.g. 'Image is too blurry to read the label text'). Empty string when readable=true.",
+    },
+
     materialType: {
       type: "string",
-      enum: ["PAPER_ROLL", "GLUE", "INK", "ROPE", "CARTON", "KAPTON", "SPONGE"],
+      enum: ["PAPER_ROLL", "GLUE", "INK", "ROPE", "KAPTON"],
+      description:
+        "Never return CARTON or SPONGE — those material types are not extracted by this scanner right now.",
     },
 
     supplier: {
@@ -56,6 +69,10 @@ const extractionSchema = {
           type: "number",
           description: "Paper length in meters from the 'Length (meters)' or 'Length (m)' cell ONLY (e.g. 5695). Do NOT use 'Diameters (mm)' value!",
         },
+        weightKg: {
+          type: "number",
+          description: "Roll net weight in kg from the 'Weight (Kgs)' cell. 0 if unavailable.",
+        },
         gsm: {
           type: "number",
           description: "Paper grammage in GSM from 'Substance (gm2)' or 'GSM' cell ONLY (e.g. 100). Do NOT use 'Weight (Kgs)' value!",
@@ -69,6 +86,7 @@ const extractionSchema = {
           description: "Receiving or production date formatted as YYYY-MM-DD (e.g. 06/07/2026 -> 2026-07-06 or 2026-06-07). Empty string if not visible.",
         },
       },
+      required: ["paperType", "paperColor", "paperWidthCm", "paperLengthM", "weightKg", "gsm", "barCode", "receivingDate"],
     },
 
     glue: {
@@ -88,7 +106,16 @@ const extractionSchema = {
           type: "number",
           description: "Number of glue packs or drums. 0 if unavailable.",
         },
+        batchNo: {
+          type: "string",
+          description: "Batch number exactly as printed (e.g. from 'BATCH NO:'). Empty string if not visible.",
+        },
+        receivingDate: {
+          type: "string",
+          description: "Production date formatted as YYYY-MM-DD (from 'PRO.DATE' / 'Production Date'). Empty string if not visible.",
+        },
       },
+      required: ["glueType", "weightKg", "gluePacks", "batchNo", "receivingDate"],
     },
 
     ink: {
@@ -101,7 +128,8 @@ const extractionSchema = {
         },
         inkColorCustom: {
           type: "string",
-          description: "Custom ink color or Pantone name if inkColor is CUSTOM. Otherwise empty string.",
+          description:
+            "Only when inkColor is CUSTOM: the plain base color name in English (e.g. 'Red', 'Orange', 'Green') — strip any product/brand name around it (e.g. 'Safanova Red' -> 'Red', 'احمر' -> 'Red'). Never a product name. Otherwise empty string.",
         },
         weightKg: {
           type: "number",
@@ -111,7 +139,16 @@ const extractionSchema = {
           type: "number",
           description: "Number of ink drums or buckets. 0 if unavailable.",
         },
+        batchNo: {
+          type: "string",
+          description: "Batch number exactly as printed (e.g. 'Batch No: 148856'). Empty string if not visible.",
+        },
+        receivingDate: {
+          type: "string",
+          description: "Production date formatted as YYYY-MM-DD (from 'Production Date'). Empty string if not visible.",
+        },
       },
+      required: ["inkColor", "inkColorCustom", "weightKg", "inkDrums", "batchNo", "receivingDate"],
     },
 
     rope: {
@@ -130,30 +167,32 @@ const extractionSchema = {
           type: "number",
           description: "Number of rope rolls. 0 if unavailable.",
         },
-      },
-    },
-
-    carton: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        cartonSize: {
+        batchNo: {
           type: "string",
-          description: "SMALL, MEDIUM, LARGE, or EXTRA_LARGE.",
+          description: "Batch number exactly as printed. Empty string if not visible.",
         },
-        cartonQty: {
-          type: "number",
-          description: "Carton quantity. 0 if unavailable.",
+        receivingDate: {
+          type: "string",
+          description: "Production date formatted as YYYY-MM-DD. Empty string if not visible.",
         },
       },
+      required: ["ropeColor", "ropeLengthM", "ropeRolls", "batchNo", "receivingDate"],
     },
   },
 
-  required: ["materialType", "supplier"],
+  required: ["readable", "issueReason", "materialType", "supplier"],
 };
 
 const systemPrompt = `You are an ultra-fast, high-precision OCR and material label extraction system for PaperFlow ERP.
 Extract inventory specifications from material label images with 100% precision.
+
+READABILITY GATE (CHECK THIS FIRST, BEFORE ANYTHING ELSE):
+If the image is too blurry, too dark, too cropped, at an unreadable angle, or does not show a recognizable
+material/inventory label at all, set readable=false, write a short plain-language reason in issueReason
+(e.g. "Image is too blurry to read the label text", "No material label visible in this photo"), and leave
+every other field at its empty/0 default. Do NOT guess, estimate, or invent a plausible-looking value for
+any field just because the schema expects one — an empty/0 value is correct when the real value can't be
+read. Only set readable=true and fill in fields when you can actually read the source text for them.
 
 CRITICAL EXTRACTION RULES FOR BARCODE & SPECIFICATIONS:
 1. FULL BARCODE EXTRACTION (STRICT):
@@ -187,8 +226,20 @@ CRITICAL EXTRACTION RULES FOR BARCODE & SPECIFICATIONS:
    - COLD: "Hexa Bond P-4038", "Hexabond P-4038", PVA liquid glue.
    - HOT: "Hot Melt adhesive", EVA glue.
 
-8. INK COLOR CLASSIFICATION:
+8. INK COLOR CLASSIFICATION (BASE COLOR ONLY):
    - Match CYAN, MAGENTA, YELLOW, WHITE, VARNISH, BLACK, INK_FIXER, or set CUSTOM with inkColorCustom.
+   - inkColorCustom must be the plain base color word only — strip any product/brand name wrapped around it.
+     Example: "Safanova Red K" -> "Red", NOT "Safanova Red" or "Safanova Red K". "Deep Ocean Blue" -> "Blue".
+   - Never put a product name, code, or Pantone reference in inkColorCustom — just the color.
+
+9. BATCH NUMBER (Glue, Ink, Rope only):
+   - Extract exactly as printed next to "BATCH NO:" / "Batch No" / similar. Do not reformat or guess digits you can't read clearly.
+   - Pair it with the production date in receivingDate — batch number alone is not treated as unique in this system.
+
+10. ENGLISH ONLY:
+   - Every text field you output (supplier name, address, inkColorCustom, batchNo, etc.) must be in English.
+   - If the source text on the label is in another language (Arabic, etc.), translate it to English — do not copy non-English characters into the output.
+   - Numbers, codes, and barcodes stay as printed regardless of language.
 
 Return ONLY the material section corresponding to the detected materialType along with supplier details.`;
 
@@ -363,6 +414,20 @@ export async function POST(request) {
       return NextResponse.json(
         { error: "Invalid structured response from AI scanner" },
         { status: 502 },
+      );
+    }
+
+    if (parsed?.readable === false) {
+      console.info("Claude material scan rejected as unreadable:", {
+        issueReason: parsed.issueReason,
+      });
+      return NextResponse.json(
+        {
+          error:
+            parsed.issueReason ||
+            "Image is unclear or no material label was detected. Please retake the photo with better lighting/focus and try again.",
+        },
+        { status: 422 },
       );
     }
 

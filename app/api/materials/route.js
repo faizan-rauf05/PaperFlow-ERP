@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminOrManager } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
-import { buildMaterialRecord } from "@/lib/material-code";
+import { buildMaterialRecord, computeInitialStockQty } from "@/lib/material-code";
 import { materialSchema } from "@/lib/validations/admin-forms";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
 import { Prisma } from "@prisma/client";
@@ -12,6 +12,21 @@ const { Decimal } = Prisma;
 
 const STOCK_IN_TYPES = ["STOCK_IN", "RETURN", "ADJUSTMENT"];
 const STOCK_OUT_TYPES = ["STOCK_OUT", "WASTE"];
+
+function duplicateMaterialErrorMessage(error) {
+  // error.meta.target can be an array of column names (classic engine) or a
+  // single constraint-name string like "Material_batchNo_receivingDate_key"
+  // (driver adapter mode) — join to one string and substring-match either way.
+  const raw = error.meta?.target;
+  const target = (Array.isArray(raw) ? raw.join(" ") : raw || "").toString();
+  if (target.includes("barCode")) {
+    return "A material with this barcode already exists.";
+  }
+  if (target.includes("batchNo")) {
+    return "This batch number and date combination already exists.";
+  }
+  return "Material code already exists.";
+}
 
 export async function GET() {
   try {
@@ -112,26 +127,7 @@ export async function POST(request) {
 
     const material = await prisma.material.create({ data });
 
-    let initQty = 0;
-    if (body.initialStock != null && Number(body.initialStock) > 0) {
-      initQty = Number(body.initialStock);
-    } else if (data.cartonQty != null && Number(data.cartonQty) > 0) {
-      initQty = Number(data.cartonQty);
-    } else if (data.ropeRolls != null && Number(data.ropeRolls) > 0) {
-      initQty = Number(data.ropeRolls);
-    } else if (data.gluePacks != null && Number(data.gluePacks) > 0) {
-      initQty = Number(data.gluePacks);
-    } else if (data.inkDrums != null && Number(data.inkDrums) > 0) {
-      initQty = Number(data.inkDrums);
-    } else if (data.paperLengthM != null && Number(data.paperLengthM) > 0) {
-      initQty = Number(data.paperLengthM);
-    } else if (data.weightKg != null && Number(data.weightKg) > 0) {
-      initQty = Number(data.weightKg);
-    } else if (data.ropeLengthM != null && Number(data.ropeLengthM) > 0) {
-      initQty = Number(data.ropeLengthM);
-    } else if (data.sheetCount != null && Number(data.sheetCount) > 0) {
-      initQty = Number(data.sheetCount);
-    }
+    const initQty = computeInitialStockQty(material.materialType, data);
 
     if (initQty > 0) {
       const { postInventoryTransaction } =
@@ -166,7 +162,7 @@ export async function POST(request) {
   } catch (error) {
     if (error.code === "P2002") {
       return NextResponse.json(
-        { error: "Material code already exists" },
+        { error: duplicateMaterialErrorMessage(error) },
         { status: 409 },
       );
     }
