@@ -70,7 +70,6 @@ import {
 } from "@/lib/validations/form-utils";
 import {
   createCodeSuffix,
-  generateMaterialCode,
   getMaterialSummary,
   materialToFormValues,
 } from "@/lib/material-code";
@@ -144,6 +143,11 @@ function compareMaterials(a, b, sortBy) {
     ).toString();
     return av.localeCompare(bv, undefined, { sensitivity: "base" });
   }
+  if (sortBy === "identifier") {
+    const av = (a.barCode || a.batchNo || "").toString();
+    const bv = (b.barCode || b.batchNo || "").toString();
+    return av.localeCompare(bv, undefined, { sensitivity: "base", numeric: true });
+  }
   const av = (a[sortBy] ?? "").toString();
   const bv = (b[sortBy] ?? "").toString();
   return av.localeCompare(bv, undefined, {
@@ -191,6 +195,7 @@ const emptyForm = {
   gsm: "",
   receivingDate: "",
   barCode: "",
+  batchNo: "",
   glueType: "",
   gluePacks: "",
   inkColor: "",
@@ -204,7 +209,8 @@ const emptyForm = {
   tapeType: "",
   sheetCount: "",
   cartonSize: "",
-  cartonQty: "",
+  cartonsPerBundle: "",
+  bundleQty: "",
   imageUrl: "",
 };
 
@@ -354,16 +360,30 @@ function TypeSpecificFields({ form, errors, patchForm }) {
             </FormField>
           </div>
 
-          <FormField label="GSM" required error={errors.gsm}>
-            <Input
-              type="number"
-              min="1"
-              step="1"
-              className={fieldClassName("", !!errors.gsm)}
-              value={form.gsm}
-              onChange={(e) => patchForm("gsm", e.target.value)}
-            />
-          </FormField>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="GSM" required error={errors.gsm}>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                className={fieldClassName("", !!errors.gsm)}
+                value={form.gsm}
+                onChange={(e) => patchForm("gsm", e.target.value)}
+              />
+            </FormField>
+
+            <FormField label="Roll Weight (kg)" required error={errors.weightKg}>
+              <Input
+                type="number"
+                min="0.1"
+                step="0.1"
+                className={fieldClassName("", !!errors.weightKg)}
+                value={form.weightKg}
+                onChange={(e) => patchForm("weightKg", e.target.value)}
+                placeholder="e.g. 473"
+              />
+            </FormField>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Receiving Date" error={errors.receivingDate}>
@@ -375,7 +395,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               />
             </FormField>
 
-            <FormField label="Bar Code (Customer Reference)" error={errors.barCode}>
+            <FormField label="Barcode" required error={errors.barCode}>
               <Input
                 className={fieldClassName(
                   "font-mono text-xs",
@@ -383,10 +403,13 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                 )}
                 value={form.barCode || ""}
                 onChange={(e) => patchForm("barCode", e.target.value)}
-                placeholder="Longer customer reference barcode"
+                placeholder="Scan or type this roll's barcode"
               />
             </FormField>
           </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Each physical roll needs its own barcode — this is how it's tracked and consumed individually.
+          </p>
         </>
       );
     case "GLUE":
@@ -411,7 +434,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </FormField>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Glue Weight (kg)" required error={errors.weightKg}>
+            <FormField label="Weight per Pack (kg)" required error={errors.weightKg}>
               <Select
                 value={
                   isCustomGlueWeight
@@ -444,7 +467,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
             </FormField>
 
             {isCustomGlueWeight && (
-              <FormField label="Custom Weight (kg)" required error={errors.weightKg}>
+              <FormField label="Custom Weight per Pack (kg)" required error={errors.weightKg}>
                 <Input
                   type="number"
                   min="0.1"
@@ -457,7 +480,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               </FormField>
             )}
 
-            <FormField label="Number of Packs" error={errors.gluePacks}>
+            <FormField label="Number of Packs" required error={errors.gluePacks}>
               <Input
                 type="number"
                 min="1"
@@ -465,10 +488,44 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                 className={fieldClassName("", !!errors.gluePacks)}
                 value={form.gluePacks}
                 onChange={(e) => patchForm("gluePacks", e.target.value)}
-                placeholder="Pack count"
+                placeholder="e.g. 15"
               />
             </FormField>
           </div>
+
+          {form.weightKg && form.gluePacks ? (
+            <p className="text-xs text-muted-foreground -mt-2">
+              Total stock added: {(Number(form.weightKg) * Number(form.gluePacks)) || 0} kg
+            </p>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Batch Number" error={errors.batchNo}>
+              <Input
+                className={fieldClassName("", !!errors.batchNo)}
+                value={form.batchNo || ""}
+                onChange={(e) => patchForm("batchNo", e.target.value)}
+                placeholder="Optional — from the label"
+              />
+            </FormField>
+            <FormField
+              label="Batch / Production Date"
+              required={!!form.batchNo}
+              error={errors.receivingDate}
+            >
+              <Input
+                type="date"
+                className={fieldClassName("", !!errors.receivingDate)}
+                value={form.receivingDate || ""}
+                onChange={(e) => patchForm("receivingDate", e.target.value)}
+              />
+            </FormField>
+          </div>
+          {form.batchNo && (
+            <p className="text-xs text-muted-foreground -mt-2">
+              Batch number + date together identify this batch, since batch numbers alone aren't guaranteed unique.
+            </p>
+          )}
         </>
       );
     case "INK":
@@ -507,7 +564,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Weight (kg)" required error={errors.weightKg}>
+            <FormField label="Weight per Drum (kg)" required error={errors.weightKg}>
               <Input
                 type="number"
                 min="0.1"
@@ -518,7 +575,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                 placeholder="e.g. 18"
               />
             </FormField>
-            <FormField label="No. of Drums" error={errors.inkDrums}>
+            <FormField label="Number of Drums" required error={errors.inkDrums}>
               <Input
                 type="number"
                 min="1"
@@ -526,10 +583,44 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                 className={fieldClassName("", !!errors.inkDrums)}
                 value={form.inkDrums}
                 onChange={(e) => patchForm("inkDrums", e.target.value)}
-                placeholder="Number of drums"
+                placeholder="e.g. 5"
               />
             </FormField>
           </div>
+
+          {form.weightKg && form.inkDrums ? (
+            <p className="text-xs text-muted-foreground -mt-2">
+              Total stock added: {(Number(form.weightKg) * Number(form.inkDrums)) || 0} kg
+            </p>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Batch Number" error={errors.batchNo}>
+              <Input
+                className={fieldClassName("", !!errors.batchNo)}
+                value={form.batchNo || ""}
+                onChange={(e) => patchForm("batchNo", e.target.value)}
+                placeholder="Optional — from the label"
+              />
+            </FormField>
+            <FormField
+              label="Batch / Production Date"
+              required={!!form.batchNo}
+              error={errors.receivingDate}
+            >
+              <Input
+                type="date"
+                className={fieldClassName("", !!errors.receivingDate)}
+                value={form.receivingDate || ""}
+                onChange={(e) => patchForm("receivingDate", e.target.value)}
+              />
+            </FormField>
+          </div>
+          {form.batchNo && (
+            <p className="text-xs text-muted-foreground -mt-2">
+              Batch number + date together identify this batch, since batch numbers alone aren't guaranteed unique.
+            </p>
+          )}
         </>
       );
     case "ROPE":
@@ -587,7 +678,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               </FormField>
             )}
 
-            <FormField label="Rope Rolls" error={errors.ropeRolls}>
+            <FormField label="Rope Rolls" required error={errors.ropeRolls}>
               <Input
                 type="number"
                 min="1"
@@ -599,6 +690,34 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               />
             </FormField>
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Batch Number" error={errors.batchNo}>
+              <Input
+                className={fieldClassName("", !!errors.batchNo)}
+                value={form.batchNo || ""}
+                onChange={(e) => patchForm("batchNo", e.target.value)}
+                placeholder="Optional — from the label"
+              />
+            </FormField>
+            <FormField
+              label="Batch / Production Date"
+              required={!!form.batchNo}
+              error={errors.receivingDate}
+            >
+              <Input
+                type="date"
+                className={fieldClassName("", !!errors.receivingDate)}
+                value={form.receivingDate || ""}
+                onChange={(e) => patchForm("receivingDate", e.target.value)}
+              />
+            </FormField>
+          </div>
+          {form.batchNo && (
+            <p className="text-xs text-muted-foreground -mt-2">
+              Batch number + date together identify this batch, since batch numbers alone aren't guaranteed unique.
+            </p>
+          )}
         </>
       );
     case "KAPTON":
@@ -676,17 +795,35 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               </SelectContent>
             </Select>
           </FormField>
-          <FormField label="Number of Cartons" error={errors.cartonQty}>
-            <Input
-              type="number"
-              min="1"
-              step="1"
-              className={fieldClassName("", !!errors.cartonQty)}
-              value={form.cartonQty}
-              onChange={(e) => patchForm("cartonQty", e.target.value)}
-              placeholder="Quantity of cartons"
-            />
-          </FormField>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Cartons per Bundle" required error={errors.cartonsPerBundle}>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                className={fieldClassName("", !!errors.cartonsPerBundle)}
+                value={form.cartonsPerBundle}
+                onChange={(e) => patchForm("cartonsPerBundle", e.target.value)}
+                placeholder="e.g. 15"
+              />
+            </FormField>
+            <FormField label="Number of Bundles" required error={errors.bundleQty}>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                className={fieldClassName("", !!errors.bundleQty)}
+                value={form.bundleQty}
+                onChange={(e) => patchForm("bundleQty", e.target.value)}
+                placeholder="e.g. 10"
+              />
+            </FormField>
+          </div>
+          {form.cartonsPerBundle && form.bundleQty ? (
+            <p className="text-xs text-muted-foreground -mt-2">
+              = {(Number(form.cartonsPerBundle) * Number(form.bundleQty)) || 0} cartons total
+            </p>
+          ) : null}
         </>
       );
     default:
@@ -746,8 +883,6 @@ export default function MaterialsPage() {
     }));
   }, []);
 
-  const previewCode = useMemo(() => generateMaterialCode(form), [form]);
-
   const filteredMaterials = useMemo(() => {
     let list = materials;
 
@@ -759,7 +894,8 @@ export default function MaterialsPage() {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter((m) => {
         const name = (m.name || "").toLowerCase();
-        const code = (m.code || "").toLowerCase();
+        const barCode = (m.barCode || "").toLowerCase();
+        const batchNo = (m.batchNo || "").toLowerCase();
         const supplier = (m.supplier || "").toLowerCase();
         const typeLabel = (
           MATERIAL_TYPE_LABELS[m.materialType] ||
@@ -768,7 +904,8 @@ export default function MaterialsPage() {
         ).toLowerCase();
         return (
           name.includes(q) ||
-          code.includes(q) ||
+          barCode.includes(q) ||
+          batchNo.includes(q) ||
           supplier.includes(q) ||
           typeLabel.includes(q)
         );
@@ -1053,12 +1190,13 @@ export default function MaterialsPage() {
         paperColor: paperData.paperColor || "WHITE",
         paperWidthCm: paperData.paperWidthCm ? String(paperData.paperWidthCm) : "",
         paperLengthM: paperData.paperLengthM ? String(paperData.paperLengthM) : "",
+        weightKg: paperData.weightKg || glueData.weightKg || inkData.weightKg || "",
         gsm: paperData.gsm ? String(paperData.gsm) : "",
         barCode: paperData.barCode || "",
         receivingDate: recDate,
         glueType: glueData.glueType || "",
-        weightKg: glueData.weightKg || inkData.weightKg || "",
         gluePacks: glueData.gluePacks || "",
+        batchNo: glueData.batchNo || inkData.batchNo || ropeData.batchNo || "",
         inkColor: inkData.inkColor || "",
         inkColorCustom: inkData.inkColorCustom || "",
         inkDrums: inkData.inkDrums || "",
@@ -1066,7 +1204,8 @@ export default function MaterialsPage() {
         ropeLengthM: ropeData.ropeLengthM ? String(ropeData.ropeLengthM) : "",
         ropeRolls: ropeData.ropeRolls || "",
         cartonSize: cartonData.cartonSize || "",
-        cartonQty: cartonData.cartonQty || "",
+        cartonsPerBundle: cartonData.cartonsPerBundle || "",
+        bundleQty: cartonData.bundleQty || "",
       });
       setErrors({});
 
@@ -1084,8 +1223,7 @@ export default function MaterialsPage() {
   }
 
   async function handleSave() {
-    const payload = { ...form, code: previewCode };
-    const result = validateForm(materialSchema, payload);
+    const result = validateForm(materialSchema, form);
     if (!result.success) {
       setErrors(result.errors);
       toast.error(firstErrorMessage(result.errors));
@@ -1146,7 +1284,7 @@ export default function MaterialsPage() {
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by name, code, supplier..."
+              placeholder="Search by name, barcode, batch, supplier..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={cn(
@@ -1312,9 +1450,10 @@ export default function MaterialsPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px] text-center">#</TableHead>
+              <TableHead className="text-center">Label</TableHead>
               <SortableHead
-                label="Code"
-                column="code"
+                label="Name"
+                column="name"
                 sortBy={sortBy}
                 sortDir={sortDir}
                 onSort={handleSort}
@@ -1327,8 +1466,15 @@ export default function MaterialsPage() {
                 onSort={handleSort}
               />
               <SortableHead
-                label="Name"
-                column="name"
+                label="Supplier"
+                column="supplier"
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableHead
+                label="Barcode / Batch"
+                column="identifier"
                 sortBy={sortBy}
                 sortDir={sortDir}
                 onSort={handleSort}
@@ -1337,20 +1483,12 @@ export default function MaterialsPage() {
               <TableHead>Available Stock</TableHead>
               <TableHead>Details</TableHead>
               <SortableHead
-                label="Supplier"
-                column="supplier"
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
-              <SortableHead
                 label="Created At"
                 column="createdAt"
                 sortBy={sortBy}
                 sortDir={sortDir}
                 onSort={handleSort}
               />
-              <TableHead className="text-center">Label</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -1407,15 +1545,34 @@ export default function MaterialsPage() {
                           <TableCell className="text-center font-mono text-xs text-muted-foreground">
                             {idx + 1}
                           </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {m.code}
+                          <TableCell className="text-center">
+                            {m.imageUrl ? (
+                              <button
+                                type="button"
+                                onClick={() => openImagePreview(m.imageUrl)}
+                                title="Click to open zoomable label image"
+                                className="inline-block relative group"
+                              >
+                                <img
+                                  src={m.imageUrl}
+                                  alt="Label"
+                                  className="h-8 w-8 object-cover rounded border mx-auto group-hover:opacity-80 transition-opacity"
+                                />
+                              </button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {m.name}
                           </TableCell>
                           <TableCell>
                             {MATERIAL_TYPE_LABELS[m.materialType] ??
                               m.materialType}
                           </TableCell>
-                          <TableCell className="font-medium">
-                            {m.name}
+                          <TableCell>{m.supplier || "—"}</TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {m.barCode || m.batchNo || "—"}
                           </TableCell>
                           <TableCell className="font-mono text-xs whitespace-nowrap">
                             {m.initialStock !== undefined
@@ -1440,27 +1597,8 @@ export default function MaterialsPage() {
                           <TableCell className="text-muted-foreground text-sm">
                             {getMaterialSummary(m)}
                           </TableCell>
-                          <TableCell>{m.supplier || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                             {m.createdAt ? formatDateTime(m.createdAt) : "—"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {m.imageUrl ? (
-                              <button
-                                type="button"
-                                onClick={() => openImagePreview(m.imageUrl)}
-                                title="Click to open zoomable label image"
-                                className="inline-block relative group"
-                              >
-                                <img
-                                  src={m.imageUrl}
-                                  alt="Label"
-                                  className="h-8 w-8 object-cover rounded border mx-auto group-hover:opacity-80 transition-opacity"
-                                />
-                              </button>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
                           </TableCell>
                           <TableCell className="text-right space-x-1">
                             <Button
@@ -1489,11 +1627,30 @@ export default function MaterialsPage() {
                   <TableCell className="text-center font-mono text-xs text-muted-foreground">
                     {idx + 1}
                   </TableCell>
-                  <TableCell className="font-mono text-sm">{m.code}</TableCell>
+                  <TableCell className="text-center">
+                    {m.imageUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => openImagePreview(m.imageUrl)}
+                        title="Click to open zoomable label image"
+                        className="inline-block relative group"
+                      >
+                        <img
+                          src={m.imageUrl}
+                          alt="Label"
+                          className="h-8 w-8 object-cover rounded border mx-auto group-hover:opacity-80 transition-opacity"
+                        />
+                      </button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-medium">{m.name}</TableCell>
                   <TableCell>
                     {MATERIAL_TYPE_LABELS[m.materialType] ?? m.materialType}
                   </TableCell>
-                  <TableCell className="font-medium">{m.name}</TableCell>
+                  <TableCell>{m.supplier || "—"}</TableCell>
+                  <TableCell className="font-mono text-sm">{m.barCode || m.batchNo || "—"}</TableCell>
                   <TableCell className="font-mono text-xs whitespace-nowrap">
                     {m.initialStock !== undefined
                       ? `${m.initialStock.toLocaleString()} ${m.unit || ""}`
@@ -1516,27 +1673,8 @@ export default function MaterialsPage() {
                   <TableCell className="text-muted-foreground text-sm">
                     {getMaterialSummary(m)}
                   </TableCell>
-                  <TableCell>{m.supplier || "—"}</TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                     {m.createdAt ? formatDateTime(m.createdAt) : "—"}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {m.imageUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => openImagePreview(m.imageUrl)}
-                        title="Click to open zoomable label image"
-                        className="inline-block relative group"
-                      >
-                        <img
-                          src={m.imageUrl}
-                          alt="Label"
-                          className="h-8 w-8 object-cover rounded border mx-auto group-hover:opacity-80 transition-opacity"
-                        />
-                      </button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
                   </TableCell>
                   <TableCell className="text-right space-x-1">
                     <Button
@@ -1656,15 +1794,6 @@ export default function MaterialsPage() {
                       <Plus className="h-3.5 w-3.5 mr-1" /> New
                     </Button>
                   </div>
-                </FormField>
-
-                <FormField label="Code" error={errors.code}>
-                  <Input
-                    className={fieldClassName("font-mono", !!errors.code)}
-                    value={previewCode}
-                    readOnly
-                    placeholder="Auto-generated from selections"
-                  />
                 </FormField>
 
                 {form.imageUrl && (

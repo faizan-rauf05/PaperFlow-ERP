@@ -7,6 +7,21 @@ import { buildMaterialRecord } from "@/lib/material-code";
 import { materialSchema } from "@/lib/validations/admin-forms";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
 
+function duplicateMaterialErrorMessage(error) {
+  // error.meta.target can be an array of column names (classic engine) or a
+  // single constraint-name string like "Material_batchNo_receivingDate_key"
+  // (driver adapter mode) — join to one string and substring-match either way.
+  const raw = error.meta?.target;
+  const target = (Array.isArray(raw) ? raw.join(" ") : raw || "").toString();
+  if (target.includes("barCode")) {
+    return "A material with this barcode already exists.";
+  }
+  if (target.includes("batchNo")) {
+    return "This batch number and date combination already exists.";
+  }
+  return "Material code already exists.";
+}
+
 export async function PUT(request, { params }) {
   try {
     const authResult = await requireAdmin();
@@ -65,7 +80,7 @@ export async function PUT(request, { params }) {
   } catch (error) {
     if (error.code === "P2002") {
       return NextResponse.json(
-        { error: "Material code already exists" },
+        { error: duplicateMaterialErrorMessage(error) },
         { status: 409 },
       );
     }

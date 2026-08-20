@@ -111,7 +111,8 @@ model Material {
   paperWidthCm      Decimal?               @db.Decimal(10, 2)
   gsm               Int?
   receivingDate     DateTime?
-  barCode           String?
+  barCode           String?                @unique
+  batchNo           String?
   glueType          String?
   inkColor          String?
   weightKg          Decimal?               @db.Decimal(14, 4)
@@ -122,6 +123,8 @@ model Material {
   gluePacks         Int?
   inkDrums          Int?
   cartonQty         Int?
+  cartonsPerBundle  Int?
+  bundleQty         Int?
   tapeType          String?
   size              String?
   sheetCount        Int?
@@ -136,6 +139,7 @@ model Material {
   stageConsumptions StageConsumption[]
   stages            ProductionStage[]
 
+  @@unique([batchNo, receivingDate])
   @@index([materialType])
 }
 
