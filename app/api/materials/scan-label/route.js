@@ -243,6 +243,74 @@ CRITICAL EXTRACTION RULES FOR BARCODE & SPECIFICATIONS:
 
 Return ONLY the material section corresponding to the detected materialType along with supplier details.`;
 
+const rotationSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    rotationDegrees: {
+      type: "number",
+      enum: [0, 90, 180, 270],
+      description:
+        "Degrees to rotate the image CLOCKWISE so its printed text reads upright, left-to-right, top-to-bottom. 0 if the text is already upright. 180 if the label is fully upside down.",
+    },
+  },
+  required: ["rotationDegrees"],
+};
+
+/**
+ * EXIF orientation only corrects for how the camera was physically held — it does
+ * nothing when the label itself is upside down within an otherwise normally-held
+ * photo. Vision models read upside-down/sideways text far less reliably, so detect
+ * the needed rotation with a small, cheap call and physically rotate the pixels
+ * before the real extraction call runs on it.
+ */
+async function detectAndCorrectRotation(buffer, apiKey) {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 50,
+      temperature: 0,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/jpeg", data: buffer.toString("base64") },
+            },
+            {
+              type: "text",
+              text: "Look at any printed text on this label. How many degrees clockwise must the image be rotated so the text is upright and reads normally?",
+            },
+          ],
+        },
+      ],
+      output_config: { format: { type: "json_schema", schema: rotationSchema } },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Rotation detection request failed (${response.status})`);
+  }
+
+  const data = await response.json();
+  const text = data?.content?.find((item) => item?.type === "text")?.text;
+  const degrees = text ? JSON.parse(text)?.rotationDegrees : 0;
+
+  if (!degrees) return buffer;
+
+  return sharp(buffer)
+    .rotate(degrees)
+    .jpeg({ quality: 88, chromaSubsampling: "4:4:4" })
+    .toBuffer();
+}
+
 async function prepareImage(base64) {
   const inputBuffer = Buffer.from(base64, "base64");
 
@@ -320,7 +388,15 @@ export async function POST(request) {
       );
     }
 
-    const optimizedBase64 = preparedImage.buffer.toString("base64");
+    let finalBuffer = preparedImage.buffer;
+    try {
+      finalBuffer = await detectAndCorrectRotation(preparedImage.buffer, apiKey);
+    } catch (error) {
+      // Non-fatal: proceed with the original orientation rather than failing the whole scan.
+      console.error("Rotation detection failed, proceeding without correction:", error);
+    }
+
+    const optimizedBase64 = finalBuffer.toString("base64");
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -457,7 +533,8 @@ export async function POST(request) {
       image: {
         width: preparedImage.width,
         height: preparedImage.height,
-        bytes: preparedImage.buffer.length,
+        bytes: finalBuffer.length,
+        rotationCorrected: finalBuffer !== preparedImage.buffer,
       },
       usage: resData?.usage,
       materialType: parsed?.materialType,
