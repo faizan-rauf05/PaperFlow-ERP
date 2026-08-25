@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FormField } from "@/components/ui/form-field";
+import { CustomerQuoteSection } from "@/components/orders/customer-quote-section";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { cn, formatDateTime } from "@/lib/utils";
@@ -49,6 +50,8 @@ const ORDER_STATUS_CONFIG = {
   DRAFT: { label: "Draft", cls: "bg-gray-500/10 text-gray-700 dark:text-gray-300 border-gray-400/40" },
   PENDING_APPROVAL: { label: "Pending Approval", cls: "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40 font-semibold" },
   APPROVED: { label: "Approved", cls: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 font-semibold" },
+  PENDING_CUSTOMER_APPROVAL: { label: "Quote Sent", cls: "bg-violet-500/15 text-violet-800 dark:text-violet-300 border-violet-500/40 font-semibold" },
+  CUSTOMER_APPROVED: { label: "Customer Approved", cls: "bg-teal-500/15 text-teal-800 dark:text-teal-300 border-teal-500/40 font-semibold" },
   READY_FOR_WORK: { label: "Ready for Work", cls: "bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-500/40 font-semibold" },
   PICKED: { label: "Picked", cls: "bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border-indigo-500/40 font-semibold" },
   IN_PROGRESS: { label: "In Progress", cls: "bg-purple-500/15 text-purple-800 dark:text-purple-300 border-purple-500/40 font-semibold" },
@@ -137,6 +140,12 @@ export default function SalesDashboardPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Keep the open inspect dialog + the list row in sync after an action
+  function applyOrderUpdate(updatedOrder) {
+    setInspectOrder(updatedOrder);
+    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+  }
 
   async function handleLogout() {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -1038,6 +1047,8 @@ export default function SalesDashboardPage() {
                     </p>
                   )}
                 </div>
+
+                <CustomerQuoteSection order={inspectOrder} onUpdate={applyOrderUpdate} />
               </div>
 
               <DialogFooter>

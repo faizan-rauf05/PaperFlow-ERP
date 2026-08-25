@@ -12,6 +12,8 @@ import {
   Copy,
   Check,
   Trash2,
+  Upload,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,7 +65,8 @@ import { userCreateSchema, userEditSchema } from "@/lib/validations/admin-forms"
 import { validateForm, clearFieldError, firstErrorMessage } from "@/lib/validations/form-utils";
 import { formatDate, formatDateTime, cn } from "@/lib/utils";
 
-const emptyForm = { name: "", email: "", role: "WORKER", isActive: true };
+const emptyForm = { name: "", email: "", role: "WORKER", isActive: true, signatureUrl: "" };
+const SIGNATURE_ROLES = ["ADMIN", "MANAGER"];
 
 function getConfirmConfig(type, user) {
   switch (type) {
@@ -175,6 +178,7 @@ export default function UsersPage() {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
 
   const fetchUsers = useCallback(async (search = "") => {
     setLoading(true);
@@ -229,10 +233,29 @@ export default function UsersPage() {
       email: user.email,
       role: user.role,
       isActive: user.isActive,
+      signatureUrl: user.signatureUrl || "",
     });
     setFormErrors({});
     setInviteLink(null);
     setIsModalOpen(true);
+  };
+
+  const handleSignatureUpload = async (file) => {
+    if (!file) return;
+    setUploadingSignature(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const { data } = await api.post("/uploads", body, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      patchFormData("signatureUrl", data.photoUrl);
+      toast.success("Signature uploaded");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to upload signature"));
+    } finally {
+      setUploadingSignature(false);
+    }
   };
 
   const handleSave = async () => {
@@ -635,6 +658,47 @@ export default function UsersPage() {
                       }
                     />
                   </div>
+                )}
+                {editingUser && SIGNATURE_ROLES.includes(formData.role) && (
+                  <FormField label="Signature">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Stamped on quote PDFs this person approves. Upload a scanned/photographed signature.
+                    </p>
+                    {formData.signatureUrl ? (
+                      <div className="flex items-center gap-3 rounded-md border p-2">
+                        <img
+                          src={formData.signatureUrl}
+                          alt="Signature preview"
+                          className="h-10 w-auto object-contain"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="ml-auto h-7 w-7"
+                          onClick={() => patchFormData("signatureUrl", "")}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground hover:bg-muted/40">
+                        {uploadingSignature ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4" />
+                        )}
+                        {uploadingSignature ? "Uploading..." : "Upload signature image"}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          disabled={uploadingSignature}
+                          onChange={(e) => handleSignatureUpload(e.target.files?.[0])}
+                        />
+                      </label>
+                    )}
+                  </FormField>
                 )}
               </div>
               <DialogFooter>

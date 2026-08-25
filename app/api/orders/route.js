@@ -33,10 +33,22 @@ export async function GET(request) {
         customer: true,
         salesRepUser: { select: { id: true, name: true, email: true } },
         assignedWorker: { select: { id: true, name: true, email: true } },
-        lines: true,
+        lines: { include: { cliche: true } },
         approvals: {
           orderBy: { createdAt: "desc" },
           take: 1,
+          include: {
+            requestedBy: { select: { id: true, name: true, email: true } },
+            reviewedBy: { select: { id: true, name: true, email: true } },
+          },
+        },
+        quoteApprovals: {
+          orderBy: { sentAt: "desc" },
+          take: 1,
+          include: {
+            sentBy: { select: { id: true, name: true, email: true } },
+            markedBy: { select: { id: true, name: true, email: true } },
+          },
         },
       },
       orderBy: { createdAt: "desc" },

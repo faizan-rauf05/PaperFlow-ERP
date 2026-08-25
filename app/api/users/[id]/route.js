@@ -10,6 +10,7 @@ const userSelect = {
   email: true,
   role: true,
   isActive: true,
+  signatureUrl: true,
   createdAt: true,
   updatedAt: true,
 };
@@ -85,6 +86,10 @@ export async function PUT(request, { params }) {
         );
       }
       data.isActive = body.isActive;
+    }
+
+    if (body.signatureUrl !== undefined) {
+      data.signatureUrl = body.signatureUrl?.trim() || null;
     }
 
     if (Object.keys(data).length === 0) {

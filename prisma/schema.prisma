@@ -23,6 +23,7 @@ model User {
   passwordHash          String
   role                  Role                   @default(WORKER)
   isActive              Boolean                @default(true)
+  signatureUrl          String?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   resetTokens           PasswordResetToken[]
@@ -36,6 +37,8 @@ model User {
   orderAssignments      OrderAssignment[]      @relation("WorkerAssignments")
   qcRecords             QCRecord[]
   machineDowntimes      MachineDowntime[]
+  sentQuoteApprovals    CustomerQuoteApproval[] @relation("QuoteSentBy")
+  markedQuoteApprovals  CustomerQuoteApproval[] @relation("QuoteMarkedBy")
 }
 
 model PasswordResetToken {
@@ -208,6 +211,7 @@ model Customer {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   orders      ProductionOrder[]
+  cliches     Cliche[]
 
   @@index([name])
 }
@@ -235,6 +239,8 @@ enum ProductionOrderStatus {
   PENDING_APPROVAL
   REJECTED
   APPROVED
+  PENDING_CUSTOMER_APPROVAL
+  CUSTOMER_APPROVED
   READY_FOR_WORK
   PICKED
   IN_PROGRESS
@@ -242,6 +248,29 @@ enum ProductionOrderStatus {
   CANCELLED
   PENDING
   RUNNING
+}
+
+enum CustomerApprovalStatus {
+  SENT
+  APPROVED
+  REJECTED
+}
+
+enum ClicheOwnership {
+  COMPANY_OWNED
+  CUSTOMER_OWNED
+}
+
+enum ClicheSource {
+  PURCHASED_NEW
+  CUSTOMER_SUPPLIED
+  REUSED_EXISTING
+}
+
+enum ClicheCondition {
+  ACTIVE
+  DAMAGED
+  RETIRED
 }
 
 enum OrderPriority {
@@ -295,6 +324,7 @@ model ProductionOrder {
   yieldRecords      YieldRecord[]
   approvals         OrderApproval[]
   assignments       OrderAssignment[]
+  quoteApprovals    CustomerQuoteApproval[]
 
   @@index([status])
   @@index([customerId])
@@ -325,12 +355,57 @@ model OrderLine {
   fileName        String?
   plannedQty      Decimal          @db.Decimal(14, 4)
   lineNo          Int
+  clicheId        String?
+  cliche          Cliche?          @relation(fields: [clicheId], references: [id], onDelete: SetNull)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   stages          ProductionStage[]
 
   @@unique([orderId, lineNo])
   @@index([orderId])
+  @@index([clicheId])
+}
+
+model CustomerQuoteApproval {
+  id             String                  @id @default(cuid())
+  orderId        String
+  order          ProductionOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  pdfUrl         String
+  sentAt         DateTime                @default(now())
+  sentById       String?
+  sentBy         User?                   @relation("QuoteSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+  status         CustomerApprovalStatus  @default(SENT)
+  respondedAt    DateTime?
+  markedById     String?
+  markedBy       User?                   @relation("QuoteMarkedBy", fields: [markedById], references: [id], onDelete: SetNull)
+  approvalMethod String?
+  evidenceUrl    String?
+  remarks        String?
+  createdAt      DateTime                @default(now())
+
+  @@index([orderId])
+}
+
+model Cliche {
+  id              String           @id @default(cuid())
+  code            String           @unique
+  widthMm         Decimal?         @db.Decimal(10, 2)
+  heightMm        Decimal?         @db.Decimal(10, 2)
+  colorCount      Int?
+  ownership       ClicheOwnership
+  source          ClicheSource
+  condition       ClicheCondition  @default(ACTIVE)
+  customerId      String?
+  customer        Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  storageLocation String?
+  cost            Decimal?         @db.Decimal(14, 4)
+  photoUrl        String?
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  orderLines      OrderLine[]
+
+  @@index([customerId])
 }
 
 model OrderApproval {
