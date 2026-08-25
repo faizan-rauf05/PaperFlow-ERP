@@ -16,6 +16,12 @@ export async function POST(request, { params }) {
     if (typeof body.approved !== "boolean") {
       return NextResponse.json({ error: "approved (boolean) is required" }, { status: 400 });
     }
+    if (!body.approvalMethod?.trim()) {
+      return NextResponse.json(
+        { error: "Describe how the customer's response was confirmed" },
+        { status: 400 },
+      );
+    }
 
     const order = await recordCustomerQuoteResponse({
       orderId: id,

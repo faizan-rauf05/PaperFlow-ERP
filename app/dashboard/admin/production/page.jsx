@@ -47,6 +47,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FormField } from "@/components/ui/form-field";
+import { CustomerQuoteSection } from "@/components/orders/customer-quote-section";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { ORDER_STATUS_COLORS } from "@/lib/order-progress";
@@ -334,6 +335,13 @@ export default function AdminProductionOrdersPage() {
     setRemarks("");
   }
 
+  // Keep the open review dialog + the list row in sync after a Customer
+  // Quote Approval / cliche / send-to-production action, without closing it
+  function applyOrderUpdate(updatedOrder) {
+    setReviewOrder(updatedOrder);
+    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+  }
+
   async function handleApproveOrReject(action) {
     if (!reviewOrder) return;
     if (action === "REJECT" && !remarks.trim()) {
@@ -351,7 +359,7 @@ export default function AdminProductionOrdersPage() {
 
       toast.success(
         action === "APPROVE"
-          ? "Order approved & marked Ready for Work!"
+          ? "Order approved — quote PDF sent for customer approval"
           : "Order proposal rejected",
       );
       setReviewOrder(null);
@@ -977,70 +985,82 @@ export default function AdminProductionOrdersPage() {
                   </div>
                 </div>
 
-                {/* Pricing Review */}
-                <div className="p-4 border rounded-lg bg-muted/40 space-y-3">
-                  <h4 className="font-semibold text-sm flex items-center gap-1.5">
-                    <DollarSign className="h-4 w-4 text-emerald-600" /> Commercial Price Review
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-xs text-muted-foreground">Proposed Price</span>
-                      <p className="font-mono text-lg font-bold text-foreground">
-                        ${Number(reviewOrder.proposedTotal || reviewOrder.total || 0).toFixed(2)}
-                      </p>
+                {/* Pricing Review — only relevant while awaiting internal approval */}
+                {reviewOrder.status === "PENDING_APPROVAL" && (
+                  <div className="p-4 border rounded-lg bg-muted/40 space-y-3">
+                    <h4 className="font-semibold text-sm flex items-center gap-1.5">
+                      <DollarSign className="h-4 w-4 text-emerald-600" /> Commercial Price Review
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-xs text-muted-foreground">Proposed Price</span>
+                        <p className="font-mono text-lg font-bold text-foreground">
+                          ${Number(reviewOrder.proposedTotal || reviewOrder.total || 0).toFixed(2)}
+                        </p>
+                      </div>
+
+                      <FormField label="Approved Price ($)">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={approvedTotal}
+                          onChange={(e) => setApprovedTotal(e.target.value)}
+                          placeholder="Approved total"
+                          className="font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-background"
+                        />
+                      </FormField>
                     </div>
 
-                    <FormField label="Approved Price ($)">
+                    <FormField label="Manager/Admin Remarks">
                       <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={approvedTotal}
-                        onChange={(e) => setApprovedTotal(e.target.value)}
-                        placeholder="Approved total"
-                        className="font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-background"
+                        value={remarks}
+                        onChange={(e) => setRemarks(e.target.value)}
+                        placeholder="Notes..."
+                        className="bg-background"
                       />
                     </FormField>
                   </div>
+                )}
 
-                  <FormField label="Manager/Admin Remarks">
-                    <Input
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      placeholder="Notes..."
-                      className="bg-background"
-                    />
-                  </FormField>
-                </div>
+                <CustomerQuoteSection order={reviewOrder} onUpdate={applyOrderUpdate} />
               </div>
 
-              <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => handleApproveOrReject("REJECT")}
-                  disabled={submittingReview}
-                >
-                  <XCircle className="h-4 w-4 mr-2" /> Reject Proposal
-                </Button>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={() => setReviewOrder(null)}>
-                    Cancel
-                  </Button>
+              {reviewOrder.status === "PENDING_APPROVAL" ? (
+                <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
                   <Button
-                    onClick={() => handleApproveOrReject("APPROVE")}
+                    type="button"
+                    variant="destructive"
+                    onClick={() => handleApproveOrReject("REJECT")}
                     disabled={submittingReview}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
                   >
-                    {submittingReview ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                    )}
-                    Approve Order
+                    <XCircle className="h-4 w-4 mr-2" /> Reject Proposal
                   </Button>
-                </div>
-              </DialogFooter>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={() => setReviewOrder(null)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => handleApproveOrReject("APPROVE")}
+                      disabled={submittingReview}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      {submittingReview ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                      )}
+                      Approve Order
+                    </Button>
+                  </div>
+                </DialogFooter>
+              ) : (
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setReviewOrder(null)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              )}
             </>
           )}
         </DialogContent>
