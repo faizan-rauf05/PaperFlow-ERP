@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -42,9 +42,11 @@ import {
 } from "@/components/ui/select";
 import { FormField } from "@/components/ui/form-field";
 import { CustomerQuoteSection } from "@/components/orders/customer-quote-section";
+import { OrderRowActions } from "@/components/orders/order-row-actions";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { cn, formatDateTime } from "@/lib/utils";
+import { getOrderLineProgressRows } from "@/lib/order-progress";
 
 const ORDER_STATUS_CONFIG = {
   DRAFT: { label: "Draft", cls: "bg-gray-500/10 text-gray-700 dark:text-gray-300 border-gray-400/40" },
@@ -102,6 +104,7 @@ export default function SalesDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [viewFilter, setViewFilter] = useState("active"); // "active" | "cancelled" | "archived"
 
   // Order Create / Edit Modal State
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -116,6 +119,7 @@ export default function SalesDashboardPage() {
   const [notes, setNotes] = useState("");
   const [discount, setDiscount] = useState("0");
   const [lines, setLines] = useState([]); // Empty by default
+  const [originalSnapshot, setOriginalSnapshot] = useState(null);
 
   // Inspection Modal State
   const [inspectOrder, setInspectOrder] = useState(null);
@@ -147,14 +151,21 @@ export default function SalesDashboardPage() {
     setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
   }
 
+  // Row-menu actions (archive/cancel) fire with no dialog open — update the
+  // list only, don't pop the inspect modal open.
+  function updateOrderInList(updatedOrder) {
+    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+  }
+
   async function handleLogout() {
-    await fetch("/api/auth/signout", { method: "POST" });
+    await api.post("/auth/logout");
     router.push("/login");
   }
 
   // Open Create Dialog
   function openCreateOrder() {
     setEditingOrder(null);
+    setOriginalSnapshot(null);
     setCustomerId(customers[0]?.id || "");
     setPriority("NORMAL");
     setDeliveryDate("");
@@ -167,35 +178,49 @@ export default function SalesDashboardPage() {
   // Open Edit Dialog
   function openEditOrder(order) {
     setEditingOrder(order);
-    setCustomerId(order.customerId || "");
-    setPriority(order.priority || "NORMAL");
-    setDeliveryDate(order.deliveryDate ? order.deliveryDate.split("T")[0] : "");
-    setNotes(order.notes || "");
-    setDiscount(order.discount ? parseFloat(order.discount).toFixed(2) : "0.00");
 
-    if (Array.isArray(order.lines) && order.lines.length > 0) {
-      setLines(
-        order.lines.map((l) => ({
-          widthCm: l.widthCm ? String(l.widthCm) : "",
-          heightCm: l.heightCm ? String(l.heightCm) : "",
-          baseCm: l.baseCm ? String(l.baseCm) : "",
-          quantity: l.quantity ? String(l.quantity) : "",
-          withHandle: Boolean(l.withHandle),
-          paperType: l.paperType || "VIRGIN",
-          paperColor: l.paperColor || "WHITE",
-          colorCount: l.colorCount != null ? Number(l.colorCount) : 0,
-          unitPrice: l.unitPrice ? parseFloat(l.unitPrice).toFixed(2) : "",
-          lineTotal: l.lineTotal ? parseFloat(l.lineTotal).toFixed(2) : "",
-          referenceFiles: Array.isArray(l.referenceFiles)
-            ? l.referenceFiles
-            : l.fileUrl
-              ? [{ url: l.fileUrl, name: l.fileName || "Reference File" }]
-              : [],
-        })),
-      );
-    } else {
-      setLines([]);
-    }
+    const nextCustomerId = order.customerId || "";
+    const nextPriority = order.priority || "NORMAL";
+    const nextDeliveryDate = order.deliveryDate ? order.deliveryDate.split("T")[0] : "";
+    const nextNotes = order.notes || "";
+    const nextDiscount = order.discount ? parseFloat(order.discount).toFixed(2) : "0.00";
+    const nextLines =
+      Array.isArray(order.lines) && order.lines.length > 0
+        ? order.lines.map((l) => ({
+            widthCm: l.widthCm ? String(l.widthCm) : "",
+            heightCm: l.heightCm ? String(l.heightCm) : "",
+            baseCm: l.baseCm ? String(l.baseCm) : "",
+            quantity: l.quantity ? String(l.quantity) : "",
+            withHandle: Boolean(l.withHandle),
+            paperType: l.paperType || "VIRGIN",
+            paperColor: l.paperColor || "WHITE",
+            colorCount: l.colorCount != null ? Number(l.colorCount) : 0,
+            unitPrice: l.unitPrice ? parseFloat(l.unitPrice).toFixed(2) : "",
+            lineTotal: l.lineTotal ? parseFloat(l.lineTotal).toFixed(2) : "",
+            referenceFiles: Array.isArray(l.referenceFiles)
+              ? l.referenceFiles
+              : l.fileUrl
+                ? [{ url: l.fileUrl, name: l.fileName || "Reference File" }]
+                : [],
+          }))
+        : [];
+
+    setCustomerId(nextCustomerId);
+    setPriority(nextPriority);
+    setDeliveryDate(nextDeliveryDate);
+    setNotes(nextNotes);
+    setDiscount(nextDiscount);
+    setLines(nextLines);
+    setOriginalSnapshot(
+      JSON.stringify({
+        customerId: nextCustomerId,
+        priority: nextPriority,
+        deliveryDate: nextDeliveryDate,
+        notes: nextNotes,
+        discount: nextDiscount,
+        lines: nextLines,
+      }),
+    );
 
     setDialogOpen(true);
   }
@@ -236,6 +261,22 @@ export default function SalesDashboardPage() {
   const subtotal = lines.reduce((acc, l) => acc + (parseFloat(l.lineTotal) || 0), 0);
   const discountVal = parseFloat(discount) || 0;
   const proposedTotal = Math.max(subtotal - discountVal, 0);
+
+  // Whether anything actually changed since this order was opened for
+  // editing — used to stop "Submit for Approval" from re-submitting an
+  // order that's already awaiting review with zero edits.
+  const isDirty = useMemo(() => {
+    if (!originalSnapshot) return true;
+    return (
+      JSON.stringify({ customerId, priority, deliveryDate, notes, discount, lines }) !==
+      originalSnapshot
+    );
+  }, [originalSnapshot, customerId, priority, deliveryDate, notes, discount, lines]);
+
+  const alreadyAwaitingApproval =
+    !!editingOrder &&
+    ["PENDING_APPROVAL", "APPROVED"].includes(editingOrder.status) &&
+    !isDirty;
 
   // File upload handler for reference files (up to 5 per line)
   async function handleFileUpload(lineIndex, files) {
@@ -340,8 +381,16 @@ export default function SalesDashboardPage() {
     }
   }
 
-  const filteredOrders = orders.filter((o) => {
-    if (statusFilter !== "ALL" && o.status !== statusFilter) return false;
+  // Three-way partition: every order falls into exactly one — archived takes
+  // priority over cancelled (an order can be both; archived hides it either way).
+  const viewFilteredOrders = orders.filter((o) => {
+    if (viewFilter === "archived") return o.isArchived;
+    if (o.isArchived) return false;
+    return viewFilter === "cancelled" ? o.status === "CANCELLED" : o.status !== "CANCELLED";
+  });
+
+  const filteredOrders = viewFilteredOrders.filter((o) => {
+    if (viewFilter === "active" && statusFilter !== "ALL" && o.status !== statusFilter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       const customerName = (o.customer?.name || "").toLowerCase();
@@ -420,6 +469,25 @@ export default function SalesDashboardPage() {
         </Card>
       </div>
 
+      {/* Active / Cancelled / Archived */}
+      <div className="flex items-center gap-2">
+        {[
+          { key: "active", label: "Active" },
+          { key: "cancelled", label: "Cancelled" },
+          { key: "archived", label: "Archived" },
+        ].map((v) => (
+          <Button
+            key={v.key}
+            variant={viewFilter === v.key ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewFilter(v.key)}
+            className="text-xs"
+          >
+            {v.label}
+          </Button>
+        ))}
+      </div>
+
       {/* Filter and Search Bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-md">
@@ -431,6 +499,7 @@ export default function SalesDashboardPage() {
             className="pl-9"
           />
         </div>
+        {viewFilter === "active" && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           {["ALL", "DRAFT", "PENDING_APPROVAL", "APPROVED", "READY_FOR_WORK", "IN_PROGRESS", "COMPLETED", "REJECTED"].map((st) => (
             <Button
@@ -444,6 +513,7 @@ export default function SalesDashboardPage() {
             </Button>
           ))}
         </div>
+        )}
       </div>
 
       {/* Orders List Table */}
@@ -516,6 +586,11 @@ export default function SalesDashboardPage() {
                         <Badge variant="outline" className={cn("text-xs py-0.5", statusInfo.cls)}>
                           {statusInfo.label}
                         </Badge>
+                        {o.isArchived && (
+                          <Badge variant="outline" className="ml-1 text-[10px] bg-gray-500/10 text-gray-600 border-gray-400/40">
+                            Archived
+                          </Badge>
+                        )}
                         {latestApproval?.remarks && (
                           <p className="text-[11px] text-muted-foreground italic truncate max-w-[140px] mx-auto mt-0.5">
                             "{latestApproval.remarks}"
@@ -542,6 +617,7 @@ export default function SalesDashboardPage() {
                             <Edit className="h-3.5 w-3.5 mr-1" /> Edit
                           </Button>
                         )}
+                        <OrderRowActions order={o} onUpdated={updateOrderInList} />
                       </td>
                     </tr>
                   );
@@ -564,10 +640,14 @@ export default function SalesDashboardPage() {
 
           <div className="space-y-5 py-2">
             {/* Top Info Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-3 bg-muted/40 rounded-lg border">
-              <FormField label="Customer" required>
+            <div className="space-y-3">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <Building className="h-4 w-4 text-primary" /> Order Details
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-muted/40 rounded-lg border">
+              <FormField label="Customer" required className="min-w-0">
                 <Select value={customerId} onValueChange={setCustomerId}>
-                  <SelectTrigger className="bg-background">
+                  <SelectTrigger className="w-full bg-background">
                     <SelectValue placeholder="Select customer..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -581,17 +661,17 @@ export default function SalesDashboardPage() {
               </FormField>
 
               {/* Sales Representative (Read-only for Sales Dashboard) */}
-              <FormField label="Sales Representative">
+              <FormField label="Sales Representative" className="min-w-0">
                 <Input
                   value={session?.user?.name || "Sales Representative"}
                   readOnly
-                  className="bg-muted font-medium cursor-not-allowed"
+                  className="bg-muted font-medium cursor-not-allowed truncate"
                 />
               </FormField>
 
-              <FormField label="Order Priority">
+              <FormField label="Order Priority" className="min-w-0">
                 <Select value={priority} onValueChange={setPriority}>
-                  <SelectTrigger className="bg-background">
+                  <SelectTrigger className="w-full bg-background">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -602,6 +682,7 @@ export default function SalesDashboardPage() {
                   </SelectContent>
                 </Select>
               </FormField>
+              </div>
             </div>
 
             {/* Order Lines Builder */}
@@ -689,12 +770,12 @@ export default function SalesDashboardPage() {
                         />
                       </FormField>
 
-                      <FormField label="Paper Type">
+                      <FormField label="Paper Type" className="min-w-0">
                         <Select
                           value={line.paperType}
                           onValueChange={(v) => updateLine(idx, "paperType", v)}
                         >
-                          <SelectTrigger className="h-9 text-xs">
+                          <SelectTrigger className="w-full h-9 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -707,12 +788,12 @@ export default function SalesDashboardPage() {
                         </Select>
                       </FormField>
 
-                      <FormField label="Paper Color">
+                      <FormField label="Paper Color" className="min-w-0">
                         <Select
                           value={line.paperColor}
                           onValueChange={(v) => updateLine(idx, "paperColor", v)}
                         >
-                          <SelectTrigger className="h-9 text-xs">
+                          <SelectTrigger className="w-full h-9 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -725,12 +806,12 @@ export default function SalesDashboardPage() {
                         </Select>
                       </FormField>
 
-                      <FormField label="Color Count">
+                      <FormField label="Color Count" className="min-w-0">
                         <Select
                           value={String(line.colorCount)}
                           onValueChange={(v) => updateLine(idx, "colorCount", Number(v))}
                         >
-                          <SelectTrigger className="h-9 text-xs">
+                          <SelectTrigger className="w-full h-9 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -907,13 +988,21 @@ export default function SalesDashboardPage() {
               <Button variant="ghost" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={() => handleSaveOrder("PENDING_APPROVAL")} disabled={saving}>
+              <Button
+                onClick={() => handleSaveOrder("PENDING_APPROVAL")}
+                disabled={saving || alreadyAwaitingApproval}
+                title={
+                  alreadyAwaitingApproval
+                    ? "No changes to submit — this order is already awaiting approval"
+                    : undefined
+                }
+              >
                 {saving ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <Send className="h-4 w-4 mr-2" />
                 )}
-                Submit for Approval
+                {alreadyAwaitingApproval ? "Awaiting Approval" : "Submit for Approval"}
               </Button>
             </div>
           </DialogFooter>
@@ -949,7 +1038,13 @@ export default function SalesDashboardPage() {
                     Line Items & Specifications
                   </h4>
                   <div className="border rounded-md divide-y">
-                    {(inspectOrder.lines || []).map((l, i) => (
+                    {(() => {
+                      const progressByLine = new Map(
+                        getOrderLineProgressRows(inspectOrder).map((r) => [r.key, r]),
+                      );
+                      return (inspectOrder.lines || []).map((l, i) => {
+                        const progress = progressByLine.get(l.id);
+                        return (
                       <div key={i} className="p-3 text-xs space-y-1.5">
                         <div className="flex items-center justify-between font-semibold">
                           <span>
@@ -966,6 +1061,16 @@ export default function SalesDashboardPage() {
                           {l.lineTotal && (
                             <span className="font-mono text-foreground font-medium">
                               Line Total: ${Number(l.lineTotal).toFixed(2)}
+                            </span>
+                          )}
+                          {progress && progress.stageLabel !== "—" && (
+                            <span
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                                progress.className,
+                              )}
+                            >
+                              Production: {progress.stageLabel}
                             </span>
                           )}
                         </div>
@@ -988,7 +1093,9 @@ export default function SalesDashboardPage() {
                           </div>
                         )}
                       </div>
-                    ))}
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
 

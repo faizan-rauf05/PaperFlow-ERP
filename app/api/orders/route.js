@@ -33,7 +33,12 @@ export async function GET(request) {
         customer: true,
         salesRepUser: { select: { id: true, name: true, email: true } },
         assignedWorker: { select: { id: true, name: true, email: true } },
-        lines: { include: { cliche: true } },
+        lines: {
+          include: {
+            cliche: true,
+            stages: { orderBy: { sequence: "asc" } },
+          },
+        },
         approvals: {
           orderBy: { createdAt: "desc" },
           take: 1,
@@ -43,7 +48,7 @@ export async function GET(request) {
           },
         },
         quoteApprovals: {
-          orderBy: { sentAt: "desc" },
+          orderBy: { generatedAt: "desc" },
           take: 1,
           include: {
             sentBy: { select: { id: true, name: true, email: true } },

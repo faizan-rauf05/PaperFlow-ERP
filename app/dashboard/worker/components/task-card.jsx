@@ -3,9 +3,10 @@ import { getStageLabel } from "@/lib/production-constants";
 import { workerStyles } from "../worker-dashboard.styles";
 import { StatusBadge, getTaskDisplayStatus } from "./status-badge";
 
-export function TaskCard({ task, isStarting, onStart }) {
+export function TaskCard({ task, isStarting, onStart, mode = "mine" }) {
   const isUnlocked = getTaskDisplayStatus(task) === "UNLOCKED";
   const isInProgress = task.status === "IN_PROGRESS";
+  const isAvailable = mode === "available";
 
   return (
     <article
@@ -14,7 +15,7 @@ export function TaskCard({ task, isStarting, onStart }) {
       <div className={workerStyles.taskCardHeader}>
         <div className={workerStyles.taskCardBody}>
           <span className={workerStyles.stepBadge}>
-            Step {task.sequence} of 10
+            {isAvailable ? "Open — first come, first served" : `Step ${task.sequence}`}
           </span>
           <h3 className={workerStyles.taskName}>{getStageLabel(task.stageType)}</h3>
           <p className={workerStyles.taskOrder}>
@@ -54,7 +55,13 @@ export function TaskCard({ task, isStarting, onStart }) {
         ) : (
           <>
             <Play className="h-4 w-4 fill-current" />
-            {isUnlocked ? "Continue correction" : isInProgress ? "Continue" : "Start stage"}
+            {isUnlocked
+              ? "Continue correction"
+              : isInProgress
+                ? "Continue"
+                : isAvailable
+                  ? "Claim stage"
+                  : "Start stage"}
           </>
         )}
       </button>

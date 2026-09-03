@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Factory,
   ShoppingBag,
@@ -34,6 +35,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { FormField } from "@/components/ui/form-field";
+import { OrderRowActions } from "@/components/orders/order-row-actions";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { ORDER_STATUS_COLORS } from "@/lib/order-progress";
@@ -51,9 +53,11 @@ const STATUS_COLORS = {
 };
 
 export default function ManagerDashboard() {
+  const router = useRouter();
   const [kpis, setKpis] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [viewFilter, setViewFilter] = useState("active"); // "active" | "cancelled" | "archived"
 
   // Review / Approval Modal State
   const [reviewOrder, setReviewOrder] = useState(null);
@@ -83,6 +87,17 @@ export default function ManagerDashboard() {
 
   const pendingApprovals = orders.filter((o) => o.status === "PENDING_APPROVAL");
 
+  // Three-way partition: archived hides an order regardless of status.
+  const viewFilteredOrders = orders.filter((o) => {
+    if (viewFilter === "archived") return o.isArchived;
+    if (o.isArchived) return false;
+    return viewFilter === "cancelled" ? o.status === "CANCELLED" : o.status !== "CANCELLED";
+  });
+
+  function updateOrderInList(updatedOrder) {
+    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+  }
+
   function openReviewModal(o) {
     setReviewOrder(o);
     setApprovedTotal(
@@ -110,7 +125,7 @@ export default function ManagerDashboard() {
 
       toast.success(
         action === "APPROVE"
-          ? "Order approved & marked Ready for Work!"
+          ? "Order approved — quote generated, ready to send to the customer"
           : "Order proposal rejected",
       );
       setReviewOrder(null);
@@ -132,7 +147,7 @@ export default function ManagerDashboard() {
     },
     {
       title: "Ready for Work",
-      value: orders.filter((o) => ["READY_FOR_WORK", "APPROVED"].includes(o.status)).length,
+      value: orders.filter((o) => o.status === "READY_FOR_WORK").length,
       subtitle: "Available for workers",
       icon: ShoppingBag,
       color: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
@@ -235,6 +250,25 @@ export default function ManagerDashboard() {
         </Card>
       )}
 
+      {/* Active / Cancelled / Archived */}
+      <div className="flex items-center gap-2">
+        {[
+          { key: "active", label: "Active" },
+          { key: "cancelled", label: "Cancelled" },
+          { key: "archived", label: "Archived" },
+        ].map((v) => (
+          <Button
+            key={v.key}
+            variant={viewFilter === v.key ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewFilter(v.key)}
+            className="text-xs"
+          >
+            {v.label}
+          </Button>
+        ))}
+      </div>
+
       {/* Main Orders Table */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -265,15 +299,19 @@ export default function ManagerDashboard() {
                     <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
                   </TableCell>
                 </TableRow>
-              ) : orders.length === 0 ? (
+              ) : viewFilteredOrders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     No orders in database
                   </TableCell>
                 </TableRow>
               ) : (
-                orders.map((o) => (
-                  <TableRow key={o.id} className="align-top">
+                viewFilteredOrders.map((o) => (
+                  <TableRow
+                    key={o.id}
+                    className="align-top cursor-pointer hover:bg-muted/40"
+                    onClick={() => router.push(`/dashboard/manager/production/${o.id}`)}
+                  >
                     <TableCell className="font-mono font-medium pt-4">
                       {o.orderNo}
                       {o.priority && o.priority !== "NORMAL" && (
@@ -323,8 +361,13 @@ export default function ManagerDashboard() {
                       <Badge variant="outline" className={cn("font-medium text-xs", STATUS_COLORS[o.status] || "")}>
                         {o.status}
                       </Badge>
+                      {o.isArchived && (
+                        <Badge variant="outline" className="ml-1 text-[10px] bg-gray-500/10 text-gray-600 border-gray-400/40">
+                          Archived
+                        </Badge>
+                      )}
                     </TableCell>
-                    <TableCell className="text-right pt-4 space-x-1">
+                    <TableCell className="text-right pt-4 space-x-1" onClick={(e) => e.stopPropagation()}>
                       {o.status === "PENDING_APPROVAL" ? (
                         <Button
                           size="sm"
@@ -343,6 +386,7 @@ export default function ManagerDashboard() {
                           <Eye className="h-4 w-4 mr-1" /> View
                         </Button>
                       )}
+                      <OrderRowActions order={o} onUpdated={updateOrderInList} />
                     </TableCell>
                   </TableRow>
                 ))
@@ -491,33 +535,41 @@ export default function ManagerDashboard() {
                 </div>
               </div>
 
-              <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => handleApproveOrReject("REJECT")}
-                  disabled={submittingReview}
-                >
-                  <XCircle className="h-4 w-4 mr-2" /> Reject Proposal
-                </Button>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={() => setReviewOrder(null)}>
-                    Cancel
-                  </Button>
+              {reviewOrder.status === "PENDING_APPROVAL" ? (
+                <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
                   <Button
-                    onClick={() => handleApproveOrReject("APPROVE")}
+                    type="button"
+                    variant="destructive"
+                    onClick={() => handleApproveOrReject("REJECT")}
                     disabled={submittingReview}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
                   >
-                    {submittingReview ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                    )}
-                    Approve Order
+                    <XCircle className="h-4 w-4 mr-2" /> Reject Proposal
                   </Button>
-                </div>
-              </DialogFooter>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={() => setReviewOrder(null)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => handleApproveOrReject("APPROVE")}
+                      disabled={submittingReview}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      {submittingReview ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                      )}
+                      Approve Order
+                    </Button>
+                  </div>
+                </DialogFooter>
+              ) : (
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setReviewOrder(null)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              )}
             </>
           )}
         </DialogContent>

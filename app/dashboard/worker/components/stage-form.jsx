@@ -10,6 +10,11 @@ function fieldInputClass(hasError) {
   return cn(workerStyles.formInput, hasError && workerStyles.inputError);
 }
 
+// Material stores width in cm (paperWidthCm) — display everything in mm.
+function widthMm(material) {
+  return material?.paperWidthCm != null ? Number(material.paperWidthCm) * 10 : null;
+}
+
 export function StageForm({
   task,
   formLoading,
@@ -22,6 +27,9 @@ export function StageForm({
   isHandleMaking,
   isPacking,
   isDispatch,
+  isPrintQc,
+  nextStage,
+  setNextStage,
   materials,
   stockById,
   inheritedMaterial,
@@ -108,7 +116,7 @@ export function StageForm({
           {getStageLabel(task.stageType)}
         </h2>
         <p className={workerStyles.formOrder}>
-          {task.order?.orderNo} · Step {task.sequence} of 10
+          {task.orderLine?.order?.orderNo} · Step {task.sequence}
         </p>
         <div className={workerStyles.timerPill}>
           <Clock className="h-4 w-4 text-white" />
@@ -164,7 +172,7 @@ export function StageForm({
                   }}
                   options={(materials || []).map((m) => ({
                     value: m.id,
-                    label: `${m.name} · ${m.paperWidthMm ?? "?"}mm (${m.code})`,
+                    label: `${m.name} · ${widthMm(m) ?? "?"}mm (${m.code})`,
                     description: `Stock: ${stockById?.[m.id] ?? 0} m`,
                   }))}
                   placeholder="Choose paper material…"
@@ -185,10 +193,41 @@ export function StageForm({
               </div>
             )}
 
+            {isPrintQc && (
+              <div className={workerStyles.formField}>
+                <label className={workerStyles.formLabel}>
+                  Send to next stage *
+                </label>
+                <select
+                  className={fieldInputClass(!!errors.nextStage)}
+                  value={nextStage}
+                  onChange={(e) => {
+                    setNextStage(e.target.value);
+                    clearError?.("nextStage");
+                  }}
+                >
+                  <option value="">Choose Slitting or Handle Making…</option>
+                  <option value="SLITTING">Slitting</option>
+                  <option value="HANDLE_MAKING_PASTING">
+                    Handle Making &amp; Pasting (skip slitting)
+                  </option>
+                </select>
+                {errors.nextStage ? (
+                  <span className={workerStyles.fieldError} role="alert">
+                    {errors.nextStage}
+                  </span>
+                ) : (
+                  <span className={workerStyles.hintText}>
+                    Pick where this order goes after QC
+                  </span>
+                )}
+              </div>
+            )}
+
             {isPrinting && inheritedMaterial && (
               <div className={workerStyles.rollBanner}>
                 <strong>Material in use:</strong> {inheritedMaterial.name} —{" "}
-                {inheritedMaterial.paperWidthMm ?? "—"}mm
+                {widthMm(inheritedMaterial) ?? "—"}mm
                 <p className={`${workerStyles.hintText} mt-1`}>
                   Continues from Raw Material — no re-selection
                 </p>
@@ -251,7 +290,7 @@ export function StageForm({
                 {inheritedMaterial && (
                   <p className={workerStyles.hintText}>
                     Parent paper: {inheritedMaterial.name} · width{" "}
-                    {inheritedMaterial.paperWidthMm ?? "—"} mm · input{" "}
+                    {widthMm(inheritedMaterial) ?? "—"} mm · input{" "}
                     {inputQty ?? "—"} m
                   </p>
                 )}

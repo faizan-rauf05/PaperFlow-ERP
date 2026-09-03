@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdminOrManager } from "@/lib/apiAuth";
+import { requireAdminOrManager, requireWorker } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
 import { buildMaterialRecord, computeInitialStockQty } from "@/lib/material-code";
@@ -30,7 +30,9 @@ function duplicateMaterialErrorMessage(error) {
 
 export async function GET() {
   try {
-    const authResult = await requireAdminOrManager();
+    // Workers need read access here for the stage-recording form (material
+    // + stock pickers); mutations below stay admin/manager-only.
+    const authResult = await requireWorker();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, {
         status: authResult.error.status,
