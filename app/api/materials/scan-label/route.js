@@ -22,6 +22,20 @@ const extractionSchema = {
         "Short plain-language reason when readable=false (e.g. 'Image is too blurry to read the label text'). Empty string when readable=true.",
     },
 
+    detectedRotation: {
+      type: "number",
+      enum: [0, 90, 180, 270],
+      description:
+        "Degrees to rotate the image CLOCKWISE so its printed text would be upright, left-to-right, top-to-bottom. 0 if the text is already upright. Always report this, even if the rotation makes extraction below unreliable.",
+    },
+
+    lowConfidenceFields: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "Dot-paths (e.g. 'paperRoll.gsm', 'paperRoll.paperColor') of every field you filled in from a default, an inference, an ambiguous choice between multiple candidates on the label, or a non-standard/unfamiliar layout — as opposed to a clear, explicit, unambiguous label value. Empty array only when every filled field was explicitly and unambiguously stated. Never used to avoid filling a field — fill your best answer, then flag it here if it's a guess.",
+    },
+
     materialType: {
       type: "string",
       enum: ["PAPER_ROLL", "GLUE", "INK", "ROPE", "KAPTON"],
@@ -59,27 +73,38 @@ const extractionSchema = {
         },
         paperColor: {
           type: "string",
-          description: "WHITE or BROWN based on label text (e.g. BROWN KRAFT PAPER = BROWN, WHITE KRAFT PAPER = WHITE).",
+          description:
+            "WHITE or BROWN. Use WHITE/BROWN only if a color word is explicitly on the label. If no color is stated anywhere, default to BROWN (natural unbleached kraft) and add paperRoll.paperColor to lowConfidenceFields.",
         },
         paperWidthCm: {
           type: "number",
-          description: "Paper width in centimeters. Convert Width (mm) to cm by dividing by 10 (e.g. 0950 mm -> 95, 1070 mm -> 107, 800 mm -> 80). 0 if unavailable.",
+          description: "Paper width in centimeters, from a Width(mm)-style cell divided by 10. 0 if unavailable.",
         },
         paperLengthM: {
           type: "number",
-          description: "Paper length in meters from the 'Length (meters)' or 'Length (m)' cell ONLY (e.g. 5695). Do NOT use 'Diameters (mm)' value!",
+          description: "The roll's running length in meters, however labeled (Length, Lineal, LM, etc). Never the Diameter value.",
         },
         weightKg: {
           type: "number",
-          description: "Roll net weight in kg from the 'Weight (Kgs)' cell. 0 if unavailable.",
+          description:
+            "Roll net weight in KILOGRAMS specifically — from a cell/column labeled 'Weight (kg)' or similar metric unit. Some labels print weight in BOTH kg and lb as two separate cells (e.g. 'WEIGHT (kg): 1025' next to 'WEIGHT (lb): 2259', for the same roll) — always use the kg one; the lb number is roughly 2.2x larger and must never be used here even if it's the more visually prominent of the two. 0 if no kg-labeled weight is visible anywhere.",
         },
         gsm: {
           type: "number",
-          description: "Paper grammage in GSM from 'Substance (gm2)' or 'GSM' cell ONLY (e.g. 100). Do NOT use 'Weight (Kgs)' value!",
+          description:
+            "Grammage. Try these three positively-identified sources first — never a bare number that merely sits near a product/description name: " +
+            "(1) a cell explicitly labeled Substance(gm2)/GSM/Grammage; " +
+            "(2) a number with the literal letters 'GSM' or 'g/m2' GLUED directly onto it, no space — e.g. the '97.6' in '97.6GSM' inside 'B60 PTK 97.6GSM' counts, but a plain number with no such unit attached does not; " +
+            "(3) a cell literally labeled 'Basis Weight' (a US unit, no metric shown) — e.g. 'BASIS WEIGHT: 89.0' -> gsm=89, copied unconverted. " +
+            "A product/style number after a product name is NOT grammage — e.g. the '55' in 'MULTIKRAFT 55' is a product grade, not GSM. " +
+            "FALLBACK, only when none of the three above is confidently identifiable: calculate estimated_gsm = (weightKg * 1000) / (paperLengthM * (paperWidthCm / 100)), using the weight/length/width you already read from this same roll. Then look back across the whole label for any other printed number within roughly 15% of that estimate that could plausibly be a weight-per-area value you weren't confident about — if one exists, use that printed number instead of your raw calculation. If none does, use the calculated estimate itself, rounded to one decimal. " +
+            "Add paperRoll.gsm to lowConfidenceFields whenever the value came from source (3) or the fallback — never for a confident (1)/(2) match. " +
+            "0 only if weight/length/width are also unavailable, making even a fallback estimate impossible.",
         },
         barCode: {
           type: "string",
-          description: "Full numeric/alphanumeric barcode string (e.g. 0141705248810009503455695) printed under the barcode graphic or listed as Customer Reference. Do NOT return short order initials like SON260214.",
+          description:
+            "The value printed with/under the actual barcode graphic — the roll's scannable identity — over any other order/PO/customer-reference number elsewhere on the label. If several candidate numbers exist and none is clearly barcode-tied, pick the one that reads like a unique roll/reel ID and add paperRoll.barCode to lowConfidenceFields.",
         },
         receivingDate: {
           type: "string",
@@ -180,91 +205,48 @@ const extractionSchema = {
     },
   },
 
-  required: ["readable", "issueReason", "materialType", "supplier"],
+  required: ["readable", "issueReason", "detectedRotation", "lowConfidenceFields", "materialType", "supplier"],
 };
 
-const systemPrompt = `You are an ultra-fast, high-precision OCR and material label extraction system for PaperFlow ERP.
-Extract inventory specifications from material label images with 100% precision.
+const systemPrompt = `You are a high-precision material label extraction system for PaperFlow ERP. Labels come from
+many different vendors with different layouts, field names, and units — read for meaning, not by matching
+one exact template. "Don't guess" means don't invent a number that isn't printed anywhere on the label — it
+does NOT mean skip a field just because its value comes from an alternate source a field's instructions
+describe (e.g. Basis Weight standing in for GSM). If a number is genuinely printed nowhere on the label,
+that field gets its empty/0 default (or readable=false if nothing extracts); otherwise use what's there.
 
-READABILITY GATE (CHECK THIS FIRST, BEFORE ANYTHING ELSE):
-If the image is too blurry, too dark, too cropped, at an unreadable angle, or does not show a recognizable
-material/inventory label at all, set readable=false, write a short plain-language reason in issueReason
-(e.g. "Image is too blurry to read the label text", "No material label visible in this photo"), and leave
-every other field at its empty/0 default. Do NOT guess, estimate, or invent a plausible-looking value for
-any field just because the schema expects one — an empty/0 value is correct when the real value can't be
-read. Only set readable=true and fill in fields when you can actually read the source text for them.
+1. ROTATION (check first): determine detectedRotation — degrees clockwise to make the text upright. If the
+label is sideways/upside down, direct extraction is unreliable, so set readable=false (a corrected retry
+happens automatically) but still report your best detectedRotation. Otherwise detectedRotation=0.
 
-CRITICAL EXTRACTION RULES FOR BARCODE & SPECIFICATIONS:
-1. FULL BARCODE EXTRACTION (STRICT):
-   - Extract the FULL numeric/alphanumeric barcode digits string (e.g. "0141705248810009503455695").
-   - Always prioritize the complete long barcode string printed under the barcode graphic or listed as "Customer Reference" / "Reel Barcode".
-   - Do NOT return short order initials/references (such as "SON260214") in the barCode field when full barcode digits are visible!
+2. READABILITY: if the image is too blurry, dark, cropped, or shows no recognizable material label, set
+readable=false with a short reason in issueReason, and leave every other field at its empty/0 default.
 
-2. WIDTH (mm -> cm):
-   - Locate the "Width (mm)" cell.
-   - Convert millimeters to centimeters by dividing by 10 (e.g. "0950" mm -> 95 cm, "1070" mm -> 107 cm).
-   - Example: "Width (mm): 0950" = 95 cm.
+3. EXTRACT (reason semantically — the same value can appear under different names per vendor; field-specific
+sourcing rules like GSM/barcode/color/width/length live on each field's own description below, not repeated
+here):
+   - Dates: any format on the label (DD/MM/YYYY, DD-Mon-YY, etc) -> YYYY-MM-DD.
+   - Glue type: CORE (Core N / tube winding), COLD (PVA, Hexa Bond / P-4038), HOT (hot melt, EVA).
+   - Ink color: base color word only, brand/product name stripped (e.g. "Safanova Red K" -> "Red").
+   - Batch number (glue/ink/rope only): exact as printed, paired with the production date in receivingDate —
+     batch number alone isn't treated as unique in this system.
+   - Every text field (supplier, address, colors, batch numbers, etc.) must be in English — translate
+     non-English label text rather than copying it through. Numbers/codes/barcodes stay as printed.
 
-3. LENGTH (METERS):
-   - Locate the "Length (meters)" cell.
-   - Do NOT confuse Length with "Diameters (mm)"!
-   - Example: "Length (meters): 5695" -> paperLengthM = 5695 (NOT 1007, which is Diameter!).
+4. CONFIDENCE: after extracting, list the dot-path of every field you filled from a default, an inference,
+an ambiguous choice between multiple candidates, or an unfamiliar layout in lowConfidenceFields (e.g.
+"paperRoll.gsm", "paperRoll.paperColor") — empty array only when every filled field was explicit and
+unambiguous.
 
-4. GSM / SUBSTANCE (g/m2):
-   - Locate the "Substance (gm2)" or "GSM" cell.
-   - Do NOT confuse Substance/GSM with "Weight (Kgs)"!
-   - Example: "Substance (gm2): 100" -> gsm = 100 (NOT 345, which is Weight in Kgs!).
-
-5. RECEIVING / PRODUCTION DATE:
-   - Format "Production Date" as YYYY-MM-DD (e.g., 06/07/2026 -> 2026-07-06 or 2026-06-07).
-
-6. PAPER COLOR & TYPE:
-   - "BROWN KRAFT PAPER" -> paperColor = "BROWN", paperType = "VIRGIN".
-
-7. GLUE CLASSIFICATION (HOT, COLD, CORE):
-   - CORE: "Hexabond Core N", "Core Winding Glue".
-   - COLD: "Hexa Bond P-4038", "Hexabond P-4038", PVA liquid glue.
-   - HOT: "Hot Melt adhesive", EVA glue.
-
-8. INK COLOR CLASSIFICATION (BASE COLOR ONLY):
-   - Match CYAN, MAGENTA, YELLOW, WHITE, VARNISH, BLACK, INK_FIXER, or set CUSTOM with inkColorCustom.
-   - inkColorCustom must be the plain base color word only — strip any product/brand name wrapped around it.
-     Example: "Safanova Red K" -> "Red", NOT "Safanova Red" or "Safanova Red K". "Deep Ocean Blue" -> "Blue".
-   - Never put a product name, code, or Pantone reference in inkColorCustom — just the color.
-
-9. BATCH NUMBER (Glue, Ink, Rope only):
-   - Extract exactly as printed next to "BATCH NO:" / "Batch No" / similar. Do not reformat or guess digits you can't read clearly.
-   - Pair it with the production date in receivingDate — batch number alone is not treated as unique in this system.
-
-10. ENGLISH ONLY:
-   - Every text field you output (supplier name, address, inkColorCustom, batchNo, etc.) must be in English.
-   - If the source text on the label is in another language (Arabic, etc.), translate it to English — do not copy non-English characters into the output.
-   - Numbers, codes, and barcodes stay as printed regardless of language.
-
-Return ONLY the material section corresponding to the detected materialType along with supplier details.`;
-
-const rotationSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    rotationDegrees: {
-      type: "number",
-      enum: [0, 90, 180, 270],
-      description:
-        "Degrees to rotate the image CLOCKWISE so its printed text reads upright, left-to-right, top-to-bottom. 0 if the text is already upright. 180 if the label is fully upside down.",
-    },
-  },
-  required: ["rotationDegrees"],
-};
+Return ONLY the material section matching materialType, plus supplier and confidence fields.`;
 
 /**
- * EXIF orientation only corrects for how the camera was physically held — it does
- * nothing when the label itself is upside down within an otherwise normally-held
- * photo. Vision models read upside-down/sideways text far less reliably, so detect
- * the needed rotation with a small, cheap call and physically rotate the pixels
- * before the real extraction call runs on it.
+ * One Claude call: extraction + rotation detection together (rotation is cheap
+ * to report alongside a real extraction attempt, so this avoids a dedicated
+ * pre-pass call for the common case of an already-upright photo). Throws on
+ * transport/parse failure; caller decides how to handle a bad response.
  */
-async function detectAndCorrectRotation(buffer, apiKey) {
+async function callExtraction(buffer, apiKey) {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -274,7 +256,8 @@ async function detectAndCorrectRotation(buffer, apiKey) {
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
-      max_tokens: 50,
+      system: systemPrompt,
+      max_tokens: 500,
       temperature: 0,
       messages: [
         {
@@ -286,29 +269,54 @@ async function detectAndCorrectRotation(buffer, apiKey) {
             },
             {
               type: "text",
-              text: "Look at any printed text on this label. How many degrees clockwise must the image be rotated so the text is upright and reads normally?",
+              text: "Extract material inventory data from this label image.",
             },
           ],
         },
       ],
-      output_config: { format: { type: "json_schema", schema: rotationSchema } },
+      output_config: { format: { type: "json_schema", schema: extractionSchema } },
     }),
   });
 
+  const resData = await response.json();
+
   if (!response.ok) {
-    throw new Error(`Rotation detection request failed (${response.status})`);
+    const error = new Error(resData?.error?.message || "AI scanner request failed");
+    error.status = response.status;
+    error.resData = resData;
+    throw error;
   }
 
-  const data = await response.json();
-  const text = data?.content?.find((item) => item?.type === "text")?.text;
-  const degrees = text ? JSON.parse(text)?.rotationDegrees : 0;
+  if (resData?.stop_reason === "max_tokens") {
+    const error = new Error("AI scanner response was truncated");
+    error.status = 502;
+    throw error;
+  }
 
-  if (!degrees) return buffer;
+  if (resData?.stop_reason === "refusal") {
+    const error = new Error("AI scanner refused to process the image");
+    error.status = 422;
+    throw error;
+  }
 
-  return sharp(buffer)
-    .rotate(degrees)
-    .jpeg({ quality: 88, chromaSubsampling: "4:4:4" })
-    .toBuffer();
+  const rawContent = resData?.content?.find((item) => item?.type === "text")?.text;
+  if (!rawContent) {
+    const error = new Error("No data returned from AI scanner");
+    error.status = 500;
+    throw error;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (parseError) {
+    console.error("Structured JSON parse failed:", { rawContent, parseError });
+    const error = new Error("Invalid structured response from AI scanner");
+    error.status = 502;
+    throw error;
+  }
+
+  return { parsed, usage: resData?.usage };
 }
 
 async function prepareImage(base64) {
@@ -389,107 +397,30 @@ export async function POST(request) {
     }
 
     let finalBuffer = preparedImage.buffer;
-    try {
-      finalBuffer = await detectAndCorrectRotation(preparedImage.buffer, apiKey);
-    } catch (error) {
-      // Non-fatal: proceed with the original orientation rather than failing the whole scan.
-      console.error("Rotation detection failed, proceeding without correction:", error);
-    }
-
-    const optimizedBase64 = finalBuffer.toString("base64");
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        system: systemPrompt,
-        max_tokens: 500,
-        temperature: 0,
-
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: "image/jpeg",
-                  data: optimizedBase64,
-                },
-              },
-              {
-                type: "text",
-                text: "Extract material inventory data from this label image.",
-              },
-            ],
-          },
-        ],
-
-        output_config: {
-          format: {
-            type: "json_schema",
-            schema: extractionSchema,
-          },
-        },
-      }),
-    });
-
-    const resData = await response.json();
-
-    if (!response.ok) {
-      console.error("Claude API error:", resData);
-      return NextResponse.json(
-        {
-          error: resData?.error?.message || "AI scanner request failed",
-        },
-        { status: response.status },
-      );
-    }
-
-    if (resData?.stop_reason === "max_tokens") {
-      console.error("Claude response hit max_tokens:", { usage: resData?.usage });
-      return NextResponse.json(
-        { error: "AI scanner response was truncated" },
-        { status: 502 },
-      );
-    }
-
-    if (resData?.stop_reason === "refusal") {
-      console.error("Claude refused the request:", resData);
-      return NextResponse.json(
-        { error: "AI scanner refused to process the image" },
-        { status: 422 },
-      );
-    }
-
-    const rawContent = resData?.content?.find(
-      (item) => item?.type === "text",
-    )?.text;
-
-    if (!rawContent) {
-      console.error("Claude API response contained no text:", resData);
-      return NextResponse.json(
-        { error: "No data returned from AI scanner" },
-        { status: 500 },
-      );
-    }
-
     let parsed;
+    let usage;
+
     try {
-      parsed = JSON.parse(rawContent);
+      const first = await callExtraction(preparedImage.buffer, apiKey);
+      parsed = first.parsed;
+      usage = first.usage;
+
+      // Only pay for a second call when the model actually flagged rotation —
+      // the common case (already-upright photo) finishes in one call.
+      if (parsed?.detectedRotation) {
+        finalBuffer = await sharp(preparedImage.buffer)
+          .rotate(parsed.detectedRotation)
+          .jpeg({ quality: 88, chromaSubsampling: "4:4:4" })
+          .toBuffer();
+        const retry = await callExtraction(finalBuffer, apiKey);
+        parsed = retry.parsed;
+        usage = retry.usage;
+      }
     } catch (error) {
-      console.error("Structured JSON parse failed:", { rawContent, error });
+      console.error("Claude API error:", error, error.resData);
       return NextResponse.json(
-        { error: "Invalid structured response from AI scanner" },
-        { status: 502 },
+        { error: error.message || "AI scanner request failed" },
+        { status: error.status || 500 },
       );
     }
 
@@ -536,7 +467,7 @@ export async function POST(request) {
         bytes: finalBuffer.length,
         rotationCorrected: finalBuffer !== preparedImage.buffer,
       },
-      usage: resData?.usage,
+      usage,
       materialType: parsed?.materialType,
       paperRoll: parsed?.paperRoll,
     });

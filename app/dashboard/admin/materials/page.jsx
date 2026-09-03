@@ -117,6 +117,62 @@ const GROUP_OPTIONS = [
   { value: "none", label: "None (Flat List)" },
 ];
 
+/** AI scan dot-path -> {form field, friendly label} — drives the low-confidence toast + field highlight. */
+const CONFIDENCE_FIELD_MAP = {
+  "supplier.name": { field: "supplier", label: "Supplier" },
+  "paperRoll.paperType": { field: "paperType", label: "Paper Type" },
+  "paperRoll.paperColor": { field: "paperColor", label: "Paper Color" },
+  "paperRoll.paperWidthCm": { field: "paperWidthCm", label: "Width" },
+  "paperRoll.paperLengthM": { field: "paperLengthM", label: "Length" },
+  "paperRoll.weightKg": { field: "weightKg", label: "Weight" },
+  "paperRoll.gsm": { field: "gsm", label: "GSM" },
+  "paperRoll.barCode": { field: "barCode", label: "Barcode" },
+  "paperRoll.receivingDate": { field: "receivingDate", label: "Receiving Date" },
+  "glue.glueType": { field: "glueType", label: "Glue Type" },
+  "glue.weightKg": { field: "weightKg", label: "Weight per Pack" },
+  "glue.gluePacks": { field: "gluePacks", label: "Number of Packs" },
+  "glue.batchNo": { field: "batchNo", label: "Batch Number" },
+  "ink.inkColor": { field: "inkColor", label: "Ink Color" },
+  "ink.weightKg": { field: "weightKg", label: "Weight per Drum" },
+  "ink.inkDrums": { field: "inkDrums", label: "Number of Drums" },
+  "ink.batchNo": { field: "batchNo", label: "Batch Number" },
+  "rope.ropeColor": { field: "ropeColor", label: "Rope Color" },
+  "rope.ropeLengthM": { field: "ropeLengthM", label: "Roll Length" },
+  "rope.ropeRolls": { field: "ropeRolls", label: "Rope Rolls" },
+  "rope.batchNo": { field: "batchNo", label: "Batch Number" },
+};
+
+/**
+ * Downscale a camera photo client-side before it's uploaded — phone photos
+ * are often several MB, and the server resizes to 1568px for Claude anyway,
+ * so sending the full original just wastes upload time. Uses createImageBitmap
+ * with imageOrientation:"from-image" so EXIF rotation is respected (unlike
+ * plain <img>+canvas, which can silently drop it in some browsers). Falls back
+ * to the original file untouched if compression isn't supported or fails —
+ * never blocks the scan over an optimization.
+ */
+async function compressImageForUpload(file, maxDimension = 1600, quality = 0.85) {
+  try {
+    if (typeof createImageBitmap !== "function") return file;
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob) return file;
+    return new File([blob], file.name || "label.jpg", { type: "image/jpeg" });
+  } catch (error) {
+    console.warn("Client-side image compression skipped:", error);
+    return file;
+  }
+}
+
 function compareMaterials(a, b, sortBy) {
   if (sortBy === "createdAt") {
     return (
@@ -214,7 +270,17 @@ const emptyForm = {
   imageUrl: "",
 };
 
-function TypeSpecificFields({ form, errors, patchForm }) {
+function LowConfidenceHint() {
+  return (
+    <span className="text-amber-600 dark:text-amber-400 font-medium">
+      ⚠ AI wasn't fully confident here — please verify
+    </span>
+  );
+}
+
+function TypeSpecificFields({ form, errors, patchForm, lowConfidenceFields = [] }) {
+  const isLow = (field) => lowConfidenceFields.includes(field);
+
   const [isCustomWidth, setIsCustomWidth] = useState(
     form.paperWidthCm &&
       !PAPER_WIDTH_CM_PRESETS.includes(Number(form.paperWidthCm)),
@@ -246,7 +312,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
       return (
         <>
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Paper Type" required error={errors.paperType}>
+            <FormField label="Paper Type" required error={errors.paperType} hint={isLow("paperType") && <LowConfidenceHint />}>
               <Select
                 value={form.paperType}
                 onValueChange={(v) => patchForm("paperType", v)}
@@ -266,7 +332,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               </Select>
             </FormField>
 
-            <FormField label="Paper Color" required error={errors.paperColor}>
+            <FormField label="Paper Color" required error={errors.paperColor} hint={isLow("paperColor") && <LowConfidenceHint />}>
               <Select
                 value={form.paperColor}
                 onValueChange={(v) => patchForm("paperColor", v)}
@@ -348,6 +414,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               label="Paper Length (m)"
               required
               error={errors.paperLengthM}
+              hint={isLow("paperLengthM") && <LowConfidenceHint />}
             >
               <Input
                 type="number"
@@ -361,7 +428,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="GSM" required error={errors.gsm}>
+            <FormField label="GSM" required error={errors.gsm} hint={isLow("gsm") && <LowConfidenceHint />}>
               <Input
                 type="number"
                 min="1"
@@ -372,7 +439,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               />
             </FormField>
 
-            <FormField label="Roll Weight (kg)" required error={errors.weightKg}>
+            <FormField label="Roll Weight (kg)" required error={errors.weightKg} hint={isLow("weightKg") && <LowConfidenceHint />}>
               <Input
                 type="number"
                 min="0.1"
@@ -386,7 +453,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Receiving Date" error={errors.receivingDate}>
+            <FormField label="Receiving Date" error={errors.receivingDate} hint={isLow("receivingDate") && <LowConfidenceHint />}>
               <Input
                 type="date"
                 className={fieldClassName("", !!errors.receivingDate)}
@@ -395,7 +462,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               />
             </FormField>
 
-            <FormField label="Barcode" required error={errors.barCode}>
+            <FormField label="Barcode" required error={errors.barCode} hint={isLow("barCode") && <LowConfidenceHint />}>
               <Input
                 className={fieldClassName(
                   "font-mono text-xs",
@@ -415,7 +482,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
     case "GLUE":
       return (
         <>
-          <FormField label="Glue Type" required error={errors.glueType}>
+          <FormField label="Glue Type" required error={errors.glueType} hint={isLow("glueType") && <LowConfidenceHint />}>
             <Select
               value={form.glueType}
               onValueChange={(v) => patchForm("glueType", v)}
@@ -434,7 +501,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </FormField>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Weight per Pack (kg)" required error={errors.weightKg}>
+            <FormField label="Weight per Pack (kg)" required error={errors.weightKg} hint={isLow("weightKg") && <LowConfidenceHint />}>
               <Select
                 value={
                   isCustomGlueWeight
@@ -480,7 +547,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               </FormField>
             )}
 
-            <FormField label="Number of Packs" required error={errors.gluePacks}>
+            <FormField label="Number of Packs" required error={errors.gluePacks} hint={isLow("gluePacks") && <LowConfidenceHint />}>
               <Input
                 type="number"
                 min="1"
@@ -500,7 +567,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           ) : null}
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Batch Number" error={errors.batchNo}>
+            <FormField label="Batch Number" error={errors.batchNo} hint={isLow("batchNo") && <LowConfidenceHint />}>
               <Input
                 className={fieldClassName("", !!errors.batchNo)}
                 value={form.batchNo || ""}
@@ -531,7 +598,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
     case "INK":
       return (
         <>
-          <FormField label="Ink Color" required error={errors.inkColor}>
+          <FormField label="Ink Color" required error={errors.inkColor} hint={isLow("inkColor") && <LowConfidenceHint />}>
             <Select
               value={form.inkColor}
               onValueChange={(v) => patchForm("inkColor", v)}
@@ -564,7 +631,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Weight per Drum (kg)" required error={errors.weightKg}>
+            <FormField label="Weight per Drum (kg)" required error={errors.weightKg} hint={isLow("weightKg") && <LowConfidenceHint />}>
               <Input
                 type="number"
                 min="0.1"
@@ -575,7 +642,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
                 placeholder="e.g. 18"
               />
             </FormField>
-            <FormField label="Number of Drums" required error={errors.inkDrums}>
+            <FormField label="Number of Drums" required error={errors.inkDrums} hint={isLow("inkDrums") && <LowConfidenceHint />}>
               <Input
                 type="number"
                 min="1"
@@ -595,7 +662,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           ) : null}
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Batch Number" error={errors.batchNo}>
+            <FormField label="Batch Number" error={errors.batchNo} hint={isLow("batchNo") && <LowConfidenceHint />}>
               <Input
                 className={fieldClassName("", !!errors.batchNo)}
                 value={form.batchNo || ""}
@@ -626,7 +693,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
     case "ROPE":
       return (
         <>
-          <FormField label="Rope Color" required error={errors.ropeColor}>
+          <FormField label="Rope Color" required error={errors.ropeColor} hint={isLow("ropeColor") && <LowConfidenceHint />}>
             <Select
               value={form.ropeColor}
               onValueChange={(v) => patchForm("ropeColor", v)}
@@ -645,7 +712,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </FormField>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Roll Length (m)" required error={errors.ropeLengthM}>
+            <FormField label="Roll Length (m)" required error={errors.ropeLengthM} hint={isLow("ropeLengthM") && <LowConfidenceHint />}>
               <Select
                 value={form.ropeLengthM}
                 onValueChange={(v) => patchForm("ropeLengthM", v)}
@@ -678,7 +745,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
               </FormField>
             )}
 
-            <FormField label="Rope Rolls" required error={errors.ropeRolls}>
+            <FormField label="Rope Rolls" required error={errors.ropeRolls} hint={isLow("ropeRolls") && <LowConfidenceHint />}>
               <Input
                 type="number"
                 min="1"
@@ -692,7 +759,7 @@ function TypeSpecificFields({ form, errors, patchForm }) {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Batch Number" error={errors.batchNo}>
+            <FormField label="Batch Number" error={errors.batchNo} hint={isLow("batchNo") && <LowConfidenceHint />}>
               <Input
                 className={fieldClassName("", !!errors.batchNo)}
                 value={form.batchNo || ""}
@@ -861,6 +928,7 @@ export default function MaterialsPage() {
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStepText, setScanStepText] = useState("");
+  const [lowConfidenceFields, setLowConfidenceFields] = useState([]);
   const fileInputRef = useRef(null);
 
   // Supplier Creation Dialog State (from scan or inline "+ New")
@@ -1016,6 +1084,7 @@ export default function MaterialsPage() {
       codeSuffix: form.codeSuffix || createCodeSuffix(),
     });
     setErrors({});
+    setLowConfidenceFields([]);
   }
 
   function openCreate() {
@@ -1023,6 +1092,7 @@ export default function MaterialsPage() {
     setForm({ ...emptyForm, codeSuffix: createCodeSuffix() });
     setErrors({});
     setSupplierSearchFilter("");
+    setLowConfidenceFields([]);
     setDialogOpen(true);
   }
 
@@ -1031,6 +1101,7 @@ export default function MaterialsPage() {
     setForm(materialToFormValues(m));
     setErrors({});
     setSupplierSearchFilter("");
+    setLowConfidenceFields([]);
     setDialogOpen(true);
   }
 
@@ -1075,15 +1146,16 @@ export default function MaterialsPage() {
     }
   }
 
-  function handleFileSelect(e) {
+  async function handleFileSelect(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setSelectedFile(file);
+    const compressed = await compressImageForUpload(file);
+    setSelectedFile(compressed);
     const reader = new FileReader();
     reader.onload = (evt) => {
       setImagePreview(evt.target.result);
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(compressed);
   }
 
   // Trigger AI scan with progress indicator
@@ -1132,6 +1204,19 @@ export default function MaterialsPage() {
       const inkData = ext.ink || {};
       const ropeData = ext.rope || {};
       const cartonData = ext.carton || {};
+
+      const lowConfidencePaths = Array.isArray(ext.lowConfidenceFields) ? ext.lowConfidenceFields : [];
+      const lowConfidenceEntries = lowConfidencePaths
+        .map((path) => CONFIDENCE_FIELD_MAP[path])
+        .filter(Boolean);
+      setLowConfidenceFields(lowConfidenceEntries.map((e) => e.field));
+
+      if (lowConfidenceEntries.length > 0) {
+        toast.warning(
+          `Please double-check: ${lowConfidenceEntries.map((e) => e.label).join(", ")}`,
+          { description: "These were inferred or ambiguous on the label, not clearly stated.", duration: 8000 },
+        );
+      }
 
       let selectedSupplierName = "";
       if (ext.supplier?.name) {
@@ -1750,7 +1835,7 @@ export default function MaterialsPage() {
 
             {hasType && (
               <>
-                <FormField label="Supplier" required error={errors.supplier}>
+                <FormField label="Supplier" required error={errors.supplier} hint={lowConfidenceFields.includes("supplier") && <LowConfidenceHint />}>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 min-w-0 max-w-[280px] sm:max-w-[320px]">
                       <Select
@@ -1830,6 +1915,7 @@ export default function MaterialsPage() {
                   form={form}
                   errors={errors}
                   patchForm={patchForm}
+                  lowConfidenceFields={lowConfidenceFields}
                 />
               </>
             )}

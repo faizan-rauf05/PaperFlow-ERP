@@ -58,6 +58,8 @@ export function CustomerQuoteSection({ order, onUpdate }) {
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [recordingResponse, setRecordingResponse] = useState(false);
 
+  const [markingSent, setMarkingSent] = useState(false);
+
   const [clicheDialogLine, setClicheDialogLine] = useState(null);
   const [clicheSearch, setClicheSearch] = useState("");
   const [clicheResults, setClicheResults] = useState([]);
@@ -118,6 +120,19 @@ export function CustomerQuoteSection({ order, onUpdate }) {
       toast.error(getApiErrorMessage(e, "Failed to upload evidence"));
     } finally {
       setUploadingEvidence(false);
+    }
+  }
+
+  async function handleMarkQuoteSent() {
+    setMarkingSent(true);
+    try {
+      const { data } = await api.post(`/orders/${order.id}/mark-quote-sent`);
+      onUpdate(data.order);
+      toast.success("Quote marked as sent to the customer");
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "Failed to mark quote as sent"));
+    } finally {
+      setMarkingSent(false);
     }
   }
 
@@ -215,7 +230,11 @@ export function CustomerQuoteSection({ order, onUpdate }) {
                   </span>
                   <div className="min-w-0">
                     <p className="font-medium truncate">Quote PDF</p>
-                    <p className="text-muted-foreground text-[11px]">Sent {formatDateTime(q.sentAt)}</p>
+                    <p className="text-muted-foreground text-[11px]">
+                      {q.sentAt
+                        ? `Sent ${formatDateTime(q.sentAt)}`
+                        : `Generated ${formatDateTime(q.generatedAt)} — not sent yet`}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -226,10 +245,12 @@ export function CustomerQuoteSection({ order, onUpdate }) {
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
                         : q.status === "REJECTED"
                           ? "bg-destructive/15 text-destructive"
-                          : "bg-violet-500/15 text-violet-700 dark:text-violet-400",
+                          : q.status === "GENERATED"
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                            : "bg-violet-500/15 text-violet-700 dark:text-violet-400",
                     )}
                   >
-                    {q.status}
+                    {q.status === "GENERATED" ? "NOT SENT" : q.status}
                   </span>
                   <Button asChild variant="outline" size="sm" className="h-8">
                     <a href={`/api/orders/${order.id}/quote-pdf`} target="_blank" rel="noreferrer">
@@ -239,6 +260,27 @@ export function CustomerQuoteSection({ order, onUpdate }) {
                 </div>
               </div>
             ))}
+
+            {order.status === "APPROVED" && (
+              <div className="pt-2 border-t">
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={markingSent}
+                  onClick={handleMarkQuoteSent}
+                >
+                  {markingSent ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Mark Quote as Sent
+                </Button>
+                <p className="text-[11px] text-muted-foreground mt-1.5">
+                  The quote is generated but hasn't been sent yet — confirm once you've actually shared it with the customer.
+                </p>
+              </div>
+            )}
 
             {order.status === "PENDING_CUSTOMER_APPROVAL" && (
               <div className="space-y-2 pt-2 border-t">

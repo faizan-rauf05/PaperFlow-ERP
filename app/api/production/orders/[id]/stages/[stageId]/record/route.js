@@ -34,6 +34,7 @@ export async function POST(request, { params }) {
       orderId: id,
       stageId,
       userId: authResult.session.user.id,
+      role: authResult.session.user.role,
       ...body,
     });
 

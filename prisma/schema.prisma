@@ -39,6 +39,7 @@ model User {
   machineDowntimes      MachineDowntime[]
   sentQuoteApprovals    CustomerQuoteApproval[] @relation("QuoteSentBy")
   markedQuoteApprovals  CustomerQuoteApproval[] @relation("QuoteMarkedBy")
+  notifications         Notification[]
 }
 
 model PasswordResetToken {
@@ -251,6 +252,7 @@ enum ProductionOrderStatus {
 }
 
 enum CustomerApprovalStatus {
+  GENERATED
   SENT
   APPROVED
   REJECTED
@@ -312,6 +314,8 @@ model ProductionOrder {
   startDate         DateTime?
   deliveryDate      DateTime?
   status            ProductionOrderStatus @default(DRAFT)
+  isArchived        Boolean               @default(false)
+  cancelReason      String?
   subtotal          Decimal?              @db.Decimal(14, 4)
   discount          Decimal?              @default(0) @db.Decimal(14, 4)
   total             Decimal?              @db.Decimal(14, 4)
@@ -331,6 +335,7 @@ model ProductionOrder {
   @@index([salesRepId])
   @@index([assignedWorkerId])
   @@index([priority])
+  @@index([isArchived])
 }
 
 model OrderLine {
@@ -371,10 +376,11 @@ model CustomerQuoteApproval {
   orderId        String
   order          ProductionOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   pdfUrl         String
-  sentAt         DateTime                @default(now())
+  generatedAt    DateTime                @default(now())
+  sentAt         DateTime?
   sentById       String?
   sentBy         User?                   @relation("QuoteSentBy", fields: [sentById], references: [id], onDelete: SetNull)
-  status         CustomerApprovalStatus  @default(SENT)
+  status         CustomerApprovalStatus  @default(GENERATED)
   respondedAt    DateTime?
   markedById     String?
   markedBy       User?                   @relation("QuoteMarkedBy", fields: [markedById], references: [id], onDelete: SetNull)
@@ -563,6 +569,36 @@ model YieldRecord {
   createdAt    DateTime        @default(now())
 
   @@index([orderId])
+}
+
+enum NotificationType {
+  ORDER_PENDING_APPROVAL
+  ORDER_APPROVED
+  ORDER_REJECTED
+  CUSTOMER_APPROVAL_RECORDED
+  ORDER_READY_FOR_WORK
+  STAGE_READY
+  MACHINE_DOWNTIME
+  LOW_STOCK
+  GENERIC
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  title      String
+  message    String
+  link       String?
+  entityType String?
+  entityId   String?
+  read       Boolean          @default(false)
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, read])
+  @@index([createdAt])
 }
 
 model Supplier {

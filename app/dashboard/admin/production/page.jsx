@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Factory,
   ShoppingBag,
@@ -48,9 +49,10 @@ import {
 } from "@/components/ui/select";
 import { FormField } from "@/components/ui/form-field";
 import { CustomerQuoteSection } from "@/components/orders/customer-quote-section";
+import { OrderRowActions } from "@/components/orders/order-row-actions";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
-import { ORDER_STATUS_COLORS } from "@/lib/order-progress";
+import { ORDER_STATUS_COLORS, getOrderLineProgressRows } from "@/lib/order-progress";
 import { cn, formatDateTime } from "@/lib/utils";
 
 const STATUS_COLORS = {
@@ -98,10 +100,12 @@ const emptyLine = {
 };
 
 export default function AdminProductionOrdersPage() {
+  const router = useRouter();
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [salesReps, setSalesReps] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [viewFilter, setViewFilter] = useState("active"); // "active" | "cancelled" | "archived"
 
   // Create / Edit Modal State
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -147,6 +151,13 @@ export default function AdminProductionOrdersPage() {
   }, [loadData]);
 
   const pendingApprovals = orders.filter((o) => o.status === "PENDING_APPROVAL");
+
+  // Three-way partition: archived hides an order regardless of status.
+  const viewFilteredOrders = orders.filter((o) => {
+    if (viewFilter === "archived") return o.isArchived;
+    if (o.isArchived) return false;
+    return viewFilter === "cancelled" ? o.status === "CANCELLED" : o.status !== "CANCELLED";
+  });
 
   function openCreateDialog() {
     setEditingOrder(null);
@@ -342,6 +353,11 @@ export default function AdminProductionOrdersPage() {
     setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
   }
 
+  // Row-menu actions (archive/cancel) fire with no dialog open.
+  function updateOrderInList(updatedOrder) {
+    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+  }
+
   async function handleApproveOrReject(action) {
     if (!reviewOrder) return;
     if (action === "REJECT" && !remarks.trim()) {
@@ -359,7 +375,7 @@ export default function AdminProductionOrdersPage() {
 
       toast.success(
         action === "APPROVE"
-          ? "Order approved — quote PDF sent for customer approval"
+          ? "Order approved — quote generated, ready to send to the customer"
           : "Order proposal rejected",
       );
       setReviewOrder(null);
@@ -375,7 +391,7 @@ export default function AdminProductionOrdersPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
         <div>
-          <h1 className="text-2xl font-bold">Admin Production & Sales Orders</h1>
+          <h1 className="text-2xl font-bold">Sales Orders</h1>
           <p className="text-muted-foreground text-sm">
             Manage paper bag sales proposals, review commercial pricing, and assign orders
           </p>
@@ -436,6 +452,25 @@ export default function AdminProductionOrdersPage() {
         </Card>
       )}
 
+      {/* Active / Cancelled / Archived */}
+      <div className="flex items-center gap-2">
+        {[
+          { key: "active", label: "Active" },
+          { key: "cancelled", label: "Cancelled" },
+          { key: "archived", label: "Archived" },
+        ].map((v) => (
+          <Button
+            key={v.key}
+            variant={viewFilter === v.key ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewFilter(v.key)}
+            className="text-xs"
+          >
+            {v.label}
+          </Button>
+        ))}
+      </div>
+
       {/* Main Orders Table */}
       <Card>
         <CardContent className="p-0 overflow-x-auto">
@@ -457,15 +492,19 @@ export default function AdminProductionOrdersPage() {
                     <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
                   </TableCell>
                 </TableRow>
-              ) : orders.length === 0 ? (
+              ) : viewFilteredOrders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     No orders found
                   </TableCell>
                 </TableRow>
               ) : (
-                orders.map((o) => (
-                  <TableRow key={o.id} className="align-top">
+                viewFilteredOrders.map((o) => (
+                  <TableRow
+                    key={o.id}
+                    className="align-top cursor-pointer hover:bg-muted/40"
+                    onClick={() => router.push(`/dashboard/admin/production/${o.id}`)}
+                  >
                     <TableCell className="font-mono font-medium pt-4">
                       {o.orderNo}
                       {o.priority && o.priority !== "NORMAL" && (
@@ -515,15 +554,20 @@ export default function AdminProductionOrdersPage() {
                       <Badge variant="outline" className={cn("font-medium text-xs", STATUS_COLORS[o.status] || "")}>
                         {o.status}
                       </Badge>
+                      {o.isArchived && (
+                        <Badge variant="outline" className="ml-1 text-[10px] bg-gray-500/10 text-gray-600 border-gray-400/40">
+                          Archived
+                        </Badge>
+                      )}
                     </TableCell>
-                    <TableCell className="text-right pt-4 space-x-1">
+                    <TableCell className="text-right pt-4 space-x-1" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => openReviewModal(o)}
                         className="h-8 text-xs"
                       >
-                        <Eye className="h-4 w-4 mr-1" /> View
+                        <Eye className="h-4 w-4 mr-1" /> Review
                       </Button>
                       <Button
                         variant="outline"
@@ -533,6 +577,7 @@ export default function AdminProductionOrdersPage() {
                       >
                         <Edit className="h-4 w-4 mr-1" /> Edit
                       </Button>
+                      <OrderRowActions order={o} onUpdated={updateOrderInList} />
                     </TableCell>
                   </TableRow>
                 ))
@@ -553,10 +598,14 @@ export default function AdminProductionOrdersPage() {
           </DialogHeader>
 
           <div className="space-y-5 py-2">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-3 bg-muted/40 rounded-lg border">
-              <FormField label="Customer" required>
-                <Select value={customerId} onValueChange={setCustomerId}>
-                  <SelectTrigger className="bg-background">
+            <div className="space-y-3">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <Factory className="h-4 w-4 text-primary" /> Order Details
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-muted/40 rounded-lg border">
+                <FormField label="Customer" required className="min-w-0">
+                  <Select value={customerId} onValueChange={setCustomerId}>
+                  <SelectTrigger className="w-full bg-background">
                     <SelectValue placeholder="Select customer..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -569,24 +618,24 @@ export default function AdminProductionOrdersPage() {
                 </Select>
               </FormField>
 
-              <FormField label="Sales Representative">
+              <FormField label="Sales Representative" className="min-w-0">
                 <Select value={salesRepId} onValueChange={setSalesRepId}>
-                  <SelectTrigger className="bg-background">
+                  <SelectTrigger className="w-full bg-background">
                     <SelectValue placeholder="Select sales rep..." />
                   </SelectTrigger>
                   <SelectContent>
                     {salesReps.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.name} ({s.email})
+                        <span className="truncate">{s.name} ({s.email})</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </FormField>
 
-              <FormField label="Order Priority">
+              <FormField label="Order Priority" className="min-w-0">
                 <Select value={priority} onValueChange={setPriority}>
-                  <SelectTrigger className="bg-background">
+                  <SelectTrigger className="w-full bg-background">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -597,6 +646,7 @@ export default function AdminProductionOrdersPage() {
                   </SelectContent>
                 </Select>
               </FormField>
+              </div>
             </div>
 
             {/* Order Lines Builder */}
@@ -682,12 +732,12 @@ export default function AdminProductionOrdersPage() {
                         />
                       </FormField>
 
-                      <FormField label="Paper Type">
+                      <FormField label="Paper Type" className="min-w-0">
                         <Select
                           value={line.paperType}
                           onValueChange={(v) => updateLine(idx, "paperType", v)}
                         >
-                          <SelectTrigger className="h-9 text-xs">
+                          <SelectTrigger className="w-full h-9 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -700,12 +750,12 @@ export default function AdminProductionOrdersPage() {
                         </Select>
                       </FormField>
 
-                      <FormField label="Paper Color">
+                      <FormField label="Paper Color" className="min-w-0">
                         <Select
                           value={line.paperColor}
                           onValueChange={(v) => updateLine(idx, "paperColor", v)}
                         >
-                          <SelectTrigger className="h-9 text-xs">
+                          <SelectTrigger className="w-full h-9 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -718,12 +768,12 @@ export default function AdminProductionOrdersPage() {
                         </Select>
                       </FormField>
 
-                      <FormField label="Color Count">
+                      <FormField label="Color Count" className="min-w-0">
                         <Select
                           value={String(line.colorCount)}
                           onValueChange={(v) => updateLine(idx, "colorCount", Number(v))}
                         >
-                          <SelectTrigger className="h-9 text-xs">
+                          <SelectTrigger className="w-full h-9 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -941,7 +991,13 @@ export default function AdminProductionOrdersPage() {
                     Order Lines Specifications
                   </h4>
                   <div className="border rounded-md divide-y">
-                    {(reviewOrder.lines || []).map((l, i) => (
+                    {(() => {
+                      const progressByLine = new Map(
+                        getOrderLineProgressRows(reviewOrder).map((r) => [r.key, r]),
+                      );
+                      return (reviewOrder.lines || []).map((l, i) => {
+                        const progress = progressByLine.get(l.id);
+                        return (
                       <div key={i} className="p-3 text-xs space-y-1.5">
                         <div className="flex items-center justify-between font-semibold">
                           <span>
@@ -959,6 +1015,16 @@ export default function AdminProductionOrdersPage() {
                           {l.lineTotal && (
                             <span className="font-mono text-foreground font-medium">
                               Line Price: ${Number(l.lineTotal).toFixed(2)}
+                            </span>
+                          )}
+                          {progress && progress.stageLabel !== "—" && (
+                            <span
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                                progress.className,
+                              )}
+                            >
+                              Production: {progress.stageLabel}
                             </span>
                           )}
                         </div>
@@ -981,7 +1047,9 @@ export default function AdminProductionOrdersPage() {
                           </div>
                         )}
                       </div>
-                    ))}
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
 

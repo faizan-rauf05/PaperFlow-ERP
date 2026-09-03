@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireAdminOrManager } from "@/lib/apiAuth";
+import { requireWorker } from "@/lib/apiAuth";
 import { getAllMaterialStock } from "@/lib/services/inventory.service";
 import { serializeModel } from "@/lib/serialize";
 
 export async function GET() {
   try {
-    const authResult = await requireAdminOrManager();
+    // Workers need this for the stage-recording form's stock display.
+    const authResult = await requireWorker();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }

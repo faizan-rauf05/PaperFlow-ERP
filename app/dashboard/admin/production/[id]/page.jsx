@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Eye, Loader2, ClipboardEdit, Lock } from "lucide-react";
+import { ArrowLeft, Eye, Loader2, ClipboardEdit, Lock, User, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { OrderRowActions } from "@/components/orders/order-row-actions";
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,7 @@ import { FormField } from "@/components/ui/form-field";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
-import { getStageLabel, QC_STAGE_TYPES } from "@/lib/production-constants";
+import { getStageLabel, QC_STAGE_TYPES, STAGE_FLOW } from "@/lib/production-constants";
 import { computeSlittingPreview } from "@/lib/slitting-math";
 import {
   getOrderLineProgressRows,
@@ -33,8 +34,14 @@ import {
   ORDER_STATUS_COLORS,
   summarizeOrderMaterials,
   getLineCurrentStage,
+  formatElapsed,
 } from "@/lib/order-progress";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
+
+// Material stores width in cm (paperWidthCm) — display everything in mm.
+function widthMm(material) {
+  return material?.paperWidthCm != null ? Number(material.paperWidthCm) * 10 : null;
+}
 
 function buildInitialForm(stage, context) {
   const stg = context?.stage || stage || {};
@@ -112,6 +119,8 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
   const [machines, setMachines] = useState([]);
   const [defectTypes, setDefectTypes] = useState([]);
   const [form, setForm] = useState(() => buildInitialForm(stage, context));
+  const [nextStage, setNextStage] = useState("");
+  const isPrintQc = stage.stageType === "PRINT_QC";
 
   useEffect(() => {
     if (context) {
@@ -178,7 +187,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
     if (stage.stageType !== "SLITTING") return null;
     return computeSlittingPreview({
       inputMeters: inputQty,
-      parentWidthMm: context?.paperMaterial?.paperWidthMm,
+      parentWidthMm: widthMm(context?.paperMaterial) ?? undefined,
       cutWidthMm: form.cutWidthMm,
       gsm: context?.paperMaterial?.gsm,
       lengthRestockMeters: form.lengthRestockQty,
@@ -273,6 +282,9 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       if (!form.outputQty || Number(form.outputQty) <= 0)
         next.outputQty = "Dispatched qty required";
     }
+    if (isPrintQc && !nextStage) {
+      next.nextStage = "Choose Slitting or Handle Making";
+    }
 
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -344,6 +356,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
               defectTypeId: form.defectTypeId || undefined,
             }
           : undefined,
+        nextStage: isPrintQc ? nextStage || undefined : undefined,
       };
       await api.post(
         `/production/orders/${orderId}/stages/${stage.id}/record`,
@@ -385,7 +398,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
               onValueChange={(v) => patch("materialId", v)}
               options={paperMaterials.map((m) => ({
                 value: m.id,
-                label: `${m.name} · ${m.paperWidthMm ?? "?"}mm (${m.code})`,
+                label: `${m.name} · ${widthMm(m) ?? "?"}mm (${m.code})`,
                 description: `Stock: ${stockById[m.id] ?? 0} m`,
               }))}
               placeholder="Select paper material"
@@ -455,7 +468,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
           {context?.paperMaterial && (
             <p className="text-xs text-muted-foreground">
               Parent paper: {context.paperMaterial.name} · width{" "}
-              {context.paperMaterial.paperWidthMm ?? "—"} mm · input{" "}
+              {widthMm(context.paperMaterial) ?? "—"} mm · input{" "}
               {inputQty ?? "—"} m
             </p>
           )}
@@ -581,6 +594,38 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
                 placeholder="Select defect type (optional)"
                 searchPlaceholder="Search defect..."
               />
+            </FormField>
+          )}
+
+          {isPrintQc && (
+            <FormField
+              label="Send to next stage"
+              required
+              error={errors.nextStage}
+              hint="Where this order goes after QC."
+            >
+              <Select
+                value={nextStage}
+                onValueChange={(v) => {
+                  setNextStage(v);
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.nextStage;
+                    return next;
+                  });
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Choose Slitting or Handle Making" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STAGE_FLOW.PRINT_QC.branches.map((b) => (
+                    <SelectItem key={b} value={b}>
+                      {getStageLabel(b)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </FormField>
           )}
         </div>
@@ -790,13 +835,11 @@ export default function ProductionOrderDetailPage() {
   const [recordContext, setRecordContext] = useState(null);
   const [previewStage, setPreviewStage] = useState(null);
   const [loadingContext, setLoadingContext] = useState(false);
-  const [workers, setWorkers] = useState([]);
-  const [assigning, setAssigning] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get(`/production/orders/${id}`);
+      const { data } = await api.get(`/orders/${id}`);
       setOrder(data.order);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
@@ -808,17 +851,6 @@ export default function ProductionOrderDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await api.get("/workers");
-        setWorkers(data.workers || []);
-      } catch {
-        /* non-blocking */
-      }
-    })();
-  }, []);
 
   const materialSummary = useMemo(
     () => (order ? summarizeOrderMaterials(order) : null),
@@ -838,22 +870,6 @@ export default function ProductionOrderDetailPage() {
       setRecordStage(null);
     } finally {
       setLoadingContext(false);
-    }
-  }
-
-  async function reassignWorker(workerId) {
-    if (!workerId) return;
-    setAssigning(true);
-    try {
-      const { data } = await api.patch(`/production/orders/${id}/assign`, {
-        assignedWorkerId: workerId,
-      });
-      setOrder(data.order);
-      toast.success("Worker assigned");
-    } catch (e) {
-      toast.error(getApiErrorMessage(e));
-    } finally {
-      setAssigning(false);
     }
   }
 
@@ -877,32 +893,45 @@ export default function ProductionOrderDetailPage() {
           </Link>
         </Button>
         <div className="flex-1 space-y-3">
-          <div>
-            <h1 className="text-2xl font-bold font-mono">{order.orderNo}</h1>
-            <p className="text-muted-foreground flex flex-wrap items-center gap-2">
-              <span>{order.customer?.name}</span>
-              {order.salesRep && (
-                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-medium">
-                  Sales Rep: {order.salesRep}
-                </span>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h1 className="text-2xl font-bold font-mono">{order.orderNo}</h1>
+              <p className="text-muted-foreground flex flex-wrap items-center gap-2 mt-1">
+                <span>{order.customer?.name}</span>
+                {order.salesRep && (
+                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-medium">
+                    Sales Rep: {order.salesRep}
+                  </span>
+                )}
+                {order.startDate && (
+                  <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
+                    Start: {new Date(order.startDate).toLocaleDateString()}
+                  </span>
+                )}
+                {order.deliveryDate && (
+                  <span className="text-xs bg-amber-500/15 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded font-medium">
+                    Delivery: {new Date(order.deliveryDate).toLocaleDateString()}
+                  </span>
+                )}
+                <Badge
+                  variant="outline"
+                  className={cn("font-medium", ORDER_STATUS_COLORS[order.status])}
+                >
+                  {order.status}
+                </Badge>
+                {order.isArchived && (
+                  <Badge variant="outline" className="font-medium bg-gray-500/10 text-gray-600 border-gray-400/40">
+                    Archived
+                  </Badge>
+                )}
+              </p>
+              {order.status === "CANCELLED" && order.cancelReason && (
+                <p className="text-xs text-destructive mt-1">
+                  Cancelled: "{order.cancelReason}"
+                </p>
               )}
-              {order.startDate && (
-                <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
-                  Start: {new Date(order.startDate).toLocaleDateString()}
-                </span>
-              )}
-              {order.deliveryDate && (
-                <span className="text-xs bg-amber-500/15 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded font-medium">
-                  Delivery: {new Date(order.deliveryDate).toLocaleDateString()}
-                </span>
-              )}
-              <Badge
-                variant="outline"
-                className={cn("font-medium", ORDER_STATUS_COLORS[order.status])}
-              >
-                {order.status}
-              </Badge>
-            </p>
+            </div>
+            <OrderRowActions order={order} onUpdated={setOrder} />
           </div>
 
           {materialSummary && (
@@ -923,26 +952,6 @@ export default function ProductionOrderDetailPage() {
               </p>
             </div>
           )}
-
-          <div className="flex flex-wrap items-center gap-3">
-            <FormField label="Responsible worker" className="min-w-[240px]">
-              <SearchableSelect
-                value={order.assignedWorkerId || ""}
-                onValueChange={reassignWorker}
-                disabled={assigning}
-                options={workers.map((w) => ({
-                  value: w.id,
-                  label: w.name,
-                  description: w.email,
-                }))}
-                placeholder="Assign worker"
-                searchPlaceholder="Search worker..."
-              />
-            </FormField>
-            {assigning && (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            )}
-          </div>
         </div>
       </div>
 
@@ -1029,6 +1038,28 @@ export default function ProductionOrderDetailPage() {
                           Number(stage.wasteQty) > 0 &&
                           ` · waste ${stage.wasteQty}`}
                       </p>
+                      {(stage.worker || stage.startedAt) && (
+                        <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                          {stage.worker && (
+                            <span className="inline-flex items-center gap-1">
+                              <User className="h-3 w-3" /> {stage.worker.name}
+                            </span>
+                          )}
+                          {stage.startedAt && (
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="h-3 w-3" /> Started {formatDateTime(stage.startedAt)}
+                            </span>
+                          )}
+                          {stage.completedAt && (
+                            <span>Completed {formatDateTime(stage.completedAt)}</span>
+                          )}
+                          {formatElapsed(stage.startedAt, stage.completedAt) && (
+                            <span className="font-medium text-foreground">
+                              Took {formatElapsed(stage.startedAt, stage.completedAt)}
+                            </span>
+                          )}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {stage.status === "COMPLETED" && (

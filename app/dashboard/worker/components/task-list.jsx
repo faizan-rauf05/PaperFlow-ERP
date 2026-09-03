@@ -23,7 +23,7 @@ function groupTasksByOrder(tasks) {
   }));
 }
 
-export function TaskList({ tasks, loading, startingTaskId, onStartTask }) {
+export function TaskList({ tasks, loading, startingTaskId, onStartTask, mode = "mine" }) {
   if (loading) {
     return (
       <div className={workerStyles.loadingBox}>
@@ -36,7 +36,9 @@ export function TaskList({ tasks, loading, startingTaskId, onStartTask }) {
   if (tasks.length === 0) {
     return (
       <p className={workerStyles.emptyText}>
-        No tasks ready. Ask admin to create a production order.
+        {mode === "available"
+          ? "No open stages right now — check back once an order reaches production."
+          : "You haven't claimed a stage yet."}
       </p>
     );
   }
@@ -62,6 +64,7 @@ export function TaskList({ tasks, loading, startingTaskId, onStartTask }) {
                 task={task}
                 isStarting={startingTaskId === task.id}
                 onStart={onStartTask}
+                mode={mode}
               />
             ))}
           </div>

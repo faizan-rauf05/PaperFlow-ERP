@@ -10,7 +10,10 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  Stamp,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -70,6 +73,10 @@ export default function CustomersPage() {
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+
+  const [viewingCustomer, setViewingCustomer] = useState(null);
+  const [viewCliches, setViewCliches] = useState([]);
+  const [loadingCliches, setLoadingCliches] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -164,6 +171,22 @@ export default function CustomersPage() {
       toast.error(getApiErrorMessage(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function openView(c) {
+    setViewingCustomer(c);
+    setViewCliches([]);
+    setLoadingCliches(true);
+    try {
+      const { data } = await api.get("/cliches", {
+        params: { customerId: c.id, take: 100 },
+      });
+      setViewCliches(data.cliches || []);
+    } catch (e) {
+      toast.error(getApiErrorMessage(e));
+    } finally {
+      setLoadingCliches(false);
     }
   }
 
@@ -263,6 +286,14 @@ export default function CustomersPage() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => openView(c)}
+                      title="View customer & clichés"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => openEdit(c)}
                     >
                       <Pencil className="h-4 w-4" />
@@ -308,6 +339,78 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+
+      {/* View Customer + Clichés Dialog */}
+      <Dialog open={!!viewingCustomer} onOpenChange={(open) => !open && setViewingCustomer(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{viewingCustomer?.name}</DialogTitle>
+          </DialogHeader>
+          {viewingCustomer && (
+            <Tabs defaultValue="info">
+              <TabsList className="w-full">
+                <TabsTrigger value="info">Info</TabsTrigger>
+                <TabsTrigger value="cliches">
+                  Clichés {viewCliches.length > 0 ? `(${viewCliches.length})` : ""}
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="info" className="space-y-3 py-2 text-sm">
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-muted-foreground">Phone</span>
+                  <span className="col-span-2">{viewingCustomer.phone || "—"}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-muted-foreground">Email</span>
+                  <span className="col-span-2">{viewingCustomer.email || "—"}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-muted-foreground">Address</span>
+                  <span className="col-span-2">{viewingCustomer.address || "—"}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-muted-foreground">Notes</span>
+                  <span className="col-span-2">{viewingCustomer.notes || "—"}</span>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="cliches" className="py-2">
+                {loadingCliches ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : viewCliches.length === 0 ? (
+                  <p className="text-center text-sm text-muted-foreground py-8">
+                    No clichés on file for this customer yet.
+                  </p>
+                ) : (
+                  <div className="border rounded-md divide-y max-h-80 overflow-y-auto">
+                    {viewCliches.map((c) => (
+                      <div key={c.id} className="p-3 text-xs flex items-start gap-2.5">
+                        <Stamp className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold">{c.code}</p>
+                          <p className="text-muted-foreground">
+                            {c.widthMm || "?"}×{c.heightMm || "?"}mm · {c.colorCount ?? "?"} colors ·{" "}
+                            {c.ownership === "CUSTOMER_OWNED" ? "Customer-owned" : "Company-owned"} ·{" "}
+                            {c.condition?.toLowerCase() || "active"}
+                          </p>
+                          {c.notes && <p className="text-muted-foreground italic mt-0.5">"{c.notes}"</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewingCustomer(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>

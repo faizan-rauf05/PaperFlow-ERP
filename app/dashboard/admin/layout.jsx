@@ -23,7 +23,7 @@ const navigation = [
   { name: "Suppliers", href: "/dashboard/admin/suppliers", icon: Building2 },
   { name: "Materials", href: "/dashboard/admin/materials", icon: Package },
   { name: "Inventory", href: "/dashboard/admin/inventory", icon: Warehouse },
-  { name: "Orders", href: "/dashboard/admin/production", icon: Factory },
+  { name: "Sales Orders", href: "/dashboard/admin/production", icon: Factory },
   { name: "Machines", href: "/dashboard/admin/machines", icon: Cog },
   {
     name: "Defect Types",
