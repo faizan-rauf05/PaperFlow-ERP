@@ -22,6 +22,7 @@ const TEST_USERS = [
   { email: "worker@factory.com", name: "Worker User", role: "WORKER" },
   { email: "sales@factory.com", name: "Sales User", role: "SALES" },
   { email: "finance@factory.com", name: "Finance User", role: "FINANCE" },
+  { email: "warehouse@factory.com", name: "Warehouse User", role: "WAREHOUSE" },
 ];
 
 const PASSWORD = "Admin1234!";

@@ -3,18 +3,32 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { 
-  Factory, 
-  X,
-  ChevronLeft,
-  ChevronRight,
-  LogOut
-} from 'lucide-react'
+import { Factory, X, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+
+// Fixed display order for nav groups. Items without a matching `group` field
+// fall back to "Workspace" so ungrouped/legacy configs still render.
+const GROUP_ORDER = ['Workspace', 'Operations', 'Business', 'Factory', 'Administration']
+
+function groupNavigation(navigation) {
+  const groups = new Map()
+  for (const item of navigation) {
+    const key = item.group || 'Workspace'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(item)
+  }
+  const ordered = GROUP_ORDER.filter((g) => groups.has(g)).map((g) => ({ name: g, items: groups.get(g) }))
+  // Any group not in GROUP_ORDER (unexpected/custom) is appended at the end.
+  for (const [name, items] of groups) {
+    if (!GROUP_ORDER.includes(name)) ordered.push({ name, items })
+  }
+  return ordered
+}
 
 export function Sidebar({ navigation, userRole, userName, isOpen, mobileOpen, onMobileClose, onLogout }) {
   const pathname = usePathname()
+  const navGroups = groupNavigation(navigation)
+  const rootHref = navigation[0]?.href
 
   const roleLabels = {
     admin: 'Admin',
@@ -27,6 +41,8 @@ export function Sidebar({ navigation, userRole, userName, isOpen, mobileOpen, on
     SALES: 'Sales',
     finance: 'Finance',
     FINANCE: 'Finance',
+    warehouse: 'Warehouse',
+    WAREHOUSE: 'Warehouse',
   }
 
   return (
@@ -49,15 +65,16 @@ export function Sidebar({ navigation, userRole, userName, isOpen, mobileOpen, on
       >
         {/* Logo */}
         <div className={cn(
-          'flex h-16 items-center gap-3 px-4 border-b border-sidebar-border',
+          'flex h-14 items-center gap-3 px-4 border-b border-sidebar-border',
           !isOpen && 'justify-center px-2'
         )}>
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <Factory className="h-6 w-6 text-white" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary">
+            <Factory className="h-4.5 w-4.5 text-primary-foreground" />
           </div>
           {isOpen && (
-            <div className="flex flex-col">
-              <span className="font-bold text-lg">PaperPro ERP</span>
+            <div className="flex flex-col min-w-0">
+              <span className="font-semibold text-sm leading-tight truncate">PaperPro ERP</span>
+              <span className="text-xs text-sidebar-foreground/60 leading-tight">Manufacturing ERP</span>
             </div>
           )}
           <Button
@@ -71,50 +88,63 @@ export function Sidebar({ navigation, userRole, userName, isOpen, mobileOpen, on
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4">
-          <ul className="space-y-1 px-3">
-            {navigation.map((item) => {
-              const isActive = pathname === item.href || (item.href !== '/dashboard/admin' && pathname.startsWith(item.href))
-              const Icon = item.icon
+        <nav className="flex-1 overflow-y-auto py-3">
+          {navGroups.map((group, groupIndex) => (
+            <div key={group.name} className={groupIndex > 0 ? 'mt-4' : undefined}>
+              {isOpen ? (
+                <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/40">
+                  {group.name}
+                </p>
+              ) : (
+                groupIndex > 0 && <div className="mx-3 mb-2 border-t border-sidebar-border/60" />
+              )}
+              <ul className="space-y-0.5 px-2">
+                {group.items.map((item) => {
+                  const isActive =
+                    pathname === item.href ||
+                    (item.href !== rootHref && pathname.startsWith(`${item.href}/`))
+                  const Icon = item.icon
 
-              return (
-                <li key={item.name}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                      !isOpen && 'justify-center px-2'
-                    )}
-                    title={!isOpen ? item.name : undefined}
-                  >
-                    <Icon className="h-5 w-5 flex-shrink-0" />
-                    {isOpen && <span>{item.name}</span>}
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
+                  return (
+                    <li key={item.name}>
+                      <Link
+                        href={item.href}
+                        className={cn(
+                          'flex items-center gap-3 rounded-md border-l-2 border-transparent px-2.5 py-2 text-sm font-medium transition-colors',
+                          isActive
+                            ? 'border-primary bg-primary/15 text-sidebar-foreground'
+                            : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                          !isOpen && 'justify-center px-0'
+                        )}
+                        title={!isOpen ? item.name : undefined}
+                      >
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                          <Icon className="h-4.5 w-4.5" />
+                        </span>
+                        {isOpen && <span className="truncate">{item.name}</span>}
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ))}
         </nav>
 
         {/* User info at bottom */}
         <div className={cn(
-          'border-t border-sidebar-border p-4',
+          'border-t border-sidebar-border p-3',
           !isOpen && 'p-2'
         )}>
           {isOpen ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-sm">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-medium text-xs">
                   {userName?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'U'}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{userName || 'User'}</p>
-                  <Badge variant="secondary" className="text-xs mt-0.5">
-                    {roleLabels[userRole] || userRole}
-                  </Badge>
+                  <p className="text-xs text-sidebar-foreground/60 truncate">{roleLabels[userRole] || userRole}</p>
                 </div>
               </div>
               <Button
@@ -129,7 +159,7 @@ export function Sidebar({ navigation, userRole, userName, isOpen, mobileOpen, on
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-sm">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-medium text-xs">
                 {userName?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'U'}
               </div>
               <Button

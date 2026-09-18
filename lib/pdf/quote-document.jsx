@@ -32,7 +32,7 @@ const styles = StyleSheet.create({
 });
 
 function fmt(n) {
-  return `$${Number(n || 0).toFixed(2)}`;
+  return `${Number(n || 0).toFixed(2)} KWD`;
 }
 
 function lineSizeLabel(line) {

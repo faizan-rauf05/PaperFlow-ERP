@@ -144,7 +144,7 @@ export function Header({
       .toUpperCase() || "U";
 
   return (
-    <header className="flex h-16 items-center gap-4 border-b bg-card px-4 lg:px-6">
+    <header className="flex h-14 items-center gap-3 border-b bg-card px-4 lg:px-6">
       {/* Mobile menu button */}
       <Button
         variant="ghost"
@@ -240,11 +240,11 @@ export function Header({
                       <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                     )}
                     <div className={cn("flex-1 min-w-0 flex flex-col gap-0.5", n.read && "pl-3.5")}>
-                      <span className="font-medium truncate">{n.title}</span>
-                      <span className="text-xs text-muted-foreground truncate">
+                      <span className="text-sm font-medium truncate">{n.title}</span>
+                      <span className="text-caption truncate">
                         {n.message}
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-caption">
                         {timeAgo(n.createdAt)}
                       </span>
                     </div>
@@ -258,38 +258,38 @@ export function Header({
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="gap-2 pl-2 pr-3 group">
+            <Button variant="ghost" className="gap-2 pl-2 pr-3">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary text-primary-foreground text-sm">
                   {initials}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden md:flex flex-col items-start">
-                <span className="text-sm font-medium">{userName}</span>
-                <span className="text-xs text-muted-foreground capitalize group-hover:text-white">
+                <span className="text-sm font-medium leading-tight">{userName}</span>
+                <span className="text-caption capitalize leading-tight">
                   {userRole}
                 </span>
               </div>
-              <ChevronDown className="h-4 w-4 hidden md:block text-muted-foreground group-hover:text-white" />
+              <ChevronDown className="h-4 w-4 hidden md:block text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="group">
-              <User className="mr-2 h-4 w-4 group-hover:text-white" />
+            <DropdownMenuItem>
+              <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem className="group">
-              <Settings className="mr-2 h-4 w-4 group-hover:text-white" />
+            <DropdownMenuItem>
+              <Settings className="mr-2 h-4 w-4" />
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="text-destructive group"
+              variant="destructive"
               onClick={() => onLogout?.()}
             >
-              <LogOut className="mr-2 h-4 w-4 group-hover:text-white" />
+              <LogOut className="mr-2 h-4 w-4" />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

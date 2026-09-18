@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { ORDER_STATUS_COLORS } from "@/lib/order-progress";
 import { cn, formatDateTime } from "@/lib/utils";
+import { formatKWD } from "@/lib/currency";
 
 const STATUS_COLORS = {
   ...ORDER_STATUS_COLORS,
@@ -228,7 +229,7 @@ export default function ManagerDashboard() {
                       {o.salesRepUser?.name || o.salesRep || "Unassigned"}
                     </TableCell>
                     <TableCell className="font-mono font-bold text-amber-800 dark:text-amber-300">
-                      ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                      {formatKWD(o.proposedTotal || o.total)}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {o.lines?.length || 0} line(s) · {o.lines?.[0]?.paperColor || "White"} {o.lines?.[0]?.paperType || "Virgin"}
@@ -349,11 +350,11 @@ export default function ManagerDashboard() {
                     </TableCell>
                     <TableCell className="pt-4 font-mono text-sm">
                       <div>
-                        Proposed: ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                        Proposed: {formatKWD(o.proposedTotal || o.total)}
                       </div>
                       {o.approvedTotal && (
                         <div className="text-xs text-emerald-600 font-semibold">
-                          Approved: ${Number(o.approvedTotal).toFixed(2)}
+                          Approved: {formatKWD(o.approvedTotal)}
                         </div>
                       )}
                     </TableCell>
@@ -442,7 +443,7 @@ export default function ManagerDashboard() {
                           <span>Handle: <strong>{l.withHandle ? "Yes" : "No"}</strong></span>
                           {l.lineTotal && (
                             <span className="font-mono text-foreground font-medium">
-                              Line Price: ${Number(l.lineTotal).toFixed(2)}
+                              Line Price: {formatKWD(l.lineTotal)}
                             </span>
                           )}
                         </div>
@@ -478,14 +479,14 @@ export default function ManagerDashboard() {
                     <div>
                       <span className="text-xs text-muted-foreground">Sales Rep Proposed Price</span>
                       <p className="font-mono text-lg font-bold text-foreground">
-                        ${Number(reviewOrder.proposedTotal || reviewOrder.total || 0).toFixed(2)}
+                        {formatKWD(reviewOrder.proposedTotal || reviewOrder.total)}
                       </p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
                         Original quote proposed by sales rep is preserved in history.
                       </p>
                     </div>
 
-                    <FormField label="Manager Approved Price ($)">
+                    <FormField label="Manager Approved Price (KWD)">
                       <Input
                         type="number"
                         min="0"

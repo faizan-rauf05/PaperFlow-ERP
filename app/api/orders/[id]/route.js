@@ -18,7 +18,27 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ order: serializeModel(order) });
+    // Material cost price is Admin/Manager-visible only, same rule as
+    // /api/materials and /api/orders (list).
+    const orderOut =
+      ["WORKER", "WAREHOUSE"].includes(authResult.session.user.role)
+        ? {
+            ...order,
+            lines: order.lines.map((l) => ({
+              ...l,
+              suggestedMaterials: (l.suggestedMaterials || []).map(
+                ({ suggestedCost, material, ...rest }) => ({
+                  ...rest,
+                  material: material
+                    ? (({ costPricePerUnit, costPriceCurrency, costPriceEntryBasis, costPriceOriginalAmount, costPriceExchangeRate, costPriceRateDate, ...m }) => m)(material)
+                    : material,
+                }),
+              ),
+            })),
+          }
+        : order;
+
+    return NextResponse.json({ order: serializeModel(orderOut) });
   } catch (error) {
     console.error("GET /api/orders/[id] error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

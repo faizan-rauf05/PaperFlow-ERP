@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { requireAdminOrManager, requireWorker } from "@/lib/apiAuth";
-import { postInventoryTransaction } from "@/lib/services/inventory.service";
+import { requireAdminOrManager, requireWorkerOrWarehouse } from "@/lib/apiAuth";
+import { postInventoryTransaction, getMaterialStock } from "@/lib/services/inventory.service";
 import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
 
+const STOCK_OUT_TYPES = ["STOCK_OUT", "WASTE"];
+
 export async function POST(request) {
   try {
-    const authResult = await requireWorker();
+    const authResult = await requireWorkerOrWarehouse();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }
@@ -19,6 +21,19 @@ export async function POST(request) {
         { error: "materialId, transactionType, quantity, and unit are required" },
         { status: 400 },
       );
+    }
+
+    // Manual stock-out/waste postings are hard-blocked at this endpoint when they'd
+    // take stock below zero — unlike postInventoryTransaction's shared soft warning,
+    // which stays as-is for production's automatic consumption postings.
+    if (STOCK_OUT_TYPES.includes(transactionType)) {
+      const currentStock = await getMaterialStock(materialId);
+      if (currentStock.lessThan(quantity)) {
+        return NextResponse.json(
+          { error: `Insufficient stock: only ${currentStock.toString()} ${unit} available` },
+          { status: 400 },
+        );
+      }
     }
 
     const record = await postInventoryTransaction({

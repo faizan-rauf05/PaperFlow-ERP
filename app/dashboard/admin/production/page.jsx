@@ -50,10 +50,12 @@ import {
 import { FormField } from "@/components/ui/form-field";
 import { CustomerQuoteSection } from "@/components/orders/customer-quote-section";
 import { OrderRowActions } from "@/components/orders/order-row-actions";
+import { OrderLineMaterialsDialog } from "@/components/orders/order-line-materials-dialog";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { ORDER_STATUS_COLORS, getOrderLineProgressRows } from "@/lib/order-progress";
 import { cn, formatDateTime } from "@/lib/utils";
+import { formatKWD } from "@/lib/currency";
 
 const STATUS_COLORS = {
   ...ORDER_STATUS_COLORS,
@@ -124,6 +126,7 @@ export default function AdminProductionOrdersPage() {
 
   // Review / Approval Modal State
   const [reviewOrder, setReviewOrder] = useState(null);
+  const [materialsDialogLine, setMaterialsDialogLine] = useState(null);
   const [approvedTotal, setApprovedTotal] = useState("");
   const [remarks, setRemarks] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
@@ -430,7 +433,7 @@ export default function AdminProductionOrdersPage() {
                       {o.salesRepUser?.name || o.salesRep || "Unassigned"}
                     </TableCell>
                     <TableCell className="font-mono font-bold text-amber-800 dark:text-amber-300">
-                      ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                      {formatKWD(o.proposedTotal || o.total)}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {o.lines?.length || 0} line(s) · {o.lines?.[0]?.paperColor || "White"} {o.lines?.[0]?.paperType || "Virgin"}
@@ -542,11 +545,11 @@ export default function AdminProductionOrdersPage() {
                     </TableCell>
                     <TableCell className="pt-4 font-mono text-sm">
                       <div>
-                        Proposed: ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                        Proposed: {formatKWD(o.proposedTotal || o.total)}
                       </div>
                       {o.approvedTotal && (
                         <div className="text-xs text-emerald-600 font-semibold">
-                          Approved: ${Number(o.approvedTotal).toFixed(2)}
+                          Approved: {formatKWD(o.approvedTotal)}
                         </div>
                       )}
                     </TableCell>
@@ -818,7 +821,7 @@ export default function AdminProductionOrdersPage() {
 
                     {/* Pricing */}
                     <div className="grid grid-cols-2 gap-3 pt-2 border-t">
-                      <FormField label="Unit Price ($ / bag)">
+                      <FormField label="Unit Price (KWD / bag)">
                         <Input
                           type="number"
                           min="0"
@@ -829,7 +832,7 @@ export default function AdminProductionOrdersPage() {
                         />
                       </FormField>
 
-                      <FormField label="Line Total ($)">
+                      <FormField label="Line Total (KWD)">
                         <Input
                           type="number"
                           min="0"
@@ -897,9 +900,9 @@ export default function AdminProductionOrdersPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <span className="text-xs text-muted-foreground">Subtotal Sum</span>
-                  <p className="font-mono text-lg font-bold">${subtotal.toFixed(2)}</p>
+                  <p className="font-mono text-lg font-bold">{formatKWD(subtotal)}</p>
                 </div>
-                <FormField label="Discount ($)">
+                <FormField label="Discount (KWD)">
                   <Input
                     type="number"
                     min="0"
@@ -913,7 +916,7 @@ export default function AdminProductionOrdersPage() {
                   <span className="text-xs text-muted-foreground font-semibold text-primary">
                     Proposed Commercial Total
                   </span>
-                  <p className="font-mono text-xl font-bold text-primary">${proposedTotal.toFixed(2)}</p>
+                  <p className="font-mono text-xl font-bold text-primary">{formatKWD(proposedTotal)}</p>
                 </div>
               </div>
             </div>
@@ -1014,8 +1017,29 @@ export default function AdminProductionOrdersPage() {
                           <span>Handle: <strong>{l.withHandle ? "Yes" : "No"}</strong></span>
                           {l.lineTotal && (
                             <span className="font-mono text-foreground font-medium">
-                              Line Price: ${Number(l.lineTotal).toFixed(2)}
+                              Line Price: {formatKWD(l.lineTotal)}
                             </span>
+                          )}
+                          {Array.isArray(l.suggestedMaterials) && l.suggestedMaterials.length > 0 && (
+                            <span className="font-mono text-foreground font-medium">
+                              Est. Material Cost:{" "}
+                              {formatKWD(
+                                l.suggestedMaterials.reduce(
+                                  (sum, sm) => sum + Number(sm.suggestedCost || 0),
+                                  0,
+                                ),
+                              )}
+                            </span>
+                          )}
+                          {Array.isArray(l.suggestedMaterials) && l.suggestedMaterials.length > 0 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() => setMaterialsDialogLine(l)}
+                            >
+                              View Details
+                            </Button>
                           )}
                           {progress && progress.stageLabel !== "—" && (
                             <span
@@ -1063,11 +1087,22 @@ export default function AdminProductionOrdersPage() {
                       <div>
                         <span className="text-xs text-muted-foreground">Proposed Price</span>
                         <p className="font-mono text-lg font-bold text-foreground">
-                          ${Number(reviewOrder.proposedTotal || reviewOrder.total || 0).toFixed(2)}
+                          {formatKWD(reviewOrder.proposedTotal || reviewOrder.total)}
                         </p>
                       </div>
 
-                      <FormField label="Approved Price ($)">
+                      <div>
+                        <span className="text-xs text-muted-foreground">Est. Material Cost (Best Match)</span>
+                        <p className="font-mono text-lg font-bold text-foreground">
+                          {formatKWD(
+                            (reviewOrder.lines || [])
+                              .flatMap((l) => l.suggestedMaterials || [])
+                              .reduce((sum, sm) => sum + Number(sm.suggestedCost || 0), 0),
+                          )}
+                        </p>
+                      </div>
+
+                      <FormField label="Approved Price (KWD)">
                         <Input
                           type="number"
                           min="0"
@@ -1133,6 +1168,8 @@ export default function AdminProductionOrdersPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <OrderLineMaterialsDialog line={materialsDialogLine} onOpenChange={setMaterialsDialogLine} />
     </div>
   );
 }

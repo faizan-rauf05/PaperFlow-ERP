@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireAdminOrManager } from "@/lib/apiAuth";
+import { requireWarehouse } from "@/lib/apiAuth";
 import { getLowStockMaterials } from "@/lib/services/inventory.service";
 import { serializeModel } from "@/lib/serialize";
 
 export async function GET() {
   try {
-    const authResult = await requireAdminOrManager();
+    const authResult = await requireWarehouse();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }

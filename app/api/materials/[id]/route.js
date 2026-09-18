@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
 import { buildMaterialRecord } from "@/lib/material-code";
+import { resolveCostPriceFields } from "@/lib/cost-price";
 import { materialSchema } from "@/lib/validations/admin-forms";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
 
@@ -40,6 +41,11 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
+    const existing = await prisma.material.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Material not found" }, { status: 404 });
+    }
+
     const data = buildMaterialRecord(parsed.data);
 
     // Resolve supplier relation to supplierId
@@ -62,6 +68,24 @@ export async function PUT(request, { params }) {
       data.imageUrl = await uploadImageToCloudinary(data.imageUrl, "materials");
     }
 
+    // Cost price: only recomputed (and re-fetches the FX rate) when the
+    // cost inputs actually changed, so an unrelated edit (e.g. supplier)
+    // doesn't silently overwrite the "rate applied on this date" audit
+    // trail. The exchange rate itself is always fetched/verified
+    // server-side, never trusted from the client.
+    try {
+      const costFields = await resolveCostPriceFields(data.materialType, data, existing);
+      Object.assign(data, costFields);
+    } catch (costError) {
+      console.error("Cost price computation failed:", costError);
+      const message =
+        costError.code === "COST_PRICE_DIVISOR_MISSING"
+          ? costError.message
+          : "Could not fetch the current USD→KWD exchange rate. Please try again, or enter the cost price in KWD.";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+    delete data.costPriceAmount;
+
     const material = await prisma.material.update({ where: { id }, data });
 
     await writeAuditLog({
@@ -69,10 +93,29 @@ export async function PUT(request, { params }) {
       action: ACTIONS.MATERIAL_UPDATED,
       model: "Material",
       recordId: id,
+      oldValue: serializeModel({
+        code: existing.code,
+        name: existing.name,
+        materialType: existing.materialType,
+        costPricePerUnit: existing.costPricePerUnit,
+        costPriceCurrency: existing.costPriceCurrency,
+        costPriceEntryBasis: existing.costPriceEntryBasis,
+        costPriceOriginalAmount: existing.costPriceOriginalAmount,
+        costPriceExchangeRate: existing.costPriceExchangeRate,
+        costPriceRateDate: existing.costPriceRateDate,
+      }),
       newValue: {
         code: material.code,
         name: material.name,
         materialType: material.materialType,
+        ...serializeModel({
+          costPricePerUnit: material.costPricePerUnit,
+          costPriceCurrency: material.costPriceCurrency,
+          costPriceEntryBasis: material.costPriceEntryBasis,
+          costPriceOriginalAmount: material.costPriceOriginalAmount,
+          costPriceExchangeRate: material.costPriceExchangeRate,
+          costPriceRateDate: material.costPriceRateDate,
+        }),
       },
     });
 

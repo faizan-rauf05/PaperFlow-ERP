@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdminOrManager, requireWorker } from "@/lib/apiAuth";
+import { requireAdminOrManager, requireWorkerOrWarehouse } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
 import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
 import { buildMaterialRecord, computeInitialStockQty } from "@/lib/material-code";
+import { resolveCostPriceFields } from "@/lib/cost-price";
 import { materialSchema } from "@/lib/validations/admin-forms";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
 import { Prisma } from "@prisma/client";
@@ -31,8 +32,9 @@ function duplicateMaterialErrorMessage(error) {
 export async function GET() {
   try {
     // Workers need read access here for the stage-recording form (material
-    // + stock pickers); mutations below stay admin/manager-only.
-    const authResult = await requireWorker();
+    // + stock pickers), and warehouse staff need it for receiving/picking;
+    // mutations below stay admin/manager-only.
+    const authResult = await requireWorkerOrWarehouse();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, {
         status: authResult.error.status,
@@ -80,7 +82,23 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ materials: serializeModel(enriched) });
+    // Cost price is Admin/Manager-visible only — Workers/Warehouse get everything else.
+    const isCostVisible = !["WORKER", "WAREHOUSE"].includes(authResult.session.user.role);
+    const materialsOut = isCostVisible
+      ? enriched
+      : enriched.map(
+          ({
+            costPricePerUnit,
+            costPriceCurrency,
+            costPriceEntryBasis,
+            costPriceOriginalAmount,
+            costPriceExchangeRate,
+            costPriceRateDate,
+            ...rest
+          }) => rest,
+        );
+
+    return NextResponse.json({ materials: serializeModel(materialsOut) });
   } catch (error) {
     console.error("GET /api/materials error:", error);
     return NextResponse.json(
@@ -127,6 +145,22 @@ export async function POST(request) {
       data.imageUrl = await uploadImageToCloudinary(data.imageUrl, "materials");
     }
 
+    // Cost price: the exchange rate (when currency is USD) is always
+    // fetched/verified server-side here — never trust a client-supplied
+    // rate or pre-converted amount for a monetary calculation.
+    try {
+      const costFields = await resolveCostPriceFields(data.materialType, data, null);
+      Object.assign(data, costFields);
+    } catch (costError) {
+      console.error("Cost price computation failed:", costError);
+      const message =
+        costError.code === "COST_PRICE_DIVISOR_MISSING"
+          ? costError.message
+          : "Could not fetch the current USD→KWD exchange rate. Please try again, or enter the cost price in KWD.";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+    delete data.costPriceAmount;
+
     const material = await prisma.material.create({ data });
 
     const initQty = computeInitialStockQty(material.materialType, data);
@@ -154,6 +188,14 @@ export async function POST(request) {
         name: material.name,
         materialType: material.materialType,
         initialStock: initQty,
+        ...serializeModel({
+          costPricePerUnit: material.costPricePerUnit,
+          costPriceCurrency: material.costPriceCurrency,
+          costPriceEntryBasis: material.costPriceEntryBasis,
+          costPriceOriginalAmount: material.costPriceOriginalAmount,
+          costPriceExchangeRate: material.costPriceExchangeRate,
+          costPriceRateDate: material.costPriceRateDate,
+        }),
       },
     });
 

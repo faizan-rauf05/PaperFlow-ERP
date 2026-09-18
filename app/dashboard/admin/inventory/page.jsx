@@ -55,7 +55,6 @@ import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import {
   inventoryTransactionSchema,
-  MATERIAL_UNITS,
   TX_TYPES,
 } from "@/lib/validations/admin-forms";
 import {
@@ -64,8 +63,35 @@ import {
   firstErrorMessage,
 } from "@/lib/validations/form-utils";
 import { getMaterialSummary } from "@/lib/material-code";
-import { MATERIAL_TYPE_LABELS } from "@/lib/material-constants";
+import {
+  MATERIAL_TYPE_LABELS,
+  COST_PACK_DIVISOR_FIELD_BY_TYPE,
+  COST_PACK_UNIT_LABEL_BY_TYPE,
+} from "@/lib/material-constants";
 import { cn, formatDateTime } from "@/lib/utils";
+
+const STOCK_OUT_TX_TYPES = ["STOCK_OUT", "WASTE"];
+
+// Only material types with an actual "count" field at create time (gluePacks,
+// inkDrums, ropeRolls, bundleQty) get a pack-entry toggle here — that's what
+// makes "N packs/drums/rolls/bundles" a real, already-familiar quantity to enter.
+// Paper rolls have no count field (each Material row is already exactly one
+// roll — see computeInitialStockQty), so despite paperLengthM also being in
+// COST_PACK_DIVISOR_FIELD_BY_TYPE (for per-roll cost pricing), they're excluded here.
+const STOCK_PACK_ELIGIBLE_TYPES = ["GLUE", "INK", "ROPE", "CARTON"];
+
+const TX_ACTION_LABEL = {
+  STOCK_IN: "stock in",
+  STOCK_OUT: "stock out",
+  WASTE: "waste",
+  RETURN: "return",
+  ADJUSTMENT: "adjustment",
+};
+
+/** Rounds off floating-point noise (e.g. 0.1 * 3) without hiding real decimals. */
+function roundQty(n) {
+  return Number(n.toFixed(4));
+}
 
 const MATERIAL_GROUPS = [
   {
@@ -124,6 +150,7 @@ const emptyForm = {
   materialId: "",
   quantity: "",
   unit: "METER",
+  entryBasis: "PER_UNIT",
   remarks: "",
 };
 
@@ -250,11 +277,56 @@ export default function InventoryPage() {
     setDialogOpen(true);
   }
 
+  const selectedMaterial = useMemo(
+    () => materials.find((m) => m.id === form.materialId) || null,
+    [materials, form.materialId],
+  );
+
+  // Pack entry (e.g. "Drums"/"Packs") is only offered for material types that
+  // already have a per-pack size captured at create time (weightKg, ropeLengthM, …
+  // — see COST_PACK_DIVISOR_FIELD_BY_TYPE), so the label/unit here always matches
+  // what the user already saw on the Add Material form. No new units invented.
+  const packDivisorField = selectedMaterial
+    ? COST_PACK_DIVISOR_FIELD_BY_TYPE[selectedMaterial.materialType]
+    : null;
+  const packDivisor = packDivisorField ? Number(selectedMaterial[packDivisorField]) || 0 : 0;
+  const packLabel = selectedMaterial ? COST_PACK_UNIT_LABEL_BY_TYPE[selectedMaterial.materialType] : null;
+  const canUsePackEntry = Boolean(
+    selectedMaterial &&
+      STOCK_PACK_ELIGIBLE_TYPES.includes(selectedMaterial.materialType) &&
+      packDivisor > 0,
+  );
+  const entryBasis = canUsePackEntry ? form.entryBasis || "PER_UNIT" : "PER_UNIT";
+
+  const quantityNum = Number(form.quantity) || 0;
+  const convertedQty =
+    entryBasis === "PER_PACK" && quantityNum > 0 ? roundQty(quantityNum * packDivisor) : quantityNum;
+
+  const availableStock = selectedMaterial ? Number(selectedMaterial.availableStock ?? 0) : null;
+  const exceedsStock =
+    STOCK_OUT_TX_TYPES.includes(form.transactionType) &&
+    !!selectedMaterial &&
+    quantityNum > 0 &&
+    convertedQty > availableStock;
+
   async function handlePost() {
-    const result = validateForm(inventoryTransactionSchema, form);
+    const payload = {
+      ...form,
+      quantity: convertedQty,
+      unit: selectedMaterial?.unit || form.unit,
+    };
+
+    const result = validateForm(inventoryTransactionSchema, payload);
     if (!result.success) {
       setErrors(result.errors);
       toast.error(firstErrorMessage(result.errors));
+      return;
+    }
+
+    if (exceedsStock) {
+      const msg = `Only ${availableStock.toLocaleString()} ${selectedMaterial.unit.toLowerCase()} of ${selectedMaterial.name} available — cannot post this stock-out.`;
+      setErrors((prev) => ({ ...prev, quantity: msg }));
+      toast.error(msg);
       return;
     }
 
@@ -683,11 +755,14 @@ export default function InventoryPage() {
               <SearchableSelect
                 value={form.materialId}
                 onValueChange={(v) => {
-                  patchForm("materialId", v);
                   const selMat = materials.find((m) => m.id === v);
-                  if (selMat?.unit) {
-                    patchForm("unit", selMat.unit);
-                  }
+                  setForm((prev) => ({
+                    ...prev,
+                    materialId: v,
+                    unit: selMat?.unit || prev.unit,
+                    entryBasis: "PER_UNIT",
+                  }));
+                  setErrors((prev) => clearFieldError(prev, "materialId"));
                 }}
                 options={materials.map((m) => ({
                   value: m.id,
@@ -700,8 +775,31 @@ export default function InventoryPage() {
               />
             </FormField>
 
+            {canUsePackEntry && (
+              <FormField label="Enter As">
+                <Select
+                  value={entryBasis}
+                  onValueChange={(v) => patchForm("entryBasis", v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PER_UNIT">
+                      Per {selectedMaterial.unit.toLowerCase()}
+                    </SelectItem>
+                    <SelectItem value="PER_PACK">Per {packLabel}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
-              <FormField label="Quantity" required error={errors.quantity}>
+              <FormField
+                label={entryBasis === "PER_PACK" ? `Quantity (${packLabel}s)` : "Quantity"}
+                required
+                error={errors.quantity}
+              >
                 <Input
                   type="number"
                   min="0"
@@ -709,30 +807,41 @@ export default function InventoryPage() {
                   className={fieldClassName("", !!errors.quantity)}
                   value={form.quantity}
                   onChange={(e) => patchForm("quantity", e.target.value)}
-                  placeholder="Enter quantity"
+                  placeholder={
+                    entryBasis === "PER_PACK"
+                      ? `Number of ${packLabel.toLowerCase()}s`
+                      : "Enter quantity"
+                  }
                 />
               </FormField>
 
-              <FormField label="Unit" required error={errors.unit}>
-                <Select
-                  value={form.unit}
-                  onValueChange={(v) => patchForm("unit", v)}
-                >
-                  <SelectTrigger
-                    className={cn(errors.unit && "border-destructive")}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MATERIAL_UNITS.map((u) => (
-                      <SelectItem key={u} value={u}>
-                        {u}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <FormField label="Unit">
+                <Input
+                  value={selectedMaterial?.unit || form.unit}
+                  disabled
+                  className="bg-muted/50 text-muted-foreground"
+                />
               </FormField>
             </div>
+
+            {quantityNum > 0 && entryBasis === "PER_PACK" && (
+              <p
+                className={cn(
+                  "text-xs",
+                  exceedsStock ? "text-destructive font-medium" : "text-muted-foreground",
+                )}
+              >
+                {quantityNum} {packLabel}
+                {quantityNum === 1 ? "" : "s"} = {convertedQty.toLocaleString()}{" "}
+                {selectedMaterial.unit.toLowerCase()} {TX_ACTION_LABEL[form.transactionType]}
+              </p>
+            )}
+            {exceedsStock && (
+              <p className="text-xs text-destructive font-medium">
+                Only {availableStock.toLocaleString()} {selectedMaterial.unit.toLowerCase()} available —
+                this exceeds current stock.
+              </p>
+            )}
 
             <FormField label="Remarks" error={errors.remarks}>
               <Input
@@ -747,7 +856,7 @@ export default function InventoryPage() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handlePost} disabled={saving}>
+            <Button onClick={handlePost} disabled={saving || exceedsStock}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Post Transaction
             </Button>

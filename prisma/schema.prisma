@@ -14,32 +14,34 @@ enum Role {
   WORKER
   SALES
   FINANCE
+  WAREHOUSE
 }
 
 model User {
-  id                    String                 @id @default(cuid())
-  name                  String
-  email                 String                 @unique
-  passwordHash          String
-  role                  Role                   @default(WORKER)
-  isActive              Boolean                @default(true)
-  signatureUrl          String?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  resetTokens           PasswordResetToken[]
-  auditLogs             AuditLog[]
-  inventoryTransactions InventoryTransaction[]
-  productionStages      ProductionStage[]      @relation("StageWorker")
-  assignedOrders        ProductionOrder[]      @relation("OrderAssignee")
-  salesOrders           ProductionOrder[]      @relation("OrderSalesRep")
-  requestedApprovals    OrderApproval[]        @relation("ApprovalRequester")
-  reviewedApprovals     OrderApproval[]        @relation("ApprovalReviewer")
-  orderAssignments      OrderAssignment[]      @relation("WorkerAssignments")
-  qcRecords             QCRecord[]
-  machineDowntimes      MachineDowntime[]
-  sentQuoteApprovals    CustomerQuoteApproval[] @relation("QuoteSentBy")
-  markedQuoteApprovals  CustomerQuoteApproval[] @relation("QuoteMarkedBy")
-  notifications         Notification[]
+  id                       String                  @id @default(cuid())
+  name                     String
+  email                    String                  @unique
+  passwordHash             String
+  role                     Role                    @default(WORKER)
+  isActive                 Boolean                 @default(true)
+  signatureUrl             String?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  resetTokens              PasswordResetToken[]
+  auditLogs                AuditLog[]
+  inventoryTransactions    InventoryTransaction[]
+  productionStages         ProductionStage[]       @relation("StageWorker")
+  assignedOrders           ProductionOrder[]       @relation("OrderAssignee")
+  salesOrders              ProductionOrder[]       @relation("OrderSalesRep")
+  requestedApprovals       OrderApproval[]         @relation("ApprovalRequester")
+  reviewedApprovals        OrderApproval[]         @relation("ApprovalReviewer")
+  orderAssignments         OrderAssignment[]       @relation("WorkerAssignments")
+  qcRecords                QCRecord[]
+  machineDowntimes         MachineDowntime[]
+  sentQuoteApprovals       CustomerQuoteApproval[] @relation("QuoteSentBy")
+  markedQuoteApprovals     CustomerQuoteApproval[] @relation("QuoteMarkedBy")
+  notifications            Notification[]
+  pickedOrderLineMaterials OrderLineMaterial[]     @relation("OrderLineMaterialPickedBy")
 }
 
 model PasswordResetToken {
@@ -99,49 +101,70 @@ enum MaterialType {
   CARTON
 }
 
+enum CostCurrency {
+  KWD
+  USD
+}
+
+enum CostEntryBasis {
+  PER_UNIT
+  PER_PACK
+}
+
 model Material {
-  id                String                 @id @default(cuid())
-  materialType      MaterialType
-  name              String
-  code              String                 @unique
-  supplierId        String?
-  supplier          Supplier?              @relation(fields: [supplierId], references: [id])
-  unit              String
-  minimumStock      Decimal                @default(0) @db.Decimal(14, 4)
-  kgPerMeter        Decimal?               @db.Decimal(14, 6)
-  paperType         String?
-  paperColor        String?
-  paperLengthM      Decimal?               @db.Decimal(14, 4)
-  paperWidthCm      Decimal?               @db.Decimal(10, 2)
-  gsm               Int?
-  receivingDate     DateTime?
-  barCode           String?                @unique
-  batchNo           String?
-  glueType          String?
-  inkColor          String?
-  weightKg          Decimal?               @db.Decimal(14, 4)
-  ropeColor         String?
-  ropeLengthM       Decimal?               @db.Decimal(14, 4)
-  ropeWeightKg      Decimal?               @db.Decimal(14, 4)
-  ropeRolls         Int?
-  gluePacks         Int?
-  inkDrums          Int?
-  cartonQty         Int?
-  cartonsPerBundle  Int?
-  bundleQty         Int?
-  tapeType          String?
-  size              String?
-  sheetCount        Int?
-  cartonSize        String?
-  cartonLength      Decimal?               @db.Decimal(10, 2)
-  cartonWidth       Decimal?               @db.Decimal(10, 2)
-  cartonHeight      Decimal?               @db.Decimal(10, 2)
-  imageUrl          String?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  transactions      InventoryTransaction[]
-  stageConsumptions StageConsumption[]
-  stages            ProductionStage[]
+  id                      String                 @id @default(cuid())
+  materialType            MaterialType
+  name                    String
+  code                    String                 @unique
+  supplierId              String?
+  supplier                Supplier?              @relation(fields: [supplierId], references: [id])
+  unit                    String
+  minimumStock            Decimal                @default(0) @db.Decimal(14, 4)
+  kgPerMeter              Decimal?               @db.Decimal(14, 6)
+  paperType               String?
+  paperColor              String?
+  paperLengthM            Decimal?               @db.Decimal(14, 4)
+  paperWidthCm            Decimal?               @db.Decimal(10, 2)
+  gsm                     Int?
+  receivingDate           DateTime?
+  barCode                 String?                @unique
+  batchNo                 String?
+  glueType                String?
+  inkColor                String?
+  weightKg                Decimal?               @db.Decimal(14, 4)
+  ropeColor               String?
+  ropeLengthM             Decimal?               @db.Decimal(14, 4)
+  ropeWeightKg            Decimal?               @db.Decimal(14, 4)
+  ropeRolls               Int?
+  gluePacks               Int?
+  inkDrums                Int?
+  cartonQty               Int?
+  cartonsPerBundle        Int?
+  bundleQty               Int?
+  tapeType                String?
+  size                    String?
+  sheetCount              Int?
+  cartonSize              String?
+  cartonLength            Decimal?               @db.Decimal(10, 2)
+  cartonWidth             Decimal?               @db.Decimal(10, 2)
+  cartonHeight            Decimal?               @db.Decimal(10, 2)
+  imageUrl                String?
+  // Cost price is always stored per Material.unit, normalized to KWD.
+  // costPriceCurrency/EntryBasis/OriginalAmount/ExchangeRate/RateDate are
+  // a point-in-time snapshot of how it was entered, kept for audit review
+  // (which rate/pack-size applied when this figure was recorded).
+  costPricePerUnit        Decimal?               @db.Decimal(14, 2)
+  costPriceCurrency       CostCurrency?
+  costPriceEntryBasis     CostEntryBasis?
+  costPriceOriginalAmount Decimal?               @db.Decimal(14, 2)
+  costPriceExchangeRate   Decimal?               @db.Decimal(10, 6)
+  costPriceRateDate       DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  transactions            InventoryTransaction[]
+  stageConsumptions       StageConsumption[]
+  stages                  ProductionStage[]
+  orderLineMaterials      OrderLineMaterial[]
 
   @@unique([batchNo, receivingDate])
   @@index([materialType])
@@ -174,13 +197,13 @@ enum MachineStatus {
 }
 
 model Machine {
-  id          String             @id @default(cuid())
+  id          String            @id @default(cuid())
   name        String
-  machineCode String             @unique
+  machineCode String            @unique
   stageType   StageType
-  status      MachineStatus      @default(ACTIVE)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  status      MachineStatus     @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
   downtimes   MachineDowntime[]
   stages      ProductionStage[]
   qcRecords   QCRecord[]
@@ -201,18 +224,17 @@ model MachineDowntime {
   @@index([machineId])
 }
 
-
 model Customer {
-  id          String           @id @default(cuid())
-  name        String
-  phone       String?
-  email       String?
-  address     String?
-  notes       String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  orders      ProductionOrder[]
-  cliches     Cliche[]
+  id        String            @id @default(cuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  orders    ProductionOrder[]
+  cliches   Cliche[]
 
   @@index([name])
 }
@@ -301,34 +323,34 @@ enum RemainderAction {
 }
 
 model ProductionOrder {
-  id                String                @id @default(cuid())
-  orderNo           String                @unique
-  customerId        String
-  customer          Customer              @relation(fields: [customerId], references: [id])
-  salesRepId        String?
-  salesRepUser      User?                 @relation("OrderSalesRep", fields: [salesRepId], references: [id], onDelete: SetNull)
-  salesRep          String?
-  assignedWorkerId  String?
-  assignedWorker    User?                 @relation("OrderAssignee", fields: [assignedWorkerId], references: [id], onDelete: SetNull)
-  priority          OrderPriority         @default(NORMAL)
-  startDate         DateTime?
-  deliveryDate      DateTime?
-  status            ProductionOrderStatus @default(DRAFT)
-  isArchived        Boolean               @default(false)
-  cancelReason      String?
-  subtotal          Decimal?              @db.Decimal(14, 4)
-  discount          Decimal?              @default(0) @db.Decimal(14, 4)
-  total             Decimal?              @db.Decimal(14, 4)
-  proposedTotal     Decimal?              @db.Decimal(14, 4)
-  approvedTotal     Decimal?              @db.Decimal(14, 4)
-  notes             String?
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-  lines             OrderLine[]
-  yieldRecords      YieldRecord[]
-  approvals         OrderApproval[]
-  assignments       OrderAssignment[]
-  quoteApprovals    CustomerQuoteApproval[]
+  id               String                  @id @default(cuid())
+  orderNo          String                  @unique
+  customerId       String
+  customer         Customer                @relation(fields: [customerId], references: [id])
+  salesRepId       String?
+  salesRepUser     User?                   @relation("OrderSalesRep", fields: [salesRepId], references: [id], onDelete: SetNull)
+  salesRep         String?
+  assignedWorkerId String?
+  assignedWorker   User?                   @relation("OrderAssignee", fields: [assignedWorkerId], references: [id], onDelete: SetNull)
+  priority         OrderPriority           @default(NORMAL)
+  startDate        DateTime?
+  deliveryDate     DateTime?
+  status           ProductionOrderStatus   @default(DRAFT)
+  isArchived       Boolean                 @default(false)
+  cancelReason     String?
+  subtotal         Decimal?                @db.Decimal(14, 4)
+  discount         Decimal?                @default(0) @db.Decimal(14, 4)
+  total            Decimal?                @db.Decimal(14, 4)
+  proposedTotal    Decimal?                @db.Decimal(14, 4)
+  approvedTotal    Decimal?                @db.Decimal(14, 4)
+  notes            String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  lines            OrderLine[]
+  yieldRecords     YieldRecord[]
+  approvals        OrderApproval[]
+  assignments      OrderAssignment[]
+  quoteApprovals   CustomerQuoteApproval[]
 
   @@index([status])
   @@index([customerId])
@@ -339,76 +361,114 @@ model ProductionOrder {
 }
 
 model OrderLine {
-  id              String           @id @default(cuid())
-  orderId         String
-  order           ProductionOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  heightMm        Decimal?         @db.Decimal(10, 2)
-  widthMm         Decimal?         @db.Decimal(10, 2)
-  baseMm          Decimal?         @db.Decimal(10, 2)
-  heightCm        Decimal?         @db.Decimal(10, 2)
-  widthCm         Decimal?         @db.Decimal(10, 2)
-  baseCm          Decimal?         @db.Decimal(10, 2)
-  quantity        Decimal?         @db.Decimal(14, 4)
-  withHandle      Boolean          @default(false)
-  paperType       String?
-  paperColor      String?
-  colorCount      Int              @default(0)
-  referenceFiles  Json?
-  unitPrice       Decimal?         @db.Decimal(14, 4)
-  lineTotal       Decimal?         @db.Decimal(14, 4)
-  fileUrl         String?
-  fileName        String?
-  plannedQty      Decimal          @db.Decimal(14, 4)
-  lineNo          Int
-  clicheId        String?
-  cliche          Cliche?          @relation(fields: [clicheId], references: [id], onDelete: SetNull)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  stages          ProductionStage[]
+  id                 String              @id @default(cuid())
+  orderId            String
+  order              ProductionOrder     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  heightMm           Decimal?            @db.Decimal(10, 2)
+  widthMm            Decimal?            @db.Decimal(10, 2)
+  baseMm             Decimal?            @db.Decimal(10, 2)
+  heightCm           Decimal?            @db.Decimal(10, 2)
+  widthCm            Decimal?            @db.Decimal(10, 2)
+  baseCm             Decimal?            @db.Decimal(10, 2)
+  quantity           Decimal?            @db.Decimal(14, 4)
+  withHandle         Boolean             @default(false)
+  paperType          String?
+  paperColor         String?
+  colorCount         Int                 @default(0)
+  referenceFiles     Json?
+  unitPrice          Decimal?            @db.Decimal(14, 4)
+  lineTotal          Decimal?            @db.Decimal(14, 4)
+  fileUrl            String?
+  fileName           String?
+  plannedQty         Decimal             @db.Decimal(14, 4)
+  lineNo             Int
+  clicheId           String?
+  cliche             Cliche?             @relation(fields: [clicheId], references: [id], onDelete: SetNull)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  stages             ProductionStage[]
+  suggestedMaterials OrderLineMaterial[]
 
   @@unique([orderId, lineNo])
   @@index([orderId])
   @@index([clicheId])
 }
 
+enum OrderMaterialRole {
+  ROLL
+  GLUE
+  ROPE
+  INK
+}
+
+/**
+ * A material suggested (or, later, actually picked) for an order line by
+ * the material suggestion engine (lib/material-suggestion.js). Computed and
+ * saved at quote-creation time so approval shows what stock looked like
+ * when quoted, not a live recomputation. suggestedQty/suggestedCost are the
+ * engine's pick; pickedQty/pickedById are filled in later by warehouse.
+ */
+model OrderLineMaterial {
+  id            String            @id @default(cuid())
+  orderLineId   String
+  orderLine     OrderLine         @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  materialId    String
+  material      Material          @relation(fields: [materialId], references: [id])
+  role          OrderMaterialRole
+  isBestMatch   Boolean           @default(true)
+  suggestedQty  Decimal           @db.Decimal(14, 4)
+  unit          String
+  suggestedCost Decimal           @db.Decimal(14, 4)
+  reason        String?
+  pickedQty     Decimal?          @db.Decimal(14, 4)
+  pickedAt      DateTime?
+  pickedById    String?
+  pickedBy      User?             @relation("OrderLineMaterialPickedBy", fields: [pickedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([orderLineId])
+  @@index([materialId])
+}
+
 model CustomerQuoteApproval {
-  id             String                  @id @default(cuid())
+  id             String                 @id @default(cuid())
   orderId        String
-  order          ProductionOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order          ProductionOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   pdfUrl         String
-  generatedAt    DateTime                @default(now())
+  generatedAt    DateTime               @default(now())
   sentAt         DateTime?
   sentById       String?
-  sentBy         User?                   @relation("QuoteSentBy", fields: [sentById], references: [id], onDelete: SetNull)
-  status         CustomerApprovalStatus  @default(GENERATED)
+  sentBy         User?                  @relation("QuoteSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+  status         CustomerApprovalStatus @default(GENERATED)
   respondedAt    DateTime?
   markedById     String?
-  markedBy       User?                   @relation("QuoteMarkedBy", fields: [markedById], references: [id], onDelete: SetNull)
+  markedBy       User?                  @relation("QuoteMarkedBy", fields: [markedById], references: [id], onDelete: SetNull)
   approvalMethod String?
   evidenceUrl    String?
   remarks        String?
-  createdAt      DateTime                @default(now())
+  createdAt      DateTime               @default(now())
 
   @@index([orderId])
 }
 
 model Cliche {
-  id              String           @id @default(cuid())
-  code            String           @unique
-  widthMm         Decimal?         @db.Decimal(10, 2)
-  heightMm        Decimal?         @db.Decimal(10, 2)
+  id              String          @id @default(cuid())
+  code            String          @unique
+  widthMm         Decimal?        @db.Decimal(10, 2)
+  heightMm        Decimal?        @db.Decimal(10, 2)
   colorCount      Int?
   ownership       ClicheOwnership
   source          ClicheSource
-  condition       ClicheCondition  @default(ACTIVE)
+  condition       ClicheCondition @default(ACTIVE)
   customerId      String?
-  customer        Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customer        Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
   storageLocation String?
-  cost            Decimal?         @db.Decimal(14, 4)
+  cost            Decimal?        @db.Decimal(14, 4)
   photoUrl        String?
   notes           String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
   orderLines      OrderLine[]
 
   @@index([customerId])
@@ -452,39 +512,39 @@ model OrderAssignment {
 }
 
 model ProductionStage {
-  id              String           @id @default(cuid())
-  orderId         String
-  orderLineId     String
-  orderLine       OrderLine        @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
-  stageType       StageType
-  sequence        Int
-  inputQty        Decimal?         @db.Decimal(14, 4)
-  outputQty       Decimal?         @db.Decimal(14, 4)
-  wasteQty        Decimal?         @db.Decimal(14, 4)
-  inputUnit       MaterialUnit?
-  outputUnit      MaterialUnit?
-  status          StageStatus      @default(PENDING)
-  startedAt       DateTime?
-  completedAt     DateTime?
-  workerId        String?
-  worker          User?            @relation("StageWorker", fields: [workerId], references: [id], onDelete: SetNull)
-  machineId       String?
-  machine         Machine?         @relation(fields: [machineId], references: [id], onDelete: SetNull)
-  materialId      String?
-  material        Material?        @relation(fields: [materialId], references: [id], onDelete: SetNull)
-  cutWidthMm      Decimal?         @db.Decimal(10, 2)
-  pieceCount      Int?
-  pieceWeightKg   Decimal?         @db.Decimal(14, 4)
-  remainderAction RemainderAction?
-  remainderQty    Decimal?         @db.Decimal(14, 4)
-  lengthRestockQty Decimal?        @db.Decimal(14, 4)
-  proofUrls       Json?
-  remarks         String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  qcRecords       QCRecord[]
-  yieldRecord     YieldRecord?
-  consumptions    StageConsumption[]
+  id               String             @id @default(cuid())
+  orderId          String
+  orderLineId      String
+  orderLine        OrderLine          @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  stageType        StageType
+  sequence         Int
+  inputQty         Decimal?           @db.Decimal(14, 4)
+  outputQty        Decimal?           @db.Decimal(14, 4)
+  wasteQty         Decimal?           @db.Decimal(14, 4)
+  inputUnit        MaterialUnit?
+  outputUnit       MaterialUnit?
+  status           StageStatus        @default(PENDING)
+  startedAt        DateTime?
+  completedAt      DateTime?
+  workerId         String?
+  worker           User?              @relation("StageWorker", fields: [workerId], references: [id], onDelete: SetNull)
+  machineId        String?
+  machine          Machine?           @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  materialId       String?
+  material         Material?          @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  cutWidthMm       Decimal?           @db.Decimal(10, 2)
+  pieceCount       Int?
+  pieceWeightKg    Decimal?           @db.Decimal(14, 4)
+  remainderAction  RemainderAction?
+  remainderQty     Decimal?           @db.Decimal(14, 4)
+  lengthRestockQty Decimal?           @db.Decimal(14, 4)
+  proofUrls        Json?
+  remarks          String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  qcRecords        QCRecord[]
+  yieldRecord      YieldRecord?
+  consumptions     StageConsumption[]
 
   @@unique([orderLineId, sequence])
   @@index([orderId])
@@ -614,4 +674,3 @@ model Supplier {
   updatedAt     DateTime   @updatedAt
   materials     Material[]
 }
-

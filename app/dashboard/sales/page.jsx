@@ -46,6 +46,7 @@ import { OrderRowActions } from "@/components/orders/order-row-actions";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { cn, formatDateTime } from "@/lib/utils";
+import { formatKWD } from "@/lib/currency";
 import { getOrderLineProgressRows } from "@/lib/order-progress";
 
 const ORDER_STATUS_CONFIG = {
@@ -575,10 +576,10 @@ export default function SalesDashboardPage() {
                           : "Custom Paper Bag"}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono font-semibold text-foreground">
-                        ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                        {formatKWD(o.proposedTotal || o.total)}
                         {o.approvedTotal && Number(o.approvedTotal) !== Number(o.proposedTotal) && (
                           <span className="block text-[11px] text-emerald-600 font-normal">
-                            Approved: ${Number(o.approvedTotal).toFixed(2)}
+                            Approved: {formatKWD(o.approvedTotal)}
                           </span>
                         )}
                       </td>
@@ -856,7 +857,7 @@ export default function SalesDashboardPage() {
 
                     {/* Pricing per line (Step = 0.01) */}
                     <div className="grid grid-cols-2 gap-3 pt-2 border-t">
-                      <FormField label="Unit Price ($ / bag)">
+                      <FormField label="Unit Price (KWD / bag)">
                         <Input
                           type="number"
                           min="0"
@@ -867,7 +868,7 @@ export default function SalesDashboardPage() {
                         />
                       </FormField>
 
-                      <FormField label="Line Total ($)">
+                      <FormField label="Line Total (KWD)">
                         <Input
                           type="number"
                           min="0"
@@ -935,9 +936,9 @@ export default function SalesDashboardPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <span className="text-xs text-muted-foreground">Subtotal Sum</span>
-                  <p className="font-mono text-lg font-bold">${subtotal.toFixed(2)}</p>
+                  <p className="font-mono text-lg font-bold">{formatKWD(subtotal)}</p>
                 </div>
-                <FormField label="Discount ($)">
+                <FormField label="Discount (KWD)">
                   <Input
                     type="number"
                     min="0"
@@ -951,7 +952,7 @@ export default function SalesDashboardPage() {
                   <span className="text-xs text-muted-foreground font-semibold text-primary">
                     Proposed Commercial Total
                   </span>
-                  <p className="font-mono text-xl font-bold text-primary">${proposedTotal.toFixed(2)}</p>
+                  <p className="font-mono text-xl font-bold text-primary">{formatKWD(proposedTotal)}</p>
                 </div>
               </div>
             </div>
@@ -1060,7 +1061,7 @@ export default function SalesDashboardPage() {
                           <span>Handle: <strong>{l.withHandle ? "Yes" : "No"}</strong></span>
                           {l.lineTotal && (
                             <span className="font-mono text-foreground font-medium">
-                              Line Total: ${Number(l.lineTotal).toFixed(2)}
+                              Line Total: {formatKWD(l.lineTotal)}
                             </span>
                           )}
                           {progress && progress.stageLabel !== "—" && (
@@ -1103,12 +1104,12 @@ export default function SalesDashboardPage() {
                 <div className="p-3 bg-muted/50 rounded-md border flex items-center justify-between text-xs font-mono">
                   <div>
                     <span className="text-muted-foreground">Proposed Total:</span>{" "}
-                    <strong className="text-sm">${Number(inspectOrder.proposedTotal || inspectOrder.total || 0).toFixed(2)}</strong>
+                    <strong className="text-sm">{formatKWD(inspectOrder.proposedTotal || inspectOrder.total)}</strong>
                   </div>
                   {inspectOrder.approvedTotal && (
                     <div className="text-right">
                       <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Approved Total:</span>{" "}
-                      <strong className="text-sm text-emerald-700 dark:text-emerald-400">${Number(inspectOrder.approvedTotal).toFixed(2)}</strong>
+                      <strong className="text-sm text-emerald-700 dark:text-emerald-400">{formatKWD(inspectOrder.approvedTotal)}</strong>
                     </div>
                   )}
                 </div>

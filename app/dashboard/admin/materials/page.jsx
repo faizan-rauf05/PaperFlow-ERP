@@ -1,15 +1,10 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   Plus,
-  Pencil,
   Trash2,
   Loader2,
-  ArrowDownAZ,
-  ArrowUpZA,
-  ChevronDown,
-  ChevronRight,
   Search,
   X,
   Filter,
@@ -27,14 +22,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +47,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FormField, fieldClassName } from "@/components/ui/form-field";
+import { MaterialsTable } from "./materials-table";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { materialSchema, supplierSchema } from "@/lib/validations/admin-forms";
@@ -70,24 +58,27 @@ import {
 } from "@/lib/validations/form-utils";
 import {
   createCodeSuffix,
-  getMaterialSummary,
   materialToFormValues,
 } from "@/lib/material-code";
 import {
   CARTON_SIZES,
+  COST_CURRENCIES,
+  COST_PACK_DIVISOR_FIELD_BY_TYPE,
+  COST_PACK_UNIT_LABEL_BY_TYPE,
   GLUE_TYPES,
   GLUE_WEIGHT_PRESETS,
   INK_COLORS,
   KAPTON_TYPES,
   MATERIAL_TYPE_LABELS,
   MATERIAL_TYPES,
+  MATERIAL_UNIT_BY_TYPE,
   PAPER_COLORS,
   PAPER_TYPES,
   PAPER_WIDTH_CM_PRESETS,
   ROPE_COLORS,
   ROPE_LENGTH_PRESETS,
 } from "@/lib/material-constants";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 function selectTriggerClass(hasError) {
   return cn("w-full truncate", hasError && "border-destructive");
@@ -212,30 +203,6 @@ function compareMaterials(a, b, sortBy) {
   });
 }
 
-function SortableHead({ label, column, sortBy, sortDir, onSort, className }) {
-  const active = sortBy === column;
-  return (
-    <TableHead className={className}>
-      <button
-        type="button"
-        onClick={() => onSort(column)}
-        className={cn(
-          "inline-flex items-center gap-1 font-medium hover:text-foreground transition-colors",
-          active ? "text-foreground" : "text-muted-foreground",
-        )}
-      >
-        {label}
-        {active &&
-          (sortDir === "asc" ? (
-            <ArrowDownAZ className="h-3.5 w-3.5" />
-          ) : (
-            <ArrowUpZA className="h-3.5 w-3.5" />
-          ))}
-      </button>
-    </TableHead>
-  );
-}
-
 const emptyForm = {
   materialType: "",
   name: "",
@@ -268,6 +235,9 @@ const emptyForm = {
   cartonsPerBundle: "",
   bundleQty: "",
   imageUrl: "",
+  costPriceAmount: "",
+  costPriceCurrency: "KWD",
+  costPriceEntryBasis: "PER_UNIT",
 };
 
 function LowConfidenceHint() {
@@ -898,16 +868,131 @@ function TypeSpecificFields({ form, errors, patchForm, lowConfidenceFields = [] 
   }
 }
 
+/**
+ * Shown for every material type, right below the type-specific fields.
+ * Cost is always stored per Material.unit in KWD; USD entry converts using
+ * a server-fetched rate (never trusted from the client), and pack-priced
+ * types (glue/ink/rope/carton) can be entered as "price per pack" since
+ * that's how they're actually purchased — see lib/cost-price.js.
+ */
+function CostPriceFields({ form, errors, patchForm, rate }) {
+  const materialType = form.materialType;
+  const packSupported = Boolean(COST_PACK_DIVISOR_FIELD_BY_TYPE[materialType]);
+  const packLabel = COST_PACK_UNIT_LABEL_BY_TYPE[materialType] || "Pack";
+  const unitLabel = (MATERIAL_UNIT_BY_TYPE[materialType] || "unit").toLowerCase();
+  const entryBasis = packSupported ? form.costPriceEntryBasis || "PER_UNIT" : "PER_UNIT";
+  const currency = form.costPriceCurrency || "KWD";
+
+  const amountNum = Number(form.costPriceAmount);
+  let derivedPerUnitKwd = null;
+  if (amountNum > 0) {
+    const amountKwd = currency === "USD" ? (rate.value ? amountNum * rate.value : null) : amountNum;
+    if (amountKwd != null) {
+      if (entryBasis === "PER_PACK") {
+        const divisorField = COST_PACK_DIVISOR_FIELD_BY_TYPE[materialType];
+        const divisor = Number(form[divisorField]);
+        derivedPerUnitKwd = divisor > 0 ? amountKwd / divisor : null;
+      } else {
+        derivedPerUnitKwd = amountKwd;
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border p-3">
+      <p className="text-sm font-medium">Cost Price</p>
+      <div className="grid grid-cols-2 gap-4">
+        <FormField label="Currency">
+          <Select
+            value={currency}
+            onValueChange={(v) => patchForm("costPriceCurrency", v)}
+          >
+            <SelectTrigger className={selectTriggerClass(false)}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COST_CURRENCIES.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+
+        {packSupported && (
+          <FormField label="Priced Per">
+            <Select
+              value={entryBasis}
+              onValueChange={(v) => patchForm("costPriceEntryBasis", v)}
+            >
+              <SelectTrigger className={selectTriggerClass(false)}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PER_UNIT">Per {unitLabel}</SelectItem>
+                <SelectItem value="PER_PACK">Per {packLabel}</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormField>
+        )}
+      </div>
+
+      <FormField
+        label={`Cost Price (${currency} per ${entryBasis === "PER_PACK" ? packLabel.toLowerCase() : unitLabel})`}
+        error={errors.costPriceAmount}
+      >
+        <Input
+          type="number"
+          min="0.01"
+          step="0.01"
+          className={fieldClassName("", !!errors.costPriceAmount)}
+          value={form.costPriceAmount}
+          onChange={(e) => patchForm("costPriceAmount", e.target.value)}
+          placeholder="e.g. 45.50"
+        />
+      </FormField>
+
+      {(currency === "USD" || derivedPerUnitKwd != null) && (
+        <div className="text-xs text-muted-foreground space-y-0.5">
+          {currency === "USD" &&
+            (rate.loading ? (
+              <p>Fetching current exchange rate…</p>
+            ) : rate.error ? (
+              <p className="text-amber-600 dark:text-amber-400">{rate.error}</p>
+            ) : rate.value ? (
+              <p>
+                1 USD = {rate.value.toFixed(5)} KWD (rate as of {rate.date})
+              </p>
+            ) : null)}
+          {derivedPerUnitKwd != null && (
+            <p>≈ {derivedPerUnitKwd.toFixed(2)} KWD per {unitLabel}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MaterialsPage() {
   const [materials, setMaterials] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState({
+    value: null,
+    date: null,
+    loading: false,
+    error: null,
+  });
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortDir, setSortDir] = useState("desc");
   const [groupBy, setGroupBy] = useState("materialType");
@@ -1032,14 +1117,17 @@ export default function MaterialsPage() {
     );
   }, [suppliers, supplierSearchFilter]);
 
-  function handleSort(column) {
-    if (sortBy === column) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortBy(column);
-      setSortDir(column === "createdAt" ? "desc" : "asc");
-    }
-  }
+  const handleSort = useCallback(
+    (column) => {
+      if (sortBy === column) {
+        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      } else {
+        setSortBy(column);
+        setSortDir(column === "createdAt" ? "desc" : "asc");
+      }
+    },
+    [sortBy],
+  );
 
   function handleSortSelect(value) {
     const [field, dir] = value.split(":");
@@ -1066,6 +1154,49 @@ export default function MaterialsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Drop selected ids that no longer exist after a reload (e.g. deleted elsewhere).
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIds = new Set(materials.map((m) => m.id));
+      const next = new Set([...prev].filter((id) => validIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [materials]);
+
+  // Fetch the live USD->KWD rate once per dialog open, not per keystroke —
+  // it's cached server-side too, so switching currency mid-session is instant.
+  useEffect(() => {
+    if (!dialogOpen) return;
+    let cancelled = false;
+    setExchangeRate((prev) => ({ ...prev, loading: true, error: null }));
+    api
+      .get("/exchange-rate")
+      .then(({ data }) => {
+        if (cancelled) return;
+        setExchangeRate({
+          value: data.rate,
+          date: data.date,
+          loading: false,
+          error: data.stale
+            ? "Showing a recently cached rate — live rate temporarily unavailable."
+            : null,
+        });
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setExchangeRate({
+          value: null,
+          date: null,
+          loading: false,
+          error: getApiErrorMessage(e, "Exchange rate unavailable — enter cost in KWD."),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dialogOpen]);
 
   function patchForm(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -1096,14 +1227,14 @@ export default function MaterialsPage() {
     setDialogOpen(true);
   }
 
-  function openEdit(m) {
+  const openEdit = useCallback((m) => {
     setEditing(m);
     setForm(materialToFormValues(m));
     setErrors({});
     setSupplierSearchFilter("");
     setLowConfidenceFields([]);
     setDialogOpen(true);
-  }
+  }, []);
 
   function openNewSupplierDialog(initialValues = {}) {
     setSupplierForm({
@@ -1118,11 +1249,11 @@ export default function MaterialsPage() {
     setSupplierDialogOpen(true);
   }
 
-  function openImagePreview(url) {
+  const openImagePreview = useCallback((url) => {
     setPreviewImageUrl(url);
     setZoomScale(1);
     setRotationDegree(0);
-  }
+  }, []);
 
   async function handleSaveSupplier() {
     const result = validateForm(supplierSchema, supplierForm);
@@ -1345,7 +1476,60 @@ export default function MaterialsPage() {
     }
   }
 
+  const toggleSelected = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAllVisible = useCallback(() => {
+    const visibleIds = sortedMaterials.map((m) => m.id);
+    setSelectedIds((prev) => {
+      const allSelected = visibleIds.length > 0 && visibleIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      if (allSelected) {
+        visibleIds.forEach((id) => next.delete(id));
+      } else {
+        visibleIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }, [sortedMaterials]);
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const results = await Promise.allSettled(
+        ids.map((id) => api.delete(`/materials/${id}`)),
+      );
+      const failed = results.filter((r) => r.status === "rejected");
+      const succeeded = results.length - failed.length;
+      if (succeeded > 0) {
+        toast.success(`${succeeded} material${succeeded === 1 ? "" : "s"} deleted`);
+      }
+      if (failed.length > 0) {
+        toast.error(
+          `${failed.length} material${failed.length === 1 ? "" : "s"} couldn't be deleted — likely still has inventory transactions`,
+        );
+      }
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+      load();
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
+
   const hasType = Boolean(form.materialType);
+  const visibleIds = sortedMaterials.map((m) => m.id);
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const someVisibleSelected = !allVisibleSelected && visibleIds.some((id) => selectedIds.has(id));
 
   return (
     <div className="space-y-6">
@@ -1530,259 +1714,46 @@ export default function MaterialsPage() {
         </div>
       </div>
 
-      <div className="rounded-lg border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[50px] text-center">#</TableHead>
-              <TableHead className="text-center">Label</TableHead>
-              <SortableHead
-                label="Name"
-                column="name"
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
-              <SortableHead
-                label="Type"
-                column="materialType"
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
-              <SortableHead
-                label="Supplier"
-                column="supplier"
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
-              <SortableHead
-                label="Barcode / Batch"
-                column="identifier"
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
-              <TableHead>Initial Stock</TableHead>
-              <TableHead>Available Stock</TableHead>
-              <TableHead>Details</TableHead>
-              <SortableHead
-                label="Created At"
-                column="createdAt"
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={11} className="text-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-                </TableCell>
-              </TableRow>
-            ) : sortedMaterials.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={11}
-                  className="text-center py-8 text-muted-foreground"
-                >
-                  No materials found
-                </TableCell>
-              </TableRow>
-            ) : groupBy !== "none" && groupedMaterials ? (
-              groupedMaterials.map((group) => {
-                const isCollapsed = Boolean(collapsedGroups[group.key]);
-                return (
-                  <Fragment key={`group-block-${group.key}`}>
-                    <TableRow
-                      className="bg-muted/60 hover:bg-muted/80 cursor-pointer font-medium select-none transition-colors"
-                      onClick={() => toggleGroup(group.key)}
-                    >
-                      <TableCell colSpan={11} className="py-2.5 px-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {isCollapsed ? (
-                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                            )}
-                            <span className="font-semibold text-foreground text-sm">
-                              {group.label}
-                            </span>
-                            <Badge
-                              variant="secondary"
-                              className="text-xs font-normal"
-                            >
-                              {group.items.length}{" "}
-                              {group.items.length === 1 ? "item" : "items"}
-                            </Badge>
-                          </div>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {!isCollapsed &&
-                      group.items.map((m, idx) => (
-                        <TableRow key={m.id}>
-                          <TableCell className="text-center font-mono text-xs text-muted-foreground">
-                            {idx + 1}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {m.imageUrl ? (
-                              <button
-                                type="button"
-                                onClick={() => openImagePreview(m.imageUrl)}
-                                title="Click to open zoomable label image"
-                                className="inline-block relative group"
-                              >
-                                <img
-                                  src={m.imageUrl}
-                                  alt="Label"
-                                  className="h-8 w-8 object-cover rounded border mx-auto group-hover:opacity-80 transition-opacity"
-                                />
-                              </button>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {m.name}
-                          </TableCell>
-                          <TableCell>
-                            {MATERIAL_TYPE_LABELS[m.materialType] ??
-                              m.materialType}
-                          </TableCell>
-                          <TableCell>{m.supplier || "—"}</TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {m.barCode || m.batchNo || "—"}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs whitespace-nowrap">
-                            {m.initialStock !== undefined
-                              ? `${m.initialStock.toLocaleString()} ${m.unit || ""}`
-                              : "—"}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs whitespace-nowrap">
-                            <span
-                              className={cn(
-                                "font-semibold px-2 py-0.5 rounded text-xs inline-block",
-                                (m.availableStock ?? 0) <= 0
-                                  ? "bg-destructive/10 text-destructive"
-                                  : m.isLowStock
-                                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                                    : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-                              )}
-                            >
-                              {(m.availableStock ?? 0).toLocaleString()}{" "}
-                              {m.unit || ""}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
-                            {getMaterialSummary(m)}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                            {m.createdAt ? formatDateTime(m.createdAt) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right space-x-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEdit(m)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setDeleteId(m.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </Fragment>
-                );
-              })
-            ) : (
-              sortedMaterials.map((m, idx) => (
-                <TableRow key={m.id}>
-                  <TableCell className="text-center font-mono text-xs text-muted-foreground">
-                    {idx + 1}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {m.imageUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => openImagePreview(m.imageUrl)}
-                        title="Click to open zoomable label image"
-                        className="inline-block relative group"
-                      >
-                        <img
-                          src={m.imageUrl}
-                          alt="Label"
-                          className="h-8 w-8 object-cover rounded border mx-auto group-hover:opacity-80 transition-opacity"
-                        />
-                      </button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="font-medium">{m.name}</TableCell>
-                  <TableCell>
-                    {MATERIAL_TYPE_LABELS[m.materialType] ?? m.materialType}
-                  </TableCell>
-                  <TableCell>{m.supplier || "—"}</TableCell>
-                  <TableCell className="font-mono text-sm">{m.barCode || m.batchNo || "—"}</TableCell>
-                  <TableCell className="font-mono text-xs whitespace-nowrap">
-                    {m.initialStock !== undefined
-                      ? `${m.initialStock.toLocaleString()} ${m.unit || ""}`
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs whitespace-nowrap">
-                    <span
-                      className={cn(
-                        "font-semibold px-2 py-0.5 rounded text-xs inline-block",
-                        (m.availableStock ?? 0) <= 0
-                          ? "bg-destructive/10 text-destructive"
-                          : m.isLowStock
-                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                            : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-                      )}
-                    >
-                      {(m.availableStock ?? 0).toLocaleString()} {m.unit || ""}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {getMaterialSummary(m)}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                    {m.createdAt ? formatDateTime(m.createdAt) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openEdit(m)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteId(m.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-2.5">
+          <span className="text-sm font-medium">
+            {selectedIds.size} material{selectedIds.size === 1 ? "" : "s"} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+              Clear selection
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 className="h-4 w-4 mr-1.5" />
+              Delete Selected
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <MaterialsTable
+        loading={loading}
+        sortedMaterials={sortedMaterials}
+        groupedMaterials={groupedMaterials}
+        groupBy={groupBy}
+        collapsedGroups={collapsedGroups}
+        onToggleGroup={toggleGroup}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        onSort={handleSort}
+        selectedIds={selectedIds}
+        allVisibleSelected={allVisibleSelected}
+        someVisibleSelected={someVisibleSelected}
+        onToggleSelectAll={toggleSelectAllVisible}
+        onToggleSelected={toggleSelected}
+        onEdit={openEdit}
+        onDeleteRequest={setDeleteId}
+        onImagePreview={openImagePreview}
+      />
 
       {/* Main Material Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -1916,6 +1887,13 @@ export default function MaterialsPage() {
                   errors={errors}
                   patchForm={patchForm}
                   lowConfidenceFields={lowConfidenceFields}
+                />
+
+                <CostPriceFields
+                  form={form}
+                  errors={errors}
+                  patchForm={patchForm}
+                  rate={exchangeRate}
                 />
               </>
             )}
@@ -2194,6 +2172,31 @@ export default function MaterialsPage() {
             >
               Delete
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedIds.size} material{selectedIds.size === 1 ? "" : "s"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone. Any selected material that already has inventory
+              transactions recorded against it will be skipped instead of deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+            >
+              {bulkDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Delete {selectedIds.size} material{selectedIds.size === 1 ? "" : "s"}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

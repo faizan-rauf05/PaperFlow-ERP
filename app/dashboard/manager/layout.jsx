@@ -8,8 +8,8 @@ import {
 } from 'lucide-react'
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard/manager', icon: LayoutDashboard },
-  { name: 'Inventory', href: '/dashboard/manager/inventory', icon: Warehouse },
+  { name: 'Dashboard', href: '/dashboard/manager', icon: LayoutDashboard, group: 'Workspace' },
+  { name: 'Inventory', href: '/dashboard/manager/inventory', icon: Warehouse, group: 'Operations' },
 ]
 
 export default function ManagerLayout({ children }) {

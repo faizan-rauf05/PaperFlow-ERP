@@ -37,6 +37,7 @@ export async function GET(request) {
           include: {
             cliche: true,
             stages: { orderBy: { sequence: "asc" } },
+            suggestedMaterials: { include: { material: true } },
           },
         },
         approvals: {
@@ -59,7 +60,28 @@ export async function GET(request) {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({ orders: serializeModel(orders) });
+    // Material cost price is Admin/Manager-visible only, same rule as
+    // /api/materials — strip it (and the suggested cost it drives) for
+    // Sales/Worker viewers of this same endpoint.
+    const isCostVisible = !["WORKER", "WAREHOUSE"].includes(user.role);
+    const ordersOut = isCostVisible
+      ? orders
+      : orders.map((o) => ({
+          ...o,
+          lines: o.lines.map((l) => ({
+            ...l,
+            suggestedMaterials: (l.suggestedMaterials || []).map(
+              ({ suggestedCost, material, ...rest }) => ({
+                ...rest,
+                material: material
+                  ? (({ costPricePerUnit, costPriceCurrency, costPriceEntryBasis, costPriceOriginalAmount, costPriceExchangeRate, costPriceRateDate, ...m }) => m)(material)
+                  : material,
+              }),
+            ),
+          })),
+        }));
+
+    return NextResponse.json({ orders: serializeModel(ordersOut) });
   } catch (error) {
     console.error("GET /api/orders error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
