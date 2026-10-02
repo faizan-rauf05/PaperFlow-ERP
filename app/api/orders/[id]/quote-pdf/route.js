@@ -19,7 +19,7 @@ export async function GET(request, { params }) {
     const { id } = await params;
     const quote = await prisma.customerQuoteApproval.findFirst({
       where: { orderId: id },
-      orderBy: { sentAt: "desc" },
+      orderBy: { generatedAt: "desc" },
     });
 
     if (!quote?.pdfUrl) {

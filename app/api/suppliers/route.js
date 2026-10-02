@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdminOrManager } from "@/lib/apiAuth";
+import { requireWarehouse } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
 import { supplierSchema } from "@/lib/validations/admin-forms";
 
 export async function GET(request) {
   try {
-    const authResult = await requireAdminOrManager();
+    const authResult = await requireWarehouse();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, {
         status: authResult.error.status,
@@ -41,9 +41,10 @@ export async function GET(request) {
   }
 }
 
+// Warehouse can register a supplier while receiving its first delivery.
 export async function POST(request) {
   try {
-    const authResult = await requireAdminOrManager();
+    const authResult = await requireWarehouse();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, {
         status: authResult.error.status,

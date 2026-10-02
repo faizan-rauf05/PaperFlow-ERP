@@ -10,7 +10,8 @@ import {
 } from 'lucide-react'
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard/finance', icon: LayoutDashboard },
+  { name: 'Dashboard', href: '/dashboard/finance', icon: LayoutDashboard, group: 'Workspace' },
+  // Not yet routed — add with `group: 'Business'` once these pages exist.
   // { name: 'Invoices', href: '/dashboard/finance/invoices', icon: Receipt },
   // { name: 'Payments', href: '/dashboard/finance/payments', icon: CreditCard },
   // { name: 'Cost Reports', href: '/dashboard/finance/cost-reports', icon: PieChart },

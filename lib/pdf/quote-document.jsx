@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, Image, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { bagSizeLabel, clicheSizeLabel } from "@/lib/order-labels";
 
 const COMPANY_NAME = process.env.COMPANY_NAME || "PaperFlow Manufacturing";
 
@@ -31,20 +32,49 @@ const styles = StyleSheet.create({
   footer: { position: "absolute", bottom: 24, left: 32, right: 32, fontSize: 8, color: "#999", textAlign: "center" },
 });
 
+/** KWD to the fils (3 decimals), e.g. "51.615 KWD". */
 function fmt(n) {
-  return `$${Number(n || 0).toFixed(2)}`;
+  return `${Number(n || 0).toFixed(3)} KWD`;
 }
 
-function lineSizeLabel(line) {
-  const parts = [line.widthCm, line.heightCm, line.baseCm].filter((v) => v != null);
-  if (!parts.length) return "—";
-  return parts.map((v) => Number(v).toString()).join(" × ") + " cm";
+function fmtUnitPrice(n) {
+  return n == null ? "—" : fmt(n);
+}
+
+/**
+ * "2 Oct 2026" in Kuwait time — a written-out month can't be misread the
+ * way 10/2/2026 can (2 Oct vs 10 Feb), and the server's clock may be UTC.
+ */
+function quoteDate(date = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kuwait", day: "numeric", month: "short", year: "numeric" })
+      .formatToParts(date)
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.day} ${parts.month} ${parts.year}`;
+}
+
+/**
+ * Proposed total (sales rep's price) vs the total the approver signed off
+ * on. A revised price is shown as a "Price adjustment" row so the line
+ * items still add up to the final total.
+ */
+function quoteTotals(order, lines) {
+  const subtotal = Number(
+    order.subtotal ?? lines.reduce((sum, l) => sum + Number(l.lineTotal || 0) + Number(l.clicheCharge || 0), 0),
+  );
+  const discount = Number(order.discount || 0);
+  const proposed = Number(order.proposedTotal ?? order.total ?? subtotal - discount);
+  const final = order.approvedTotal != null ? Number(order.approvedTotal) : proposed;
+  const adjustment = Math.round((final - proposed) * 10000) / 10000;
+  return { subtotal, discount, adjustment, final };
 }
 
 export function QuoteDocument({ order, approver }) {
   const lines = order.lines || [];
-  const subtotal = order.subtotal ?? lines.reduce((sum, l) => sum + Number(l.lineTotal || 0), 0);
-  const total = order.proposedTotal ?? order.total ?? subtotal;
+  const { subtotal, discount, adjustment, final } = quoteTotals(order, lines);
+  // Clichés purchased for this order are billed at cost, one row each.
+  const clicheRows = lines.filter((l) => Number(l.clicheCharge) > 0);
 
   return (
     <Document>
@@ -56,7 +86,7 @@ export function QuoteDocument({ order, approver }) {
           <View>
             <Text style={styles.quoteTitle}>QUOTATION</Text>
             <Text style={styles.orderNo}>{order.orderNo}</Text>
-            <Text style={styles.orderNo}>{new Date().toLocaleDateString()}</Text>
+            <Text style={styles.orderNo}>{quoteDate()}</Text>
           </View>
         </View>
 
@@ -71,7 +101,7 @@ export function QuoteDocument({ order, approver }) {
         <View style={styles.table}>
           <View style={styles.tableHeaderRow}>
             <Text style={styles.colNo}>#</Text>
-            <Text style={styles.colSize}>Size (W×H×Base)</Text>
+            <Text style={styles.colSize}>Size (H × W × B)</Text>
             <Text style={styles.colQty}>Qty</Text>
             <Text style={styles.colHandle}>Handle</Text>
             <Text style={styles.colColors}>Colors</Text>
@@ -81,12 +111,26 @@ export function QuoteDocument({ order, approver }) {
           {lines.map((line) => (
             <View style={styles.tableRow} key={line.id}>
               <Text style={styles.colNo}>{line.lineNo}</Text>
-              <Text style={styles.colSize}>{lineSizeLabel(line)}</Text>
+              <Text style={styles.colSize}>{bagSizeLabel(line)}</Text>
               <Text style={styles.colQty}>{Number(line.quantity || line.plannedQty || 0).toLocaleString()}</Text>
               <Text style={styles.colHandle}>{line.withHandle ? "Yes" : "No"}</Text>
               <Text style={styles.colColors}>{line.colorCount ?? "—"}</Text>
-              <Text style={styles.colPrice}>{fmt(line.unitPrice)}</Text>
-              <Text style={styles.colTotal}>{fmt(line.lineTotal)}</Text>
+              <Text style={styles.colPrice}>{fmtUnitPrice(line.unitPrice)}</Text>
+              <Text style={styles.colTotal}>{line.lineTotal == null ? "—" : fmt(line.lineTotal)}</Text>
+            </View>
+          ))}
+          {clicheRows.map((line) => (
+            <View style={styles.tableRow} key={`cliche-${line.id}`}>
+              <Text style={styles.colNo} />
+              <Text style={styles.colSize}>
+                Cliché for line {line.lineNo}
+                {line.cliche ? ` (${clicheSizeLabel(line.cliche)})` : ""}
+              </Text>
+              <Text style={styles.colQty}>1</Text>
+              <Text style={styles.colHandle}>—</Text>
+              <Text style={styles.colColors}>{line.cliche?.colorCount ?? "—"}</Text>
+              <Text style={styles.colPrice}>{fmtUnitPrice(line.clicheCharge)}</Text>
+              <Text style={styles.colTotal}>{fmt(line.clicheCharge)}</Text>
             </View>
           ))}
         </View>
@@ -96,15 +140,24 @@ export function QuoteDocument({ order, approver }) {
             <Text>Subtotal</Text>
             <Text>{fmt(subtotal)}</Text>
           </View>
-          {order.discount ? (
+          {discount ? (
             <View style={styles.totalsRow}>
               <Text>Discount</Text>
-              <Text>-{fmt(order.discount)}</Text>
+              <Text>-{fmt(discount)}</Text>
+            </View>
+          ) : null}
+          {adjustment ? (
+            <View style={styles.totalsRow}>
+              <Text>Price adjustment</Text>
+              <Text>
+                {adjustment > 0 ? "+" : "-"}
+                {fmt(Math.abs(adjustment))}
+              </Text>
             </View>
           ) : null}
           <View style={styles.grandTotalRow}>
             <Text>Total</Text>
-            <Text>{fmt(total)}</Text>
+            <Text>{fmt(final)}</Text>
           </View>
         </View>
 
@@ -117,7 +170,7 @@ export function QuoteDocument({ order, approver }) {
           )}
           <Text>{approver?.name || "—"}</Text>
           <Text style={styles.muted}>{approver?.role || ""}</Text>
-          <Text style={styles.muted}>{new Date().toLocaleDateString()}</Text>
+          <Text style={styles.muted}>{quoteDate()}</Text>
         </View>
 
         <Text style={styles.footer}>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireWorker } from "@/lib/apiAuth";
-import { getWorkerTasks } from "@/lib/services/workflow.service";
+import { getAvailableStages, getMyActiveStages } from "@/lib/services/workflow.service";
 import { serializeModel } from "@/lib/serialize";
 
 export async function GET() {
@@ -10,8 +10,15 @@ export async function GET() {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }
 
-    const tasks = await getWorkerTasks(authResult.session.user.id);
-    return NextResponse.json({ tasks: serializeModel(tasks) });
+    const [available, mine] = await Promise.all([
+      getAvailableStages(),
+      getMyActiveStages(authResult.session.user.id),
+    ]);
+
+    return NextResponse.json({
+      available: serializeModel(available),
+      mine: serializeModel(mine),
+    });
   } catch (error) {
     console.error("GET /api/production/my-tasks error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

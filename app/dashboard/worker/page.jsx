@@ -2,15 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, Factory, Hand, CheckCircle2, FileDown, Clock, AlertCircle, Loader2 } from "lucide-react";
+import { LogOut, Factory, Hand, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
-import { computeSlittingPreview } from "@/lib/slitting-math";
+import { computeSlitting } from "@/lib/slitting-math";
 import { workerStyles } from "./worker-dashboard.styles";
 import { TaskList } from "./components/task-list";
 import { StageForm } from "./components/stage-form";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  factoryStock,
+  handleConsumptionPayload,
+  initialHandleConsumptions,
+  sortByFactoryStock,
+  toastStockWarnings,
+  validateHandleConsumptions,
+} from "@/components/production/stage-materials";
 
 function formatTimer(seconds) {
   const m = Math.floor(seconds / 60);
@@ -20,11 +27,10 @@ function formatTimer(seconds) {
 
 export default function WorkerMobileDashboard() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("available"); // "available" or "my_tasks"
-  const [availableOrders, setAvailableOrders] = useState([]);
-  const [pickingOrderId, setPickingOrderId] = useState(null);
+  const [activeTab, setActiveTab] = useState("available"); // "available" or "mine"
+  const [availableStages, setAvailableStages] = useState([]);
+  const [myStages, setMyStages] = useState([]);
 
-  const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [startingTaskId, setStartingTaskId] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -32,6 +38,8 @@ export default function WorkerMobileDashboard() {
 
   const [paperMaterials, setPaperMaterials] = useState([]);
   const [cartonMaterials, setCartonMaterials] = useState([]);
+  const [glueMaterials, setGlueMaterials] = useState([]);
+  const [ropeMaterials, setRopeMaterials] = useState([]);
   const [stockById, setStockById] = useState({});
   const [machines, setMachines] = useState([]);
 
@@ -44,19 +52,18 @@ export default function WorkerMobileDashboard() {
   const [outputQty, setOutputQty] = useState("");
   const [wasteQty, setWasteQty] = useState("");
   const [remarks, setRemarks] = useState("");
+  const [nextStage, setNextStage] = useState("");
 
   // Slitting
-  const [cutWidthMm, setCutWidthMm] = useState("");
+  const [recycledRollCount, setRecycledRollCount] = useState("");
+  const [recycledWidthCm, setRecycledWidthCm] = useState("");
   const [lengthRestockQty, setLengthRestockQty] = useState("0");
-  const [remainderAction, setRemainderAction] = useState("");
 
   // Packing
   const [cartonMaterialId, setCartonMaterialId] = useState("");
 
-  // Handle making/pasting
-  const [sideGlueKg, setSideGlueKg] = useState("");
-  const [bottomGlueKg, setBottomGlueKg] = useState("");
-  const [handleRopePcs, setHandleRopePcs] = useState("");
+  // Handle making/pasting: glue/rope qty + which supplier's material was used
+  const [handleConsumption, setHandleConsumption] = useState({});
 
   const [proofPhotoUrl, setProofPhotoUrl] = useState("");
   const [uploadingProof, setUploadingProof] = useState(false);
@@ -68,12 +75,9 @@ export default function WorkerMobileDashboard() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [availRes, tasksRes] = await Promise.all([
-        api.get("/orders/available").catch(() => ({ data: { orders: [] } })),
-        api.get("/production/my-tasks").catch(() => ({ data: { tasks: [] } })),
-      ]);
-      setAvailableOrders(availRes.data.orders || []);
-      setTasks(tasksRes.data.tasks || []);
+      const { data } = await api.get("/production/my-tasks");
+      setAvailableStages(data.available || []);
+      setMyStages(data.mine || []);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -85,10 +89,18 @@ export default function WorkerMobileDashboard() {
     loadData();
   }, [loadData]);
 
-  // Timer interval for active task
+  // Timer interval for active task — seeded from the real claim time
+  // (startedAt) so it reflects actual claim-to-submit elapsed time, not
+  // just time since this screen was opened.
   useEffect(() => {
     if (!selectedTask) return;
-    setTimerSeconds(0);
+    const startedAtMs = selectedTask.startedAt
+      ? new Date(selectedTask.startedAt).getTime()
+      : null;
+    const seed = startedAtMs
+      ? Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
+      : 0;
+    setTimerSeconds(seed);
     const interval = setInterval(() => {
       setTimerSeconds((prev) => prev + 1);
     }, 1000);
@@ -96,63 +108,48 @@ export default function WorkerMobileDashboard() {
   }, [selectedTask]);
 
   async function handleLogout() {
-    await fetch("/api/auth/signout", { method: "POST" });
+    await api.post("/auth/logout");
     router.push("/login");
   }
 
-  // Pick an available approved order
-  async function handlePickOrder(orderId) {
-    setPickingOrderId(orderId);
-    try {
-      await api.post(`/orders/${orderId}/pick`);
-      toast.success("Order picked & assigned to you!");
-      await loadData();
-      setActiveTab("my_tasks");
-    } catch (e) {
-      toast.error(getApiErrorMessage(e));
-    } finally {
-      setPickingOrderId(null);
-    }
-  }
-
+  // Open a stage: claim it first if it's still in the open pool (unclaimed),
+  // then load record-form context, same as continuing an already-claimed one.
   async function handleStartTask(task) {
+    const orderId = task.orderLine?.orderId || task.orderId;
     setStartingTaskId(task.id);
     try {
-      const [recordRes, matsRes, stockRes, machRes] = await Promise.all([
-        api.get(
-          `/production/orders/${task.orderLine?.orderId || task.orderId}/stages/${task.id}/record`,
-        ),
+      if (task.status === "READY") {
+        try {
+          await api.post(`/production/orders/${orderId}/stages/${task.id}/start`);
+        } catch (e) {
+          toast.error(getApiErrorMessage(e) || "Someone else already claimed this stage");
+          await loadData();
+          return;
+        }
+      }
+
+      const [recordRes, matsRes, machRes] = await Promise.all([
+        api.get(`/production/orders/${orderId}/stages/${task.id}/record`),
         api.get("/materials").catch(() => ({ data: { materials: [] } })),
-        api
-          .get("/inventory/current-stock")
-          .catch(() => ({ data: { stock: [] } })),
         api.get("/machines").catch(() => ({ data: { machines: [] } })),
       ]);
 
       const ctx = recordRes.data.context || {};
       const stg = ctx.stage || task;
-      const sideConsumption = stg.consumptions?.find(
-        (c) => c.consumptionKind === "GLUE_SIDE",
-      );
-      const bottomConsumption = stg.consumptions?.find(
-        (c) => c.consumptionKind === "GLUE_BOTTOM",
-      );
 
+      // Production draws from factory stock — pickers list stocked materials first.
       const allMaterials = matsRes.data.materials || [];
-      setPaperMaterials(
-        allMaterials.filter((m) => m.materialType === "PAPER_ROLL"),
-      );
-      setCartonMaterials(
-        allMaterials.filter((m) => m.materialType === "CARTON"),
-      );
+      const byType = (type) =>
+        sortByFactoryStock(allMaterials.filter((m) => m.materialType === type));
+      const glues = byType("GLUE");
+      const ropes = byType("ROPE");
+      setPaperMaterials(byType("PAPER_ROLL"));
+      setCartonMaterials(byType("CARTON"));
+      setGlueMaterials(glues);
+      setRopeMaterials(ropes);
 
       const stockMap = {};
-      for (const row of stockRes.data.stock ||
-        stockRes.data.materials ||
-        stockRes.data.stocks ||
-        []) {
-        stockMap[row.id] = Number(row.currentStock ?? row.stock ?? 0);
-      }
+      for (const m of allMaterials) stockMap[m.id] = factoryStock(m);
       setStockById(stockMap);
 
       setMachines(
@@ -173,39 +170,33 @@ export default function WorkerMobileDashboard() {
       setWasteQty(stg.wasteQty != null ? String(stg.wasteQty) : "");
       setRemarks(stg.remarks || "");
 
-      setCutWidthMm(
-        stg.cutWidthMm != null
-          ? String(stg.cutWidthMm)
-          : ctx.suggestedCutWidthMm != null
-            ? String(ctx.suggestedCutWidthMm)
-            : "",
+      // Recycled rolls: as recorded, else the plan for this roll and bag width
+      const recorded = stg.recycledRollCount != null;
+      setRecycledRollCount(
+        String(recorded ? stg.recycledRollCount : (ctx.slitPlan?.stripCount ?? 0)),
+      );
+      setRecycledWidthCm(
+        recorded
+          ? stg.recycledWidthCm != null ? String(Number(stg.recycledWidthCm)) : ""
+          : ctx.slitPlan?.stripCount ? String(ctx.slitPlan.stripWidthCm) : "",
       );
       setLengthRestockQty(
         stg.lengthRestockQty != null ? String(stg.lengthRestockQty) : "0",
       );
-      setRemainderAction(stg.remainderAction || "");
 
-      setSideGlueKg(
-        sideConsumption?.actualQty != null
-          ? String(sideConsumption.actualQty)
-          : ctx?.gluePlan?.sideKg != null
-            ? String(ctx.gluePlan.sideKg)
-            : "",
+      setHandleConsumption(
+        initialHandleConsumptions(stg.consumptions || task.consumptions, {
+          GLUE: glues,
+          ROPE: ropes,
+        }),
       );
-      setBottomGlueKg(
-        bottomConsumption?.actualQty != null
-          ? String(bottomConsumption.actualQty)
-          : ctx?.gluePlan?.bottomKg != null
-            ? String(ctx.gluePlan.bottomKg)
-            : "",
-      );
-      setHandleRopePcs("");
       setProofPhotoUrl(
         Array.isArray(stg.proofUrls) ? stg.proofUrls[0] || "" : "",
       );
+      setNextStage("");
 
       setErrors({});
-      setSelectedTask(task);
+      setSelectedTask(stg);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -216,6 +207,8 @@ export default function WorkerMobileDashboard() {
   const isRawMaterial = selectedTask?.stageType === "RAW_MATERIAL";
   const isSlitting = selectedTask?.stageType === "SLITTING";
   const isPrinting = selectedTask?.stageType === "PRINTING";
+  const isPrintQc = selectedTask?.stageType === "PRINT_QC";
+  const isQualityCheck = selectedTask?.stageType === "QUALITY_CHECK";
   const isHandleMaking = selectedTask?.stageType === "HANDLE_MAKING_PASTING";
   const isPacking = selectedTask?.stageType === "PACKING";
   const isDispatch = selectedTask?.stageType === "DISPATCH";
@@ -224,24 +217,28 @@ export default function WorkerMobileDashboard() {
 
   const slitPreview = useMemo(() => {
     if (!isSlitting) return null;
-    return computeSlittingPreview({
+    return computeSlitting({
       inputMeters: inputQty,
-      parentWidthMm: context?.paperMaterial?.paperWidthMm,
-      cutWidthMm,
-      gsm: context?.paperMaterial?.gsm,
       lengthRestockMeters: lengthRestockQty,
+      parentWidthCm: context?.paperMaterial?.paperWidthCm,
+      bagWidthCm: context?.bagWidthCm,
+      gsm: context?.paperMaterial?.gsm,
+      stripCount: Number(recycledRollCount) || 0,
+      stripWidthCm: recycledWidthCm,
     });
   }, [
     isSlitting,
     inputQty,
     context?.paperMaterial,
-    cutWidthMm,
+    context?.bagWidthCm,
+    recycledRollCount,
+    recycledWidthCm,
     lengthRestockQty,
   ]);
 
   useEffect(() => {
     if (!slitPreview) return;
-    setOutputQty(String(slitPreview.usableMeters ?? ""));
+    setOutputQty(String(slitPreview.lengthM ?? ""));
   }, [slitPreview]);
 
   function clearError(field) {
@@ -259,11 +256,7 @@ export default function WorkerMobileDashboard() {
     }
     if (isSlitting) {
       if (!machineId) next.machineId = "Slitting machine required";
-      if (!cutWidthMm || Number(cutWidthMm) <= 0)
-        next.cutWidthMm = "Cut width required";
-      if (slitPreview?.widthRemainderMeters > 0 && !remainderAction) {
-        next.remainderAction = "Choose waste or restock for width leftover";
-      }
+      if (slitPreview?.error) next.recycledRollCount = slitPreview.error;
     }
     if (isPrinting) {
       if (!outputQty || Number(outputQty) <= 0)
@@ -272,6 +265,14 @@ export default function WorkerMobileDashboard() {
     if (isHandleMaking) {
       if (!outputQty || Number(outputQty) <= 0)
         next.outputQty = "Bags produced required";
+      Object.assign(
+        next,
+        validateHandleConsumptions(
+          handleConsumption,
+          context?.perBagConsumption,
+          outputQty,
+        ),
+      );
     }
     if (isPacking) {
       if (!outputQty || Number(outputQty) <= 0)
@@ -281,6 +282,13 @@ export default function WorkerMobileDashboard() {
     if (isDispatch) {
       if (!outputQty || Number(outputQty) <= 0)
         next.outputQty = "Dispatched qty required";
+    }
+    if (isPrintQc || isQualityCheck) {
+      if (!outputQty || Number(outputQty) < 0)
+        next.outputQty = "Passed quantity required";
+    }
+    if (isPrintQc && !nextStage) {
+      next.nextStage = "Choose Slitting or Handle Making";
     }
 
     setErrors(next);
@@ -349,30 +357,22 @@ export default function WorkerMobileDashboard() {
         wasteQty: wasteQty || undefined,
         proofUrls: proofUrls.length > 0 ? proofUrls : undefined,
         remarks: remarks || undefined,
-        cutWidthMm: isSlitting ? cutWidthMm || undefined : undefined,
-        remainderAction: isSlitting ? remainderAction || undefined : undefined,
-        remainderQty: isSlitting
-          ? slitPreview?.widthRemainderMeters || undefined
-          : undefined,
         lengthRestockQty: isSlitting
           ? lengthRestockQty || undefined
           : undefined,
-        pieceCount: isSlitting
-          ? slitPreview?.pieceCount || undefined
-          : undefined,
-        pieceWeightKg: isSlitting
-          ? (slitPreview?.pieceWeightKg ?? undefined)
-          : undefined,
+        recycledRollCount: isSlitting ? Number(recycledRollCount) || 0 : undefined,
+        recycledWidthCm: isSlitting ? recycledWidthCm || undefined : undefined,
         cartonMaterialId: isPacking ? cartonMaterialId || undefined : undefined,
-        glueSideQty: isHandleMaking ? sideGlueKg || undefined : undefined,
-        glueBottomQty: isHandleMaking ? bottomGlueKg || undefined : undefined,
+        ...(isHandleMaking ? handleConsumptionPayload(handleConsumption) : {}),
+        nextStage: isPrintQc ? nextStage || undefined : undefined,
       };
 
-      await api.post(
+      const { data } = await api.post(
         `/production/orders/${orderId}/stages/${selectedTask.id}/record`,
         payload,
       );
       toast.success("Stage recorded successfully!");
+      toastStockWarnings(toast, data?.stockWarnings);
       setSelectedTask(null);
       setContext(null);
       loadData();
@@ -418,16 +418,16 @@ export default function WorkerMobileDashboard() {
               className="text-xs font-semibold"
             >
               <Hand className="h-3.5 w-3.5 mr-1.5" />
-              Available Orders ({availableOrders.length})
+              Available Stages ({availableStages.length})
             </Button>
             <Button
-              variant={activeTab === "my_tasks" ? "default" : "outline"}
+              variant={activeTab === "mine" ? "default" : "outline"}
               size="sm"
-              onClick={() => setActiveTab("my_tasks")}
+              onClick={() => setActiveTab("mine")}
               className="text-xs font-semibold"
             >
               <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
-              My Assigned Tasks ({tasks.length})
+              My Active Stages ({myStages.length})
             </Button>
           </div>
         )}
@@ -446,6 +446,9 @@ export default function WorkerMobileDashboard() {
               isHandleMaking={isHandleMaking}
               isPacking={isPacking}
               isDispatch={isDispatch}
+              isPrintQc={isPrintQc}
+              nextStage={nextStage}
+              setNextStage={setNextStage}
               materials={paperMaterials}
               stockById={stockById}
               inheritedMaterial={context?.paperMaterial}
@@ -460,13 +463,14 @@ export default function WorkerMobileDashboard() {
               setWasteQty={setWasteQty}
               remarks={remarks}
               setRemarks={setRemarks}
-              cutWidthMm={cutWidthMm}
-              setCutWidthMm={setCutWidthMm}
+              recycledRollCount={recycledRollCount}
+              setRecycledRollCount={setRecycledRollCount}
+              recycledWidthCm={recycledWidthCm}
+              setRecycledWidthCm={setRecycledWidthCm}
               lengthRestockQty={lengthRestockQty}
               setLengthRestockQty={setLengthRestockQty}
-              remainderAction={remainderAction}
-              setRemainderAction={setRemainderAction}
               slitPreview={slitPreview}
+              bagWidthCm={context?.bagWidthCm}
               inputQty={inputQty}
               cartonMaterialId={cartonMaterialId}
               setCartonMaterialId={setCartonMaterialId}
@@ -475,14 +479,13 @@ export default function WorkerMobileDashboard() {
               setDowntimeOpen={setDowntimeOpen}
               downtimeReason={downtimeReason}
               setDowntimeReason={setDowntimeReason}
-              plannedSideGlue={context?.gluePlan?.sideKg}
-              plannedBottomGlue={context?.gluePlan?.bottomKg}
-              sideGlueKg={sideGlueKg}
-              setSideGlueKg={setSideGlueKg}
-              bottomGlueKg={bottomGlueKg}
-              setBottomGlueKg={setBottomGlueKg}
-              handleRopePcs={handleRopePcs}
-              setHandleRopePcs={setHandleRopePcs}
+              perBagConsumption={context?.perBagConsumption}
+              glueMaterials={glueMaterials}
+              ropeMaterials={ropeMaterials}
+              handleConsumption={handleConsumption}
+              setHandleConsumptionField={(field, value) =>
+                setHandleConsumption((prev) => ({ ...prev, [field]: value }))
+              }
               proofPhotoUrl={proofPhotoUrl}
               uploadingProof={uploadingProof}
               onProofUpload={handleProofUpload}
@@ -493,116 +496,22 @@ export default function WorkerMobileDashboard() {
               onReportDowntime={handleReportDowntime}
             />
           ) : activeTab === "available" ? (
-            /* Available Approved Orders Queue */
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="font-bold text-sm text-foreground flex items-center gap-2">
-                  <Hand className="h-4 w-4 text-primary" /> Approved Orders Ready to Pick
-                </h2>
-                <span className="text-xs text-muted-foreground">
-                  Pick an order to assign it to yourself
-                </span>
-              </div>
-
-              {loading ? (
-                <div className={workerStyles.loadingBox}>
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                  <p>Loading available orders…</p>
-                </div>
-              ) : availableOrders.length === 0 ? (
-                <div className="p-8 border border-dashed rounded-lg text-center space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    No approved orders available for picking right now.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Check back when a manager approves new paper bag orders!
-                  </p>
-                </div>
-              ) : (
-                availableOrders.map((ord) => (
-                  <div
-                    key={ord.id}
-                    className="p-4 border rounded-xl bg-card shadow-xs space-y-3"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-base text-foreground">
-                            {ord.orderNo}
-                          </span>
-                          {ord.priority && ord.priority !== "NORMAL" && (
-                            <Badge className="text-[10px] bg-amber-500/20 text-amber-800 dark:text-amber-300">
-                              {ord.priority}
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xs font-semibold text-muted-foreground mt-0.5">
-                          Customer: {ord.customer?.name || "Standard Client"}
-                        </p>
-                      </div>
-                      <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs">
-                        Ready for Work
-                      </Badge>
-                    </div>
-
-                    {/* Specifications */}
-                    <div className="border rounded-lg p-2.5 bg-muted/40 text-xs space-y-1.5">
-                      {(ord.lines || []).map((l, lIdx) => (
-                        <div key={lIdx} className="flex items-center justify-between">
-                          <span>
-                            Line #{l.lineNo || lIdx + 1}:{" "}
-                            <strong>
-                              {l.widthCm || (l.widthMm ? l.widthMm / 10 : 30)}×
-                              {l.heightCm || (l.heightMm ? l.heightMm / 10 : 40)}×
-                              {l.baseCm || (l.baseMm ? l.baseMm / 10 : 12)}cm
-                            </strong>{" "}
-                            ({l.paperType || "Brown"}, {l.colorCount ?? 0} colors,{" "}
-                            {l.withHandle ? "With Handle" : "No Handle"})
-                          </span>
-                          <span className="font-mono font-bold">
-                            {Number(l.quantity || l.plannedQty || 0).toLocaleString()} bags
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {ord.notes && (
-                      <p className="text-xs text-muted-foreground italic">
-                        Notes: "{ord.notes}"
-                      </p>
-                    )}
-
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-[11px] text-muted-foreground">
-                        {ord.deliveryDate
-                          ? `Delivery: ${new Date(ord.deliveryDate).toLocaleDateString()}`
-                          : "Standard Schedule"}
-                      </span>
-                      <Button
-                        size="sm"
-                        onClick={() => handlePickOrder(ord.id)}
-                        disabled={pickingOrderId === ord.id}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs h-9 px-4 shadow-xs"
-                      >
-                        {pickingOrderId === ord.id ? (
-                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                        ) : (
-                          <Hand className="h-4 w-4 mr-1.5" />
-                        )}
-                        Pick This Order
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          ) : (
-            /* My Picked / Assigned Tasks */
+            /* Open stage pool — first come, first served */
             <TaskList
-              tasks={tasks}
+              tasks={availableStages}
               loading={loading}
               startingTaskId={startingTaskId}
               onStartTask={handleStartTask}
+              mode="available"
+            />
+          ) : (
+            /* Stages this worker currently holds */
+            <TaskList
+              tasks={myStages}
+              loading={loading}
+              startingTaskId={startingTaskId}
+              onStartTask={handleStartTask}
+              mode="mine"
             />
           )}
         </main>

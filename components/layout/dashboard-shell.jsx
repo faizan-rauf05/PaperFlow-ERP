@@ -58,8 +58,10 @@ export function DashboardShell({ children, navigation, userRole: roleProp, userN
               router.refresh()
             }}
           />
-          <main className="flex-1 overflow-y-auto bg-muted/30 p-4 sm:p-6">
-            {children}
+          <main className="flex-1 overflow-y-auto bg-muted/30">
+            <div className="mx-auto w-full max-w-400 p-4 sm:p-6 lg:p-8">
+              {children}
+            </div>
           </main>
         </div>
       </div>

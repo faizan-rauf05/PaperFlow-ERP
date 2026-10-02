@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/apiAuth";
+import { requireAuth, requireSalesOrAbove } from "@/lib/apiAuth";
 import { createSalesOrder } from "@/lib/services/order-workflow.service";
+import { salesOrderSchema } from "@/lib/validations/sales-order";
+import { canSeeCost, withoutOrderMaterialCost } from "@/lib/api/cost-visibility";
 import { serializeModel } from "@/lib/serialize";
 
 export async function GET(request) {
@@ -33,7 +35,14 @@ export async function GET(request) {
         customer: true,
         salesRepUser: { select: { id: true, name: true, email: true } },
         assignedWorker: { select: { id: true, name: true, email: true } },
-        lines: { include: { cliche: true } },
+        lines: {
+          orderBy: { lineNo: "asc" },
+          include: {
+            cliche: true,
+            stages: { orderBy: { sequence: "asc" } },
+            suggestedMaterials: { orderBy: { role: "asc" }, include: { material: true } },
+          },
+        },
         approvals: {
           orderBy: { createdAt: "desc" },
           take: 1,
@@ -43,7 +52,7 @@ export async function GET(request) {
           },
         },
         quoteApprovals: {
-          orderBy: { sentAt: "desc" },
+          orderBy: { generatedAt: "desc" },
           take: 1,
           include: {
             sentBy: { select: { id: true, name: true, email: true } },
@@ -54,38 +63,34 @@ export async function GET(request) {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({ orders: serializeModel(orders) });
+    // Material cost is Admin/Manager-only (same rule as /api/materials).
+    const ordersOut = canSeeCost(user.role) ? orders : orders.map(withoutOrderMaterialCost);
+
+    return NextResponse.json({ orders: serializeModel(ordersOut) });
   } catch (error) {
     console.error("GET /api/orders error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
+// Proposals can be created by Sales, Admin and Manager.
 export async function POST(request) {
   try {
-    const authResult = await requireAuth();
+    const authResult = await requireSalesOrAbove();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }
 
-    const body = await request.json();
-    const userId = authResult.session.user.id;
+    const parsed = salesOrderSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid order data" }, { status: 400 });
+    }
 
-    // If user is sales rep, default salesRepId to them unless specified
-    const salesRepId = body.salesRepId || (authResult.session.user.role === "SALES" ? userId : null);
-
+    const { id: userId, role } = authResult.session.user;
     const order = await createSalesOrder({
-      customerId: body.customerId,
-      salesRepId,
-      priority: body.priority,
-      deliveryDate: body.deliveryDate,
-      notes: body.notes,
-      subtotal: body.subtotal,
-      discount: body.discount,
-      total: body.total,
-      proposedTotal: body.proposedTotal || body.total,
-      lines: body.lines,
-      status: body.status || "PENDING_APPROVAL",
+      ...parsed.data,
+      // A sales rep's proposal is always their own; Admin/Manager pick a rep (or none).
+      salesRepId: role === "SALES" ? userId : parsed.data.salesRepId,
       createdById: userId,
     });
 

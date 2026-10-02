@@ -12,45 +12,23 @@ import {
   Loader2,
   PackageCheck,
   Send,
-  Search,
-  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { FormField } from "@/components/ui/form-field";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { cn, formatDateTime } from "@/lib/utils";
-
-const EMPTY_CLICHE_FORM = {
-  widthMm: "",
-  heightMm: "",
-  colorCount: "",
-  ownership: "COMPANY_OWNED",
-  source: "PURCHASED_NEW",
-  cost: "",
-  notes: "",
-};
+import { formatKWD } from "@/lib/currency";
+import { clicheDetailsLabel, clicheSizeLabel, lineNeedsCliche } from "@/lib/order-labels";
 
 /**
- * Customer quote PDF + response recording + per-line cliche assignment +
- * send-to-production. Shared between Sales and Admin/Manager order review —
- * same controls, same behavior, wherever an order is inspected.
+ * Customer quote PDF + response recording + each line's cliché (chosen in
+ * the proposal, read-only here) + send-to-production. Shared between Sales
+ * and Admin/Manager order review — same controls, same behavior, wherever an
+ * order is inspected — except send-to-production, which only Admin/Manager
+ * may do (`canSendToProduction`).
  */
-export function CustomerQuoteSection({ order, onUpdate }) {
+export function CustomerQuoteSection({ order, onUpdate, canSendToProduction = true }) {
   const [customerApproved, setCustomerApproved] = useState(true);
   const [approvalMethod, setApprovalMethod] = useState("");
   const [responseRemarks, setResponseRemarks] = useState("");
@@ -58,13 +36,7 @@ export function CustomerQuoteSection({ order, onUpdate }) {
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [recordingResponse, setRecordingResponse] = useState(false);
 
-  const [clicheDialogLine, setClicheDialogLine] = useState(null);
-  const [clicheSearch, setClicheSearch] = useState("");
-  const [clicheResults, setClicheResults] = useState([]);
-  const [clicheSearching, setClicheSearching] = useState(false);
-  const [showNewClicheForm, setShowNewClicheForm] = useState(false);
-  const [newClicheForm, setNewClicheForm] = useState(EMPTY_CLICHE_FORM);
-  const [assigningCliche, setAssigningCliche] = useState(false);
+  const [markingSent, setMarkingSent] = useState(false);
   const [sendingToProduction, setSendingToProduction] = useState(false);
 
   // Reset the response form whenever a different order is being viewed
@@ -74,34 +46,6 @@ export function CustomerQuoteSection({ order, onUpdate }) {
     setResponseRemarks("");
     setEvidenceUrl("");
   }, [order?.id]);
-
-  useEffect(() => {
-    if (!clicheDialogLine) return;
-    const timer = setTimeout(async () => {
-      setClicheSearching(true);
-      try {
-        const { data } = await api.get("/cliches", {
-          params: {
-            search: clicheSearch || undefined,
-            customerId: order?.customerId || undefined,
-          },
-        });
-        setClicheResults(data.cliches || []);
-      } catch (e) {
-        // silent — search box, not worth a toast on every keystroke
-      } finally {
-        setClicheSearching(false);
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clicheDialogLine, clicheSearch]);
-
-  async function refreshOrder() {
-    const { data } = await api.get("/orders");
-    const refreshed = (data.orders || []).find((o) => o.id === order.id);
-    if (refreshed) onUpdate(refreshed);
-  }
 
   async function handleUploadEvidence(file) {
     if (!file) return;
@@ -118,6 +62,19 @@ export function CustomerQuoteSection({ order, onUpdate }) {
       toast.error(getApiErrorMessage(e, "Failed to upload evidence"));
     } finally {
       setUploadingEvidence(false);
+    }
+  }
+
+  async function handleMarkQuoteSent() {
+    setMarkingSent(true);
+    try {
+      const { data } = await api.post(`/orders/${order.id}/mark-quote-sent`);
+      onUpdate(data.order);
+      toast.success("Quote marked as sent to the customer");
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "Failed to mark quote as sent"));
+    } finally {
+      setMarkingSent(false);
     }
   }
 
@@ -139,52 +96,21 @@ export function CustomerQuoteSection({ order, onUpdate }) {
     }
   }
 
-  function openClicheDialog(line) {
-    setClicheDialogLine(line);
-    setClicheSearch("");
-    setClicheResults([]);
-    setShowNewClicheForm(false);
-    setNewClicheForm(EMPTY_CLICHE_FORM);
-  }
-
-  async function handleAssignExistingCliche(clicheId) {
-    if (!clicheDialogLine) return;
-    setAssigningCliche(true);
-    try {
-      await api.post(`/order-lines/${clicheDialogLine.id}/cliche`, { clicheId });
-      await refreshOrder();
-      toast.success("Cliche assigned");
-      setClicheDialogLine(null);
-    } catch (e) {
-      toast.error(getApiErrorMessage(e, "Failed to assign cliche"));
-    } finally {
-      setAssigningCliche(false);
-    }
-  }
-
-  async function handleCreateAndAssignCliche() {
-    if (!clicheDialogLine) return;
-    setAssigningCliche(true);
-    try {
-      await api.post(`/order-lines/${clicheDialogLine.id}/cliche`, {
-        newCliche: { ...newClicheForm, customerId: order?.customerId || undefined },
-      });
-      await refreshOrder();
-      toast.success("Cliche created and assigned");
-      setClicheDialogLine(null);
-    } catch (e) {
-      toast.error(getApiErrorMessage(e, "Failed to create cliche"));
-    } finally {
-      setAssigningCliche(false);
-    }
-  }
-
   async function handleSendToProduction() {
     setSendingToProduction(true);
     try {
       const { data } = await api.post(`/orders/${order.id}/send-to-production`);
       onUpdate(data.order);
-      toast.success("Order sent to production");
+      if (data.status === "AWAITING_MATERIALS") {
+        const moved = data.movedToWarehouse || [];
+        toast.success("Sent to production — waiting for the warehouse to pick materials", {
+          description: moved.length
+            ? `No longer enough in the factory, now picked from the warehouse: ${moved.map((m) => m.name).join(", ")}`
+            : undefined,
+        });
+      } else {
+        toast.success("Order sent to production — all materials are in the factory, workers can start");
+      }
     } catch (e) {
       toast.error(getApiErrorMessage(e, "Failed to send to production"));
     } finally {
@@ -195,9 +121,7 @@ export function CustomerQuoteSection({ order, onUpdate }) {
   if (!order) return null;
 
   const hasQuotes = Array.isArray(order.quoteApprovals) && order.quoteApprovals.length > 0;
-  const showClicheSection = ["CUSTOMER_APPROVED", "READY_FOR_WORK", "PICKED", "IN_PROGRESS", "COMPLETED"].includes(
-    order.status,
-  );
+  const missingCliches = (order.lines || []).filter((l) => lineNeedsCliche(l) && !l.clicheId);
 
   return (
     <>
@@ -215,7 +139,11 @@ export function CustomerQuoteSection({ order, onUpdate }) {
                   </span>
                   <div className="min-w-0">
                     <p className="font-medium truncate">Quote PDF</p>
-                    <p className="text-muted-foreground text-[11px]">Sent {formatDateTime(q.sentAt)}</p>
+                    <p className="text-muted-foreground text-[11px]">
+                      {q.sentAt
+                        ? `Sent ${formatDateTime(q.sentAt)}`
+                        : `Generated ${formatDateTime(q.generatedAt)} — not sent yet`}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -226,10 +154,12 @@ export function CustomerQuoteSection({ order, onUpdate }) {
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
                         : q.status === "REJECTED"
                           ? "bg-destructive/15 text-destructive"
-                          : "bg-violet-500/15 text-violet-700 dark:text-violet-400",
+                          : q.status === "GENERATED"
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                            : "bg-violet-500/15 text-violet-700 dark:text-violet-400",
                     )}
                   >
-                    {q.status}
+                    {q.status === "GENERATED" ? "NOT SENT" : q.status}
                   </span>
                   <Button asChild variant="outline" size="sm" className="h-8">
                     <a href={`/api/orders/${order.id}/quote-pdf`} target="_blank" rel="noreferrer">
@@ -239,6 +169,27 @@ export function CustomerQuoteSection({ order, onUpdate }) {
                 </div>
               </div>
             ))}
+
+            {order.status === "APPROVED" && (
+              <div className="pt-2 border-t">
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={markingSent}
+                  onClick={handleMarkQuoteSent}
+                >
+                  {markingSent ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Mark Quote as Sent
+                </Button>
+                <p className="text-[11px] text-muted-foreground mt-1.5">
+                  The quote is generated but hasn't been sent yet — confirm once you've actually shared it with the customer.
+                </p>
+              </div>
+            )}
 
             {order.status === "PENDING_CUSTOMER_APPROVAL" && (
               <div className="space-y-2 pt-2 border-t">
@@ -312,202 +263,68 @@ export function CustomerQuoteSection({ order, onUpdate }) {
         </div>
       )}
 
-      {showClicheSection && (
+      {(order.lines || []).length > 0 && (
         <div>
           <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-            <PackageCheck className="h-3.5 w-3.5 text-primary" /> Cliches (Printing Plates)
+            <PackageCheck className="h-3.5 w-3.5 text-primary" /> Clichés (Printing Plates)
           </h4>
           <div className="border rounded-md divide-y">
-            {(order.lines || []).map((l, i) => (
-              <div key={l.id || i} className="p-3 text-xs flex items-center justify-between gap-3">
-                <div>
-                  <span className="font-medium">Line #{l.lineNo || i + 1}</span>
+            {order.lines.map((l, i) => (
+              <div key={l.id || i} className="p-3 text-xs flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-muted-foreground">Line #{l.lineNo || i + 1}</p>
                   {l.cliche ? (
-                    <p className="text-muted-foreground mt-0.5">
-                      {l.cliche.code} · {l.cliche.widthMm || "?"}×{l.cliche.heightMm || "?"}mm ·{" "}
-                      {l.cliche.ownership === "CUSTOMER_OWNED" ? "Customer-owned" : "Company-owned"}
-                    </p>
+                    <>
+                      <p className="font-semibold text-sm">{clicheSizeLabel(l.cliche)}</p>
+                      <p className="text-muted-foreground mt-0.5">
+                        {clicheDetailsLabel(l.cliche)}
+                      </p>
+                    </>
+                  ) : lineNeedsCliche(l) ? (
+                    <p className="text-amber-700 dark:text-amber-400 mt-0.5">No cliché — edit the order to add one</p>
                   ) : (
-                    <p className="text-amber-700 dark:text-amber-400 mt-0.5">No cliche assigned</p>
+                    <p className="text-muted-foreground mt-0.5">Plain bag — no cliché needed</p>
                   )}
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => openClicheDialog(l)}
-                  disabled={order.status !== "CUSTOMER_APPROVED"}
-                >
-                  {l.cliche ? "Change" : "Assign"}
-                </Button>
+                {Number(l.clicheCharge) > 0 && (
+                  <span className="shrink-0 text-right">
+                    <span className="block font-mono font-semibold">{formatKWD(l.clicheCharge)}</span>
+                    <span className="text-[11px] text-muted-foreground">Billed at cost</span>
+                  </span>
+                )}
               </div>
             ))}
           </div>
           {order.status === "CUSTOMER_APPROVED" && (
             <div className="mt-3">
-              {(() => {
-                const missing = (order.lines || []).filter((l) => !l.clicheId);
-                return missing.length > 0 ? (
-                  <p className="text-xs text-amber-700 dark:text-amber-400 mb-2">
-                    {missing.length} of {order.lines.length} line(s) still need a cliche before this can go to production.
-                  </p>
-                ) : null;
-              })()}
-              <Button
-                size="sm"
-                className="w-full"
-                disabled={sendingToProduction || (order.lines || []).some((l) => !l.clicheId)}
-                onClick={handleSendToProduction}
-              >
-                {sendingToProduction ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                ) : (
-                  <Send className="h-3.5 w-3.5 mr-1" />
-                )}
-                Send to Production
-              </Button>
+              {missingCliches.length > 0 && (
+                <p className="text-xs text-amber-700 dark:text-amber-400 mb-2">
+                  {missingCliches.length} printed line(s) still need a cliché — edit the order to add it before production.
+                </p>
+              )}
+              {canSendToProduction ? (
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={sendingToProduction || missingCliches.length > 0}
+                  onClick={handleSendToProduction}
+                >
+                  {sendingToProduction ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Send to Production
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  The customer has approved — an admin or manager sends this order to production.
+                </p>
+              )}
             </div>
           )}
         </div>
       )}
-
-      {/* Cliche Assign/Create Dialog */}
-      <Dialog open={!!clicheDialogLine} onOpenChange={(open) => !open && setClicheDialogLine(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Assign Cliche — Line #{clicheDialogLine?.lineNo}</DialogTitle>
-          </DialogHeader>
-
-          {!showNewClicheForm ? (
-            <div className="space-y-3 py-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search by code, customer, or notes..."
-                  value={clicheSearch}
-                  onChange={(e) => setClicheSearch(e.target.value)}
-                  className="pl-8 h-9 text-sm"
-                />
-              </div>
-
-              <div className="max-h-60 overflow-y-auto border rounded-md divide-y">
-                {clicheSearching ? (
-                  <div className="p-4 text-center text-xs text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" /> Searching...
-                  </div>
-                ) : clicheResults.length === 0 ? (
-                  <p className="p-4 text-center text-xs text-muted-foreground">No matching cliches found.</p>
-                ) : (
-                  clicheResults.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      disabled={assigningCliche}
-                      onClick={() => handleAssignExistingCliche(c.id)}
-                      className="w-full text-left p-3 text-xs hover:bg-muted/60 transition-colors"
-                    >
-                      <div className="font-medium">{c.code}</div>
-                      <div className="text-muted-foreground">
-                        {c.widthMm || "?"}×{c.heightMm || "?"}mm · {c.colorCount ?? "?"} colors ·{" "}
-                        {c.ownership === "CUSTOMER_OWNED" ? "Customer-owned" : "Company-owned"}
-                        {c.customer?.name ? ` · ${c.customer.name}` : ""}
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => setShowNewClicheForm(true)}
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" /> Log a New Cliche
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3 py-2">
-              <div className="grid grid-cols-2 gap-3">
-                <FormField label="Width (mm)">
-                  <Input
-                    type="number"
-                    value={newClicheForm.widthMm}
-                    onChange={(e) => setNewClicheForm({ ...newClicheForm, widthMm: e.target.value })}
-                  />
-                </FormField>
-                <FormField label="Height (mm)">
-                  <Input
-                    type="number"
-                    value={newClicheForm.heightMm}
-                    onChange={(e) => setNewClicheForm({ ...newClicheForm, heightMm: e.target.value })}
-                  />
-                </FormField>
-              </div>
-              <FormField label="Color Count">
-                <Input
-                  type="number"
-                  value={newClicheForm.colorCount}
-                  onChange={(e) => setNewClicheForm({ ...newClicheForm, colorCount: e.target.value })}
-                />
-              </FormField>
-              <div className="grid grid-cols-2 gap-3">
-                <FormField label="Ownership">
-                  <Select
-                    value={newClicheForm.ownership}
-                    onValueChange={(v) => setNewClicheForm({ ...newClicheForm, ownership: v })}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="COMPANY_OWNED">Company-owned</SelectItem>
-                      <SelectItem value="CUSTOMER_OWNED">Customer-owned</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormField>
-                <FormField label="Source">
-                  <Select
-                    value={newClicheForm.source}
-                    onValueChange={(v) => setNewClicheForm({ ...newClicheForm, source: v })}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PURCHASED_NEW">Purchased new</SelectItem>
-                      <SelectItem value="CUSTOMER_SUPPLIED">Customer supplied</SelectItem>
-                      <SelectItem value="REUSED_EXISTING">Reused existing</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormField>
-              </div>
-              {newClicheForm.source === "PURCHASED_NEW" && (
-                <FormField label="Cost">
-                  <Input
-                    type="number"
-                    value={newClicheForm.cost}
-                    onChange={(e) => setNewClicheForm({ ...newClicheForm, cost: e.target.value })}
-                  />
-                </FormField>
-              )}
-              <FormField label="Notes">
-                <Input
-                  value={newClicheForm.notes}
-                  onChange={(e) => setNewClicheForm({ ...newClicheForm, notes: e.target.value })}
-                  placeholder="Optional"
-                />
-              </FormField>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowNewClicheForm(false)}>
-                  Back to Search
-                </Button>
-                <Button size="sm" className="flex-1" disabled={assigningCliche} onClick={handleCreateAndAssignCliche}>
-                  {assigningCliche ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : null}
-                  Save & Assign
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

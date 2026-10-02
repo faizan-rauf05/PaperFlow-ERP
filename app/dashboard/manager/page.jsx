@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Factory,
   ShoppingBag,
@@ -13,6 +14,8 @@ import {
   Clock,
   DollarSign,
   FileDown,
+  Plus,
+  Edit,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,10 +37,18 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { FormField } from "@/components/ui/form-field";
+import { OrderRowActions } from "@/components/orders/order-row-actions";
+import { CustomerQuoteSection } from "@/components/orders/customer-quote-section";
+import { MaterialSourcingSection } from "@/components/orders/material-sourcing-section";
+import { FactoryGlueAlert } from "@/components/inventory/factory-glue-alert";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { ORDER_STATUS_COLORS } from "@/lib/order-progress";
+import { EDITABLE_ORDER_STATUSES } from "@/lib/validations/sales-order";
 import { cn, formatDateTime } from "@/lib/utils";
+import { formatKWD } from "@/lib/currency";
+import { bagSizeLabel } from "@/lib/order-labels";
+import { bagWeightLabel, formatWeight, matchedRollBagWeight } from "@/lib/paper-sizing";
 
 const STATUS_COLORS = {
   ...ORDER_STATUS_COLORS,
@@ -51,15 +62,18 @@ const STATUS_COLORS = {
 };
 
 export default function ManagerDashboard() {
+  const router = useRouter();
   const [kpis, setKpis] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [viewFilter, setViewFilter] = useState("active"); // "active" | "cancelled" | "archived"
 
   // Review / Approval Modal State
   const [reviewOrder, setReviewOrder] = useState(null);
   const [approvedTotal, setApprovedTotal] = useState("");
   const [remarks, setRemarks] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [materialSources, setMaterialSources] = useState({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,6 +97,24 @@ export default function ManagerDashboard() {
 
   const pendingApprovals = orders.filter((o) => o.status === "PENDING_APPROVAL");
 
+  // Three-way partition: archived hides an order regardless of status.
+  const viewFilteredOrders = orders.filter((o) => {
+    if (viewFilter === "archived") return o.isArchived;
+    if (o.isArchived) return false;
+    return viewFilter === "cancelled" ? o.status === "CANCELLED" : o.status !== "CANCELLED";
+  });
+
+  function updateOrderInList(updatedOrder) {
+    setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
+  }
+
+  // Keep the open review dialog + the list row in sync after a quote /
+  // customer-response / cliche / send-to-production action, without closing it
+  function applyOrderUpdate(updatedOrder) {
+    setReviewOrder(updatedOrder);
+    updateOrderInList(updatedOrder);
+  }
+
   function openReviewModal(o) {
     setReviewOrder(o);
     setApprovedTotal(
@@ -91,6 +123,7 @@ export default function ManagerDashboard() {
         : "",
     );
     setRemarks("");
+    setMaterialSources({});
   }
 
   async function handleApproveOrReject(action) {
@@ -106,11 +139,12 @@ export default function ManagerDashboard() {
         action,
         approvedTotal: action === "APPROVE" ? approvedTotal || undefined : undefined,
         remarks: remarks.trim() || undefined,
+        materialSources: action === "APPROVE" ? materialSources : undefined,
       });
 
       toast.success(
         action === "APPROVE"
-          ? "Order approved & marked Ready for Work!"
+          ? "Order approved — quote generated, ready to send to the customer"
           : "Order proposal rejected",
       );
       setReviewOrder(null);
@@ -132,7 +166,7 @@ export default function ManagerDashboard() {
     },
     {
       title: "Ready for Work",
-      value: orders.filter((o) => ["READY_FOR_WORK", "APPROVED"].includes(o.status)).length,
+      value: orders.filter((o) => o.status === "READY_FOR_WORK").length,
       subtitle: "Available for workers",
       icon: ShoppingBag,
       color: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
@@ -155,10 +189,19 @@ export default function ManagerDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Manager Dashboard</h1>
-        <p className="text-muted-foreground">Review commercial sales proposals and monitor orders</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Manager Dashboard</h1>
+          <p className="text-muted-foreground">Review commercial sales proposals and monitor orders</p>
+        </div>
+        <Button asChild className="shrink-0">
+          <Link href="/dashboard/manager/orders/new">
+            <Plus className="h-4 w-4 mr-2" /> New Order Proposal
+          </Link>
+        </Button>
       </div>
+
+      <FactoryGlueAlert />
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {kpiCards.map((kpi) => {
@@ -213,7 +256,7 @@ export default function ManagerDashboard() {
                       {o.salesRepUser?.name || o.salesRep || "Unassigned"}
                     </TableCell>
                     <TableCell className="font-mono font-bold text-amber-800 dark:text-amber-300">
-                      ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                      {formatKWD(o.proposedTotal || o.total)}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {o.lines?.length || 0} line(s) · {o.lines?.[0]?.paperColor || "White"} {o.lines?.[0]?.paperType || "Virgin"}
@@ -234,6 +277,25 @@ export default function ManagerDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Active / Cancelled / Archived */}
+      <div className="flex items-center gap-2">
+        {[
+          { key: "active", label: "Active" },
+          { key: "cancelled", label: "Cancelled" },
+          { key: "archived", label: "Archived" },
+        ].map((v) => (
+          <Button
+            key={v.key}
+            variant={viewFilter === v.key ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewFilter(v.key)}
+            className="text-xs"
+          >
+            {v.label}
+          </Button>
+        ))}
+      </div>
 
       {/* Main Orders Table */}
       <Card>
@@ -265,15 +327,19 @@ export default function ManagerDashboard() {
                     <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
                   </TableCell>
                 </TableRow>
-              ) : orders.length === 0 ? (
+              ) : viewFilteredOrders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     No orders in database
                   </TableCell>
                 </TableRow>
               ) : (
-                orders.map((o) => (
-                  <TableRow key={o.id} className="align-top">
+                viewFilteredOrders.map((o) => (
+                  <TableRow
+                    key={o.id}
+                    className="align-top cursor-pointer hover:bg-muted/40"
+                    onClick={() => router.push(`/dashboard/manager/production/${o.id}`)}
+                  >
                     <TableCell className="font-mono font-medium pt-4">
                       {o.orderNo}
                       {o.priority && o.priority !== "NORMAL" && (
@@ -295,9 +361,7 @@ export default function ManagerDashboard() {
                         {(o.lines || []).map((l, lIdx) => (
                           <div key={lIdx} className="flex flex-wrap items-center gap-1.5">
                             <span className="font-medium text-foreground">
-                              L{l.lineNo || lIdx + 1}: {l.widthCm || (l.widthMm ? l.widthMm / 10 : 30)}×
-                              {l.heightCm || (l.heightMm ? l.heightMm / 10 : 40)}×
-                              {l.baseCm || (l.baseMm ? l.baseMm / 10 : 12)}cm
+                              L{l.lineNo || lIdx + 1}: {bagSizeLabel(l)}
                             </span>
                             <span className="text-muted-foreground">
                               · {Number(l.quantity || l.plannedQty || 0).toLocaleString()} bags
@@ -311,11 +375,11 @@ export default function ManagerDashboard() {
                     </TableCell>
                     <TableCell className="pt-4 font-mono text-sm">
                       <div>
-                        Proposed: ${Number(o.proposedTotal || o.total || 0).toFixed(2)}
+                        Proposed: {formatKWD(o.proposedTotal || o.total)}
                       </div>
                       {o.approvedTotal && (
                         <div className="text-xs text-emerald-600 font-semibold">
-                          Approved: ${Number(o.approvedTotal).toFixed(2)}
+                          Approved: {formatKWD(o.approvedTotal)}
                         </div>
                       )}
                     </TableCell>
@@ -323,8 +387,13 @@ export default function ManagerDashboard() {
                       <Badge variant="outline" className={cn("font-medium text-xs", STATUS_COLORS[o.status] || "")}>
                         {o.status}
                       </Badge>
+                      {o.isArchived && (
+                        <Badge variant="outline" className="ml-1 text-[10px] bg-gray-500/10 text-gray-600 border-gray-400/40">
+                          Archived
+                        </Badge>
+                      )}
                     </TableCell>
-                    <TableCell className="text-right pt-4 space-x-1">
+                    <TableCell className="text-right pt-4 space-x-1" onClick={(e) => e.stopPropagation()}>
                       {o.status === "PENDING_APPROVAL" ? (
                         <Button
                           size="sm"
@@ -343,6 +412,14 @@ export default function ManagerDashboard() {
                           <Eye className="h-4 w-4 mr-1" /> View
                         </Button>
                       )}
+                      {EDITABLE_ORDER_STATUSES.includes(o.status) && (
+                        <Button variant="outline" size="sm" asChild className="h-8 text-xs border-primary/40 text-primary">
+                          <Link href={`/dashboard/manager/orders/${o.id}/edit`}>
+                            <Edit className="h-4 w-4 mr-1" /> Edit
+                          </Link>
+                        </Button>
+                      )}
+                      <OrderRowActions order={o} onUpdated={updateOrderInList} />
                     </TableCell>
                   </TableRow>
                 ))
@@ -385,7 +462,7 @@ export default function ManagerDashboard() {
                       <div key={i} className="p-3 text-xs space-y-1.5">
                         <div className="flex items-center justify-between font-semibold">
                           <span>
-                            Line #{l.lineNo || i + 1}: {l.widthCm || l.widthMm / 10}cm (W) × {l.heightCm || l.heightMm / 10}cm (H) × {l.baseCm || l.baseMm / 10}cm (Gusset)
+                            Line #{l.lineNo || i + 1}: {bagSizeLabel(l)} (H × W × B)
                           </span>
                           <span className="font-mono text-foreground font-bold">
                             {Number(l.quantity || l.plannedQty).toLocaleString()} bags
@@ -396,9 +473,17 @@ export default function ManagerDashboard() {
                           <span>Paper Type: <strong>{l.paperType || "Virgin"}</strong></span>
                           <span>Colors: <strong>{l.colorCount ?? 0} Print Color(s)</strong></span>
                           <span>Handle: <strong>{l.withHandle ? "Yes" : "No"}</strong></span>
+                          {(() => {
+                            const bagWeight = matchedRollBagWeight(l);
+                            return bagWeight ? (
+                              <span title={bagWeightLabel(bagWeight)}>
+                                Bag Weight: <strong>{formatWeight(bagWeight.perBagG, "g")}</strong>
+                              </span>
+                            ) : null;
+                          })()}
                           {l.lineTotal && (
                             <span className="font-mono text-foreground font-medium">
-                              Line Price: ${Number(l.lineTotal).toFixed(2)}
+                              Line Price: {formatKWD(l.lineTotal)}
                             </span>
                           )}
                         </div>
@@ -425,7 +510,8 @@ export default function ManagerDashboard() {
                   </div>
                 </div>
 
-                {/* Commercial Pricing Review Inputs */}
+                {/* Commercial Pricing Review Inputs — only while awaiting internal approval */}
+                {reviewOrder.status === "PENDING_APPROVAL" && (
                 <div className="p-4 border rounded-lg bg-muted/40 space-y-3">
                   <h4 className="font-semibold text-sm flex items-center gap-1.5">
                     <DollarSign className="h-4 w-4 text-emerald-600" /> Commercial Price Review
@@ -434,14 +520,14 @@ export default function ManagerDashboard() {
                     <div>
                       <span className="text-xs text-muted-foreground">Sales Rep Proposed Price</span>
                       <p className="font-mono text-lg font-bold text-foreground">
-                        ${Number(reviewOrder.proposedTotal || reviewOrder.total || 0).toFixed(2)}
+                        {formatKWD(reviewOrder.proposedTotal || reviewOrder.total)}
                       </p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
                         Original quote proposed by sales rep is preserved in history.
                       </p>
                     </div>
 
-                    <FormField label="Manager Approved Price ($)">
+                    <FormField label="Manager Approved Price (KWD)" hint="Change it to revise the price — the customer quote shows the difference as a price adjustment.">
                       <Input
                         type="number"
                         min="0"
@@ -463,6 +549,14 @@ export default function ManagerDashboard() {
                     />
                   </FormField>
                 </div>
+                )}
+
+                {reviewOrder.status === "PENDING_APPROVAL" && (
+                  <MaterialSourcingSection orderId={reviewOrder.id} value={materialSources} onChange={setMaterialSources} />
+                )}
+
+                {/* Quote sent → customer response → clichés → send to production */}
+                <CustomerQuoteSection order={reviewOrder} onUpdate={applyOrderUpdate} />
 
                 {/* Approval History Trail */}
                 <div>
@@ -491,33 +585,41 @@ export default function ManagerDashboard() {
                 </div>
               </div>
 
-              <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => handleApproveOrReject("REJECT")}
-                  disabled={submittingReview}
-                >
-                  <XCircle className="h-4 w-4 mr-2" /> Reject Proposal
-                </Button>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={() => setReviewOrder(null)}>
-                    Cancel
-                  </Button>
+              {reviewOrder.status === "PENDING_APPROVAL" ? (
+                <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
                   <Button
-                    onClick={() => handleApproveOrReject("APPROVE")}
+                    type="button"
+                    variant="destructive"
+                    onClick={() => handleApproveOrReject("REJECT")}
                     disabled={submittingReview}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
                   >
-                    {submittingReview ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                    )}
-                    Approve Order
+                    <XCircle className="h-4 w-4 mr-2" /> Reject Proposal
                   </Button>
-                </div>
-              </DialogFooter>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={() => setReviewOrder(null)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => handleApproveOrReject("APPROVE")}
+                      disabled={submittingReview}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      {submittingReview ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                      )}
+                      Approve Order
+                    </Button>
+                  </div>
+                </DialogFooter>
+              ) : (
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setReviewOrder(null)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              )}
             </>
           )}
         </DialogContent>

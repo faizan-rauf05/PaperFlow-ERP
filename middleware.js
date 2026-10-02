@@ -61,6 +61,7 @@ export default auth((request) => {
 
   // Role-based access check
   if (!isRouteAllowedForRole(role, pathname)) {
+    console.log(`Access denied for role ${role} to path ${pathname}`);
     if (pathname.startsWith("/api")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
