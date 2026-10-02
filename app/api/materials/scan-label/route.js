@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import sharp from "sharp";
-import { requireAdminOrManager } from "@/lib/apiAuth";
+import { requireWarehouse } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -353,7 +353,8 @@ export async function POST(request) {
   const startedAt = Date.now();
 
   try {
-    const authResult = await requireAdminOrManager();
+    // Warehouse, Manager and Admin receive stock — any of them can scan a label.
+    const authResult = await requireWarehouse();
 
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, {

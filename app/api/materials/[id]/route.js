@@ -1,189 +1,104 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/apiAuth";
+import { requireAdminOrManager, requireWarehouse } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
-import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
-import { buildMaterialRecord } from "@/lib/material-code";
-import { resolveCostPriceFields } from "@/lib/cost-price";
-import { materialSchema } from "@/lib/validations/admin-forms";
-import { uploadImageToCloudinary } from "@/lib/cloudinary";
+import { canSeeCost, withoutMaterialCost, withoutReceiptCost } from "@/lib/api/cost-visibility";
+import { catalogMaterialSchema } from "@/lib/validations/inventory";
+import { deleteCatalogMaterial, updateCatalogMaterial } from "@/lib/services/material-catalog.service";
+import { withStock } from "@/lib/services/stock.service";
+import { RECEIPT_INCLUDE } from "@/lib/services/stock-receipt.service";
 
-function duplicateMaterialErrorMessage(error) {
-  // error.meta.target can be an array of column names (classic engine) or a
-  // single constraint-name string like "Material_batchNo_receivingDate_key"
-  // (driver adapter mode) — join to one string and substring-match either way.
-  const raw = error.meta?.target;
-  const target = (Array.isArray(raw) ? raw.join(" ") : raw || "").toString();
-  if (target.includes("barCode")) {
-    return "A material with this barcode already exists.";
-  }
-  if (target.includes("batchNo")) {
-    return "This batch number and date combination already exists.";
-  }
-  return "Material code already exists.";
+const HISTORY_LIMIT = 100;
+
+function errorResponse(error, label) {
+  if (error.status) return NextResponse.json({ error: error.message }, { status: error.status });
+  console.error(`${label} error:`, error);
+  return NextResponse.json({ error: "Internal server error" }, { status: 500 });
 }
 
+/** GET /api/materials/[id] — material with stock per location, its receipts and recent movements. */
+export async function GET(_request, { params }) {
+  try {
+    const authResult = await requireWarehouse();
+    if (authResult.error) {
+      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+    }
+
+    const { id } = await params;
+    const material = await prisma.material.findUnique({
+      where: { id },
+      include: {
+        supplier: { select: { id: true, name: true } },
+        // A recycled roll's parent, and the rolls recycled from this one
+        parentRoll: { select: { id: true, barCode: true, name: true } },
+        recycledRolls: { select: { id: true, barCode: true }, orderBy: { createdAt: "asc" } },
+      },
+    });
+    if (!material) return NextResponse.json({ error: "Material not found" }, { status: 404 });
+
+    const [[withStockRow], receipts, movements, receiptCount, movementCount] = await Promise.all([
+      withStock([material]),
+      prisma.stockReceipt.findMany({
+        where: { materialId: id },
+        include: RECEIPT_INCLUDE,
+        orderBy: [{ receivedAt: "desc" }, { createdAt: "desc" }],
+        take: HISTORY_LIMIT,
+      }),
+      prisma.inventoryTransaction.findMany({
+        where: { materialId: id },
+        include: { createdBy: { select: { id: true, name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: HISTORY_LIMIT,
+      }),
+      prisma.stockReceipt.count({ where: { materialId: id } }),
+      prisma.inventoryTransaction.count({ where: { materialId: id } }),
+    ]);
+
+    const showCost = canSeeCost(authResult.session.user.role);
+    return NextResponse.json({
+      material: serializeModel(showCost ? withStockRow : withoutMaterialCost(withStockRow)),
+      receipts: serializeModel(showCost ? receipts : receipts.map(withoutReceiptCost)),
+      movements: serializeModel(movements),
+      hasHistory: receiptCount + movementCount > 0,
+    });
+  } catch (error) {
+    return errorResponse(error, "GET /api/materials/[id]");
+  }
+}
+
+/** PUT /api/materials/[id] — correct a catalog material that has no history yet. */
 export async function PUT(request, { params }) {
   try {
-    const authResult = await requireAdmin();
+    const authResult = await requireAdminOrManager();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, {
-        status: authResult.error.status,
-      });
+      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
+    }
+
+    const parsed = catalogMaterialSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid material" }, { status: 400 });
     }
 
     const { id } = await params;
-    const body = await request.json();
-    const parsed = materialSchema.safeParse(body);
-    if (!parsed.success) {
-      const message =
-        parsed.error.errors[0]?.message ?? "Invalid material data";
-      return NextResponse.json({ error: message }, { status: 400 });
-    }
-
-    const existing = await prisma.material.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: "Material not found" }, { status: 404 });
-    }
-
-    const data = buildMaterialRecord(parsed.data);
-
-    // Resolve supplier relation to supplierId
-    const supplierName = data.supplier;
-    delete data.supplier;
-
-    if (supplierName) {
-      const sup = await prisma.supplier.findFirst({
-        where: {
-          name: { equals: supplierName, mode: "insensitive" },
-        },
-      });
-      data.supplierId = sup ? sup.id : null;
-    } else {
-      data.supplierId = null;
-    }
-
-    // Upload base64 label image to Cloudinary CDN if provided
-    if (data.imageUrl && data.imageUrl.startsWith("data:image")) {
-      data.imageUrl = await uploadImageToCloudinary(data.imageUrl, "materials");
-    }
-
-    // Cost price: only recomputed (and re-fetches the FX rate) when the
-    // cost inputs actually changed, so an unrelated edit (e.g. supplier)
-    // doesn't silently overwrite the "rate applied on this date" audit
-    // trail. The exchange rate itself is always fetched/verified
-    // server-side, never trusted from the client.
-    try {
-      const costFields = await resolveCostPriceFields(data.materialType, data, existing);
-      Object.assign(data, costFields);
-    } catch (costError) {
-      console.error("Cost price computation failed:", costError);
-      const message =
-        costError.code === "COST_PRICE_DIVISOR_MISSING"
-          ? costError.message
-          : "Could not fetch the current USD→KWD exchange rate. Please try again, or enter the cost price in KWD.";
-      return NextResponse.json({ error: message }, { status: 400 });
-    }
-    delete data.costPriceAmount;
-
-    const material = await prisma.material.update({ where: { id }, data });
-
-    await writeAuditLog({
-      userId: authResult.session.user.id,
-      action: ACTIONS.MATERIAL_UPDATED,
-      model: "Material",
-      recordId: id,
-      oldValue: serializeModel({
-        code: existing.code,
-        name: existing.name,
-        materialType: existing.materialType,
-        costPricePerUnit: existing.costPricePerUnit,
-        costPriceCurrency: existing.costPriceCurrency,
-        costPriceEntryBasis: existing.costPriceEntryBasis,
-        costPriceOriginalAmount: existing.costPriceOriginalAmount,
-        costPriceExchangeRate: existing.costPriceExchangeRate,
-        costPriceRateDate: existing.costPriceRateDate,
-      }),
-      newValue: {
-        code: material.code,
-        name: material.name,
-        materialType: material.materialType,
-        ...serializeModel({
-          costPricePerUnit: material.costPricePerUnit,
-          costPriceCurrency: material.costPriceCurrency,
-          costPriceEntryBasis: material.costPriceEntryBasis,
-          costPriceOriginalAmount: material.costPriceOriginalAmount,
-          costPriceExchangeRate: material.costPriceExchangeRate,
-          costPriceRateDate: material.costPriceRateDate,
-        }),
-      },
-    });
-
+    const material = await updateCatalogMaterial(id, parsed.data, authResult.session.user.id);
     return NextResponse.json({ material: serializeModel(material) });
   } catch (error) {
-    if (error.code === "P2002") {
-      return NextResponse.json(
-        { error: duplicateMaterialErrorMessage(error) },
-        { status: 409 },
-      );
-    }
-    console.error("PUT /api/materials/[id] error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return errorResponse(error, "PUT /api/materials/[id]");
   }
 }
 
+/** DELETE /api/materials/[id] — remove a catalog material that has never been used. */
 export async function DELETE(_request, { params }) {
   try {
-    const authResult = await requireAdmin();
+    const authResult = await requireAdminOrManager();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, {
-        status: authResult.error.status,
-      });
+      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }
 
     const { id } = await params;
-    const existing = await prisma.material.findUnique({ where: { id } });
-
-    if (!existing) {
-      return NextResponse.json(
-        { error: "Material not found" },
-        { status: 404 },
-      );
-    }
-
-    const count = await prisma.inventoryTransaction.count({
-      where: {
-        materialId: id,
-      },
-    });
-
-    if (count > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Cannot delete material because it has inventory transactions.",
-        },
-        { status: 400 },
-      );
-    }
-
-    await prisma.material.delete({ where: { id } });
-    await writeAuditLog({
-      userId: authResult.session.user.id,
-      action: ACTIONS.MATERIAL_DELETED,
-      model: "Material",
-      recordId: id,
-      oldValue: existing ? { code: existing.code, name: existing.name } : null,
-    });
+    await deleteCatalogMaterial(id, authResult.session.user.id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("DELETE /api/materials/[id] error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return errorResponse(error, "DELETE /api/materials/[id]");
   }
 }

@@ -4,16 +4,16 @@ import { DashboardShell } from '@/components/layout'
 import {
   LayoutDashboard,
   Warehouse,
-  Package,
   ClipboardList,
   Truck,
+  ArrowRightLeft,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard/warehouse', icon: LayoutDashboard, group: 'Workspace' },
   { name: 'Inventory', href: '/dashboard/warehouse/inventory', icon: Warehouse, group: 'Operations' },
-  { name: 'Materials', href: '/dashboard/warehouse/materials', icon: Package, group: 'Operations' },
   { name: 'Orders', href: '/dashboard/warehouse/orders', icon: ClipboardList, group: 'Fulfillment' },
+  { name: 'Factory Transfers', href: '/dashboard/warehouse/transfers', icon: ArrowRightLeft, group: 'Fulfillment' },
   { name: 'Suppliers', href: '/dashboard/warehouse/suppliers', icon: Truck, group: 'Business' },
 ]
 

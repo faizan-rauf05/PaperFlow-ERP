@@ -45,7 +45,7 @@ export default function WarehouseOrdersPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-page-title">Orders — Material Fulfillment</h1>
-        <p className="text-sm text-muted-foreground">Orders that need materials picked before production can proceed.</p>
+        <p className="text-sm text-muted-foreground">Orders sent to production that are waiting for materials from the warehouse. Workers can start once everything is picked.</p>
       </div>
 
       {error && (
@@ -67,11 +67,9 @@ export default function WarehouseOrdersPage() {
       ) : (
         <div className="space-y-3">
           {orders.map((order) => {
-            const totalMaterials = order.lines.reduce((n, l) => n + l.materials.length, 0);
-            const pickedMaterials = order.lines.reduce(
-              (n, l) => n + l.materials.filter((m) => m.isPicked).length,
-              0,
-            );
+            const toPick = order.lines.flatMap((l) => l.materials.filter((m) => m.source === "WAREHOUSE"));
+            const totalMaterials = toPick.length;
+            const pickedMaterials = toPick.filter((m) => m.isPicked).length;
             return (
               <Card key={order.id}>
                 <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between space-y-0">

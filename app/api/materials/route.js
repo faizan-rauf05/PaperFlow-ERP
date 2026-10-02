@@ -1,219 +1,87 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdminOrManager, requireWorkerOrWarehouse } from "@/lib/apiAuth";
+import { requireWarehouse, requireWorkerOrWarehouse } from "@/lib/apiAuth";
 import { serializeModel } from "@/lib/serialize";
-import { ACTIONS, writeAuditLog } from "@/lib/auditLog";
-import { buildMaterialRecord, computeInitialStockQty } from "@/lib/material-code";
-import { resolveCostPriceFields } from "@/lib/cost-price";
-import { materialSchema } from "@/lib/validations/admin-forms";
-import { uploadImageToCloudinary } from "@/lib/cloudinary";
-import { Prisma } from "@prisma/client";
+import { canSeeCost, withoutMaterialCost } from "@/lib/api/cost-visibility";
+import { catalogMaterialSchema } from "@/lib/validations/inventory";
+import { createCatalogMaterial } from "@/lib/services/material-catalog.service";
+import { withStock } from "@/lib/services/stock.service";
 
-const { Decimal } = Prisma;
-
-const STOCK_IN_TYPES = ["STOCK_IN", "RETURN", "ADJUSTMENT"];
-const STOCK_OUT_TYPES = ["STOCK_OUT", "WASTE"];
-
-function duplicateMaterialErrorMessage(error) {
-  // error.meta.target can be an array of column names (classic engine) or a
-  // single constraint-name string like "Material_batchNo_receivingDate_key"
-  // (driver adapter mode) — join to one string and substring-match either way.
-  const raw = error.meta?.target;
-  const target = (Array.isArray(raw) ? raw.join(" ") : raw || "").toString();
-  if (target.includes("barCode")) {
-    return "A material with this barcode already exists.";
-  }
-  if (target.includes("batchNo")) {
-    return "This batch number and date combination already exists.";
-  }
-  return "Material code already exists.";
-}
-
-export async function GET() {
+/**
+ * GET /api/materials — catalog materials and paper rolls with stock per
+ * location. Optional filters: ?type=GLUE, ?kind=catalog|rolls,
+ * ?inStock=1 (only materials with stock somewhere).
+ */
+export async function GET(request) {
   try {
-    // Workers need read access here for the stage-recording form (material
-    // + stock pickers), and warehouse staff need it for receiving/picking;
-    // mutations below stay admin/manager-only.
+    // Workers read materials for stage recording, warehouse for receiving/picking.
     const authResult = await requireWorkerOrWarehouse();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, {
-        status: authResult.error.status,
-      });
+      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }
 
-    const materials = await prisma.material.findMany({
-      orderBy: [{ materialType: "asc" }, { name: "asc" }],
+    const { searchParams } = new URL(request.url);
+    const type = searchParams.get("type");
+    const kind = searchParams.get("kind");
+    const where = {
+      ...(type ? { materialType: type } : {}),
+      ...(kind === "rolls" ? { materialType: "PAPER_ROLL" } : {}),
+      ...(kind === "catalog" ? { NOT: { materialType: "PAPER_ROLL" } } : {}),
+    };
+
+    const rows = await prisma.material.findMany({
+      where,
+      orderBy: [{ materialType: "asc" }, { name: "asc" }, { createdAt: "desc" }],
       include: {
-        supplier: true,
-        transactions: {
-          select: {
-            transactionType: true,
-            quantity: true,
-            unit: true,
-          },
+        supplier: { select: { id: true, name: true } },
+        // Latest delivery — a paper roll's received date (FIFO order), a catalog material's
+        // last restock and its pack size (so stock can be moved/adjusted in packs).
+        receipts: {
+          select: { receivedAt: true, packSize: true, costAmount: true, costCurrency: true, costEntryBasis: true },
+          orderBy: { receivedAt: "desc" },
+          take: 1,
         },
       },
     });
+    const materials = rows.map(({ receipts, ...m }) => ({
+      ...m,
+      lastReceivedAt: receipts[0]?.receivedAt ?? null,
+      lastPackSize: receipts[0]?.packSize ?? null,
+      // The latest delivery's price as it was entered (a paper roll's only one)
+      lastPriceEntered: receipts[0]
+        ? { amount: receipts[0].costAmount, currency: receipts[0].costCurrency, basis: receipts[0].costEntryBasis }
+        : null,
+    }));
 
-    const enriched = materials.map((m) => {
-      let initialStock = new Decimal(0);
-      let currentStock = new Decimal(0);
+    let out = await withStock(materials);
+    if (searchParams.get("inStock") === "1") out = out.filter((m) => m.stock.total > 0);
+    if (!canSeeCost(authResult.session.user.role)) out = out.map(withoutMaterialCost);
 
-      for (const tx of m.transactions) {
-        const q = new Decimal(tx.quantity ? tx.quantity.toString() : "0");
-        if (tx.transactionType === "STOCK_IN") {
-          initialStock = initialStock.add(q);
-        }
-        if (STOCK_IN_TYPES.includes(tx.transactionType)) {
-          currentStock = currentStock.add(q);
-        } else if (STOCK_OUT_TYPES.includes(tx.transactionType)) {
-          currentStock = currentStock.sub(q);
-        }
-      }
-
-      const { transactions, supplier, ...rest } = m;
-      return {
-        ...rest,
-        supplier: supplier?.name || null,
-        supplierId: m.supplierId || null,
-        initialStock: initialStock.toNumber(),
-        availableStock: currentStock.toNumber(),
-        isLowStock: currentStock.lessThan(m.minimumStock || 0),
-      };
-    });
-
-    // Cost price is Admin/Manager-visible only — Workers/Warehouse get everything else.
-    const isCostVisible = !["WORKER", "WAREHOUSE"].includes(authResult.session.user.role);
-    const materialsOut = isCostVisible
-      ? enriched
-      : enriched.map(
-          ({
-            costPricePerUnit,
-            costPriceCurrency,
-            costPriceEntryBasis,
-            costPriceOriginalAmount,
-            costPriceExchangeRate,
-            costPriceRateDate,
-            ...rest
-          }) => rest,
-        );
-
-    return NextResponse.json({ materials: serializeModel(materialsOut) });
+    return NextResponse.json({ materials: serializeModel(out) });
   } catch (error) {
     console.error("GET /api/materials error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
+/** POST /api/materials — add a catalog material (supplier + type + subtype). */
 export async function POST(request) {
   try {
-    const authResult = await requireAdminOrManager();
+    const authResult = await requireWarehouse();
     if (authResult.error) {
-      return NextResponse.json(authResult.error.body, {
-        status: authResult.error.status,
-      });
+      return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }
 
-    const body = await request.json();
-    const parsed = materialSchema.safeParse(body);
+    const parsed = catalogMaterialSchema.safeParse(await request.json());
     if (!parsed.success) {
-      const message =
-        parsed.error.errors[0]?.message ?? "Invalid material data";
-      return NextResponse.json({ error: message }, { status: 400 });
+      return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid material" }, { status: 400 });
     }
 
-    const data = buildMaterialRecord(parsed.data);
-
-    // Resolve supplier relation to supplierId
-    const supplierName = data.supplier;
-    delete data.supplier;
-
-    if (supplierName) {
-      const sup = await prisma.supplier.findFirst({
-        where: { name: { equals: supplierName, mode: "insensitive" } },
-      });
-      data.supplierId = sup ? sup.id : null;
-    } else {
-      data.supplierId = null;
-    }
-
-    // Upload base64 label image to Cloudinary CDN if provided
-    if (data.imageUrl && data.imageUrl.startsWith("data:image")) {
-      data.imageUrl = await uploadImageToCloudinary(data.imageUrl, "materials");
-    }
-
-    // Cost price: the exchange rate (when currency is USD) is always
-    // fetched/verified server-side here — never trust a client-supplied
-    // rate or pre-converted amount for a monetary calculation.
-    try {
-      const costFields = await resolveCostPriceFields(data.materialType, data, null);
-      Object.assign(data, costFields);
-    } catch (costError) {
-      console.error("Cost price computation failed:", costError);
-      const message =
-        costError.code === "COST_PRICE_DIVISOR_MISSING"
-          ? costError.message
-          : "Could not fetch the current USD→KWD exchange rate. Please try again, or enter the cost price in KWD.";
-      return NextResponse.json({ error: message }, { status: 400 });
-    }
-    delete data.costPriceAmount;
-
-    const material = await prisma.material.create({ data });
-
-    const initQty = computeInitialStockQty(material.materialType, data);
-
-    if (initQty > 0) {
-      const { postInventoryTransaction } =
-        await import("@/lib/services/inventory.service");
-      await postInventoryTransaction({
-        materialId: material.id,
-        transactionType: "STOCK_IN",
-        quantity: initQty,
-        unit: material.unit || "METER",
-        remarks: "Initial stock on material creation",
-        createdById: authResult.session.user.id,
-      });
-    }
-
-    await writeAuditLog({
-      userId: authResult.session.user.id,
-      action: ACTIONS.MATERIAL_CREATED,
-      model: "Material",
-      recordId: material.id,
-      newValue: {
-        code: material.code,
-        name: material.name,
-        materialType: material.materialType,
-        initialStock: initQty,
-        ...serializeModel({
-          costPricePerUnit: material.costPricePerUnit,
-          costPriceCurrency: material.costPriceCurrency,
-          costPriceEntryBasis: material.costPriceEntryBasis,
-          costPriceOriginalAmount: material.costPriceOriginalAmount,
-          costPriceExchangeRate: material.costPriceExchangeRate,
-          costPriceRateDate: material.costPriceRateDate,
-        }),
-      },
-    });
-
-    return NextResponse.json(
-      { material: serializeModel(material) },
-      { status: 201 },
-    );
+    const material = await createCatalogMaterial(parsed.data, authResult.session.user.id);
+    return NextResponse.json({ material: serializeModel(material) }, { status: 201 });
   } catch (error) {
-    if (error.code === "P2002") {
-      return NextResponse.json(
-        { error: duplicateMaterialErrorMessage(error) },
-        { status: 409 },
-      );
-    }
+    if (error.status) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("POST /api/materials error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

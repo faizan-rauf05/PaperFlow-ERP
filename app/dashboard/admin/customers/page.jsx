@@ -58,6 +58,7 @@ import {
   firstErrorMessage,
 } from "@/lib/validations/form-utils";
 import { cn } from "@/lib/utils";
+import { clicheDetailsLabel, clicheSizeLabel } from "@/lib/order-labels";
 
 const emptyForm = { name: "", phone: "", email: "", address: "", notes: "" };
 const PAGE_SIZE = 10;
@@ -389,11 +390,9 @@ export default function CustomersPage() {
                       <div key={c.id} className="p-3 text-xs flex items-start gap-2.5">
                         <Stamp className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                         <div>
-                          <p className="font-semibold">{c.code}</p>
+                          <p className="font-semibold">{clicheSizeLabel(c)}</p>
                           <p className="text-muted-foreground">
-                            {c.widthMm || "?"}×{c.heightMm || "?"}mm · {c.colorCount ?? "?"} colors ·{" "}
-                            {c.ownership === "CUSTOMER_OWNED" ? "Customer-owned" : "Company-owned"} ·{" "}
-                            {c.condition?.toLowerCase() || "active"}
+                            {clicheDetailsLabel(c)} · {c.condition?.toLowerCase() || "active"}
                           </p>
                           {c.notes && <p className="text-muted-foreground italic mt-0.5">"{c.notes}"</p>}
                         </div>

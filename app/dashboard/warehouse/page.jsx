@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, AlertTriangle, PackageCheck, PackageX, ClipboardList, ArrowRight } from "lucide-react";
+import { Loader2, AlertTriangle, PackageCheck, ClipboardList, ArrowRight, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { formatDateTime } from "@/lib/utils";
+import { formatQuantity } from "@/lib/material-catalog";
+import { STOCK_LOCATION_LABELS } from "@/lib/stock-locations";
+import { FactoryGlueAlert } from "@/components/inventory/factory-glue-alert";
 
 function StatTile({ label, value, icon: Icon, tone = "default" }) {
   const toneCls =
@@ -33,9 +36,9 @@ export default function WarehouseDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [materials, setMaterials] = useState([]);
-  const [lowStock, setLowStock] = useState([]);
   const [pendingOrders, setPendingOrders] = useState([]);
   const [recentReceipts, setRecentReceipts] = useState([]);
+  const [openTransfers, setOpenTransfers] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,19 +46,17 @@ export default function WarehouseDashboardPage() {
       setLoading(true);
       setError("");
       try {
-        const [materialsRes, lowStockRes, pendingRes, historyRes] = await Promise.all([
+        const [materialsRes, pendingRes, receiptsRes, transfersRes] = await Promise.all([
           api.get("/materials"),
-          api.get("/inventory/low-stock"),
           api.get("/orders/materials-pending"),
-          api.get("/inventory/history?limit=8"),
+          api.get("/inventory/receipts?limit=8"),
+          api.get("/inventory/transfer-tasks?status=OPEN"),
         ]);
         if (cancelled) return;
         setMaterials(materialsRes.data.materials || []);
-        setLowStock(lowStockRes.data.items || []);
         setPendingOrders(pendingRes.data.orders || []);
-        setRecentReceipts(
-          (historyRes.data.transactions || []).filter((t) => t.transactionType === "STOCK_IN"),
-        );
+        setRecentReceipts(receiptsRes.data.receipts || []);
+        setOpenTransfers((transfersRes.data.tasks || []).length);
       } catch (e) {
         if (!cancelled) setError(getApiErrorMessage(e));
       } finally {
@@ -68,7 +69,6 @@ export default function WarehouseDashboardPage() {
     };
   }, []);
 
-  const outOfStockCount = materials.filter((m) => Number(m.availableStock) <= 0).length;
   const ordersWithShortage = pendingOrders.filter((o) => o.hasShortage).length;
 
   if (loading) {
@@ -92,12 +92,15 @@ export default function WarehouseDashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <FactoryGlueAlert tasksHref="/dashboard/warehouse/transfers" />
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile label="Active Materials" value={materials.length} icon={PackageCheck} />
-        <StatTile label="Low Stock" value={lowStock.length} icon={AlertTriangle} tone={lowStock.length ? "warning" : "default"} />
-        <StatTile label="Out of Stock" value={outOfStockCount} icon={PackageX} tone={outOfStockCount ? "destructive" : "default"} />
         <StatTile label="Orders Awaiting Pick" value={pendingOrders.length} icon={ClipboardList} />
         <StatTile label="Orders with Shortage" value={ordersWithShortage} icon={AlertTriangle} tone={ordersWithShortage ? "destructive" : "default"} />
+        <Link href="/dashboard/warehouse/transfers" className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <StatTile label="Factory Transfers Due" value={openTransfers} icon={Truck} tone={openTransfers ? "warning" : "default"} />
+        </Link>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -125,7 +128,8 @@ export default function WarehouseDashboardPage() {
                     <span className="text-muted-foreground font-normal">— {order.customer?.name}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {order.lines.reduce((n, l) => n + l.materials.length, 0)} material(s) needed
+                    {order.lines.reduce((n, l) => n + l.materials.filter((m) => m.source === "WAREHOUSE" && !m.isPicked).length, 0)}{" "}
+                    material(s) to pick
                     {order.deliveryDate ? ` · due ${formatDateTime(order.deliveryDate)}` : ""}
                   </p>
                 </div>
@@ -148,14 +152,21 @@ export default function WarehouseDashboardPage() {
             {recentReceipts.length === 0 && (
               <p className="text-sm text-muted-foreground py-6 text-center">No recent stock-in activity.</p>
             )}
-            {recentReceipts.map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between text-sm border-b last:border-0 pb-2 last:pb-0">
-                <div>
-                  <p className="font-medium">{tx.material?.name}</p>
-                  <p className="text-xs text-muted-foreground">{formatDateTime(tx.createdAt)}</p>
+            {recentReceipts.map((receipt) => (
+              <div key={receipt.id} className="flex items-center justify-between gap-2 text-sm border-b last:border-0 pb-2 last:pb-0">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">
+                    {receipt.material?.name}
+                    {receipt.material?.supplier?.name && (
+                      <span className="text-muted-foreground font-normal"> · {receipt.material.supplier.name}</span>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatDateTime(receipt.receivedAt)} · {STOCK_LOCATION_LABELS[receipt.location] || receipt.location}
+                  </p>
                 </div>
-                <Badge variant="secondary">
-                  +{Number(tx.quantity)} {tx.unit}
+                <Badge variant="secondary" className="shrink-0">
+                  +{formatQuantity(receipt.quantity, receipt.material?.unit)}
                 </Badge>
               </div>
             ))}

@@ -27,6 +27,7 @@ export async function POST(request, { params }) {
       approvedTotal: body.approvedTotal,
       remarks: body.remarks,
       reviewedById: managerId,
+      materialSources: body.materialSources && typeof body.materialSources === "object" ? body.materialSources : {},
     });
 
     return NextResponse.json({ order: serializeModel(updatedOrder) });

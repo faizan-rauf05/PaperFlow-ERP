@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { requireWarehouse } from "@/lib/apiAuth";
 import { pickOrderLineMaterial } from "@/lib/services/material-fulfillment.service";
 import { serializeModel } from "@/lib/serialize";
+import { withoutOrderMaterialCost } from "@/lib/api/cost-visibility";
 
 /**
  * Confirms a warehouse pick against an order's material requirement. Body
- * accepts either a single pick `{ orderLineMaterialId, pickedQty,
- * scannedBarcode? }` or a batch `{ picks: [...] }` of the same shape,
- * applied one at a time so a barcode-mismatch/over-limit failure partway
- * through a batch still returns which picks succeeded.
+ * accepts either a single pick `{ orderLineMaterialId, pickedQty, proofUrls }`
+ * or a batch `{ picks: [...] }` of the same shape, applied one at a time so a
+ * failure partway through a batch still returns which picks succeeded.
  */
 export async function POST(request, { params }) {
   try {
@@ -39,10 +39,10 @@ export async function POST(request, { params }) {
           orderId,
           orderLineMaterialId: pick.orderLineMaterialId,
           pickedQty: pick.pickedQty,
-          scannedBarcode: pick.scannedBarcode,
+          proofUrls: pick.proofUrls,
           actingUserId: authResult.session.user.id,
         });
-        results.push({ orderLineMaterialId: pick.orderLineMaterialId, success: true });
+        results.push({ orderLineMaterialId: pick.orderLineMaterialId, success: true, released: result.released });
         // Latest order snapshot always wins — every pick in the batch
         // targets the same order, so the last result reflects all of them.
         latestOrder = result.order;
@@ -50,7 +50,6 @@ export async function POST(request, { params }) {
         return NextResponse.json(
           {
             error: pickError.message || "Failed to record pick",
-            code: pickError.code,
             results,
           },
           { status: pickError.status || 400 },
@@ -61,20 +60,11 @@ export async function POST(request, { params }) {
     // Warehouse never sees sales prices/totals/profit or material cost
     // figures — this endpoint is warehouse-only, so strip unconditionally.
     const orderOut = latestOrder
-      ? (({ subtotal, discount, total, proposedTotal, approvedTotal, ...orderRest }) => ({
-          ...orderRest,
-          lines: orderRest.lines.map(({ unitPrice, lineTotal, ...l }) => ({
-            ...l,
-            suggestedMaterials: (l.suggestedMaterials || []).map(
-              ({ suggestedCost, material, ...rest }) => ({
-                ...rest,
-                material: material
-                  ? (({ costPricePerUnit, costPriceCurrency, costPriceEntryBasis, costPriceOriginalAmount, costPriceExchangeRate, costPriceRateDate, ...m }) => m)(material)
-                  : material,
-              }),
-            ),
-          })),
-        }))(latestOrder)
+      ? (({ subtotal, discount, total, proposedTotal, approvedTotal, ...orderRest }) =>
+          withoutOrderMaterialCost({
+            ...orderRest,
+            lines: orderRest.lines.map(({ unitPrice, lineTotal, ...l }) => l),
+          }))(latestOrder)
       : null;
 
     return NextResponse.json({ results, order: serializeModel(orderOut) });

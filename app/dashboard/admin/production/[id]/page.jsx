@@ -27,7 +27,9 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { getStageLabel, QC_STAGE_TYPES, STAGE_FLOW } from "@/lib/production-constants";
-import { computeSlittingPreview } from "@/lib/slitting-math";
+import { computeSlitting } from "@/lib/slitting-math";
+import { MATERIAL_SUGGESTION_CONSTANTS as SLIT } from "@/lib/material-constants";
+import { formatWeight } from "@/lib/paper-sizing";
 import {
   getOrderLineProgressRows,
   getStageStatusColor,
@@ -37,6 +39,19 @@ import {
   formatElapsed,
 } from "@/lib/order-progress";
 import { cn, formatDateTime } from "@/lib/utils";
+import { UNIT_LABELS, formatQuantity } from "@/lib/material-catalog";
+import {
+  HANDLE_CONSUMPTIONS,
+  catalogMaterialOptions,
+  factoryStock,
+  factoryStockLabel,
+  handleConsumptionPayload,
+  initialHandleConsumptions,
+  plannedConsumption,
+  sortByFactoryStock,
+  toastStockWarnings,
+  validateHandleConsumptions,
+} from "@/components/production/stage-materials";
 
 // Material stores width in cm (paperWidthCm) — display everything in mm.
 function widthMm(material) {
@@ -47,12 +62,6 @@ function buildInitialForm(stage, context) {
   const stg = context?.stage || stage || {};
   const isQc = QC_STAGE_TYPES.includes(stg.stageType);
   const qcRec = stg.qcRecords?.[0];
-  const sideConsumption = stg.consumptions?.find(
-    (c) => c.consumptionKind === "GLUE_SIDE",
-  );
-  const bottomConsumption = stg.consumptions?.find(
-    (c) => c.consumptionKind === "GLUE_BOTTOM",
-  );
 
   let initialOutputQty = "";
   if (stg.outputQty != null) {
@@ -68,41 +77,24 @@ function buildInitialForm(stage, context) {
     initialPassedQty = String(stg.outputQty);
   }
 
-  let initialGlueSideQty = "";
-  if (sideConsumption?.actualQty != null) {
-    initialGlueSideQty = String(sideConsumption.actualQty);
-  } else if (context?.gluePlan?.sideKg != null) {
-    initialGlueSideQty = String(context.gluePlan.sideKg);
-  }
-
-  let initialGlueBottomQty = "";
-  if (bottomConsumption?.actualQty != null) {
-    initialGlueBottomQty = String(bottomConsumption.actualQty);
-  } else if (context?.gluePlan?.bottomKg != null) {
-    initialGlueBottomQty = String(context.gluePlan.bottomKg);
-  }
-
   return {
     materialId: stg.materialId || "",
     machineId: stg.machineId || "",
     outputQty: initialOutputQty,
-    cutWidthMm:
-      stg.cutWidthMm != null
-        ? String(stg.cutWidthMm)
-        : context?.suggestedCutWidthMm != null
-          ? String(context.suggestedCutWidthMm)
-          : "",
-    remainderAction: stg.remainderAction || "",
+    // Recycled rolls: as recorded, else the plan for this roll and bag width
+    recycledRollCount: String(stg.recycledRollCount ?? context?.slitPlan?.stripCount ?? 0),
+    recycledWidthCm:
+      stg.recycledRollCount != null
+        ? stg.recycledWidthCm != null ? String(Number(stg.recycledWidthCm)) : ""
+        : context?.slitPlan?.stripCount ? String(context.slitPlan.stripWidthCm) : "",
     lengthRestockQty:
       stg.lengthRestockQty != null ? String(stg.lengthRestockQty) : "0",
-    pieceCount: stg.pieceCount != null ? String(stg.pieceCount) : "",
-    pieceWeightKg: stg.pieceWeightKg != null ? String(stg.pieceWeightKg) : "",
     proofUrls: Array.isArray(stg.proofUrls) ? stg.proofUrls : [],
     remarks: stg.remarks || "",
     passedQty: initialPassedQty,
     defectTypeId: qcRec?.defectTypeId || "",
-    glueSideQty: initialGlueSideQty,
-    glueBottomQty: initialGlueBottomQty,
+    // The order's stages carry recorded consumptions; the record context's stage doesn't.
+    ...initialHandleConsumptions(stage?.consumptions || stg.consumptions),
     cartonMaterialId: stg.stageType === "PACKING" ? stg.materialId || "" : "",
   };
 }
@@ -113,7 +105,9 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
   const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState({});
   const [paperMaterials, setPaperMaterials] = useState([]);
+  const [lookupsLoading, setLookupsLoading] = useState(true);
   const [glueMaterials, setGlueMaterials] = useState([]);
+  const [ropeMaterials, setRopeMaterials] = useState([]);
   const [cartonMaterials, setCartonMaterials] = useState([]);
   const [stockById, setStockById] = useState({});
   const [machines, setMachines] = useState([]);
@@ -133,16 +127,35 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
   useEffect(() => {
     (async () => {
       try {
-        const [mats, mach, defects, stock] = await Promise.all([
+        const [mats, mach, defects] = await Promise.all([
           api.get("/materials"),
           api.get("/machines"),
           api.get("/defect-types"),
-          api.get("/inventory/current-stock"),
         ]);
+        // Production draws from factory stock — pickers list stocked materials first.
         const all = mats.data.materials || [];
-        setPaperMaterials(all.filter((m) => m.materialType === "PAPER_ROLL"));
-        setGlueMaterials(all.filter((m) => m.materialType === "GLUE"));
-        setCartonMaterials(all.filter((m) => m.materialType === "CARTON"));
+        const byType = (type) =>
+          sortByFactoryStock(all.filter((m) => m.materialType === type));
+        const glues = byType("GLUE");
+        const ropes = byType("ROPE");
+        setPaperMaterials(byType("PAPER_ROLL"));
+        setGlueMaterials(glues);
+        setRopeMaterials(ropes);
+        setCartonMaterials(byType("CARTON"));
+        // Preselect glue/rope when only one supplier's material exists.
+        const defaults = initialHandleConsumptions(null, {
+          GLUE: glues,
+          ROPE: ropes,
+        });
+        setForm((prev) => {
+          const next = { ...prev };
+          for (const c of HANDLE_CONSUMPTIONS) {
+            if (!next[c.materialField]) {
+              next[c.materialField] = defaults[c.materialField];
+            }
+          }
+          return next;
+        });
         setMachines(
           (mach.data.machines || []).filter(
             (m) => m.stageType === stage.stageType,
@@ -155,29 +168,15 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
         );
 
         const map = {};
-        for (const row of stock.data.stock ||
-          stock.data.materials ||
-          stock.data.stocks ||
-          []) {
-          map[row.id] = Number(row.currentStock ?? row.stock ?? 0);
-        }
+        for (const m of all) map[m.id] = factoryStock(m);
         setStockById(map);
       } catch (e) {
         toast.error(getApiErrorMessage(e));
+      } finally {
+        setLookupsLoading(false);
       }
     })();
   }, [stage.stageType]);
-
-  useEffect(() => {
-    if (stage.stageType !== "HANDLE_MAKING_PASTING" || !context?.gluePlan)
-      return;
-    setForm((prev) => ({
-      ...prev,
-      glueSideQty: prev.glueSideQty || String(context.gluePlan.sideKg || 0),
-      glueBottomQty:
-        prev.glueBottomQty || String(context.gluePlan.bottomKg || 0),
-    }));
-  }, [stage.stageType, context?.gluePlan]);
 
   const selectedPaperStock = form.materialId
     ? stockById[form.materialId]
@@ -185,52 +184,34 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
 
   const slitPreview = useMemo(() => {
     if (stage.stageType !== "SLITTING") return null;
-    return computeSlittingPreview({
+    return computeSlitting({
       inputMeters: inputQty,
-      parentWidthMm: widthMm(context?.paperMaterial) ?? undefined,
-      cutWidthMm: form.cutWidthMm,
-      gsm: context?.paperMaterial?.gsm,
       lengthRestockMeters: form.lengthRestockQty,
+      parentWidthCm: context?.paperMaterial?.paperWidthCm,
+      bagWidthCm: context?.bagWidthCm,
+      gsm: context?.paperMaterial?.gsm,
+      stripCount: Number(form.recycledRollCount) || 0,
+      stripWidthCm: form.recycledWidthCm,
     });
   }, [
     stage.stageType,
     inputQty,
     context?.paperMaterial,
-    form.cutWidthMm,
+    context?.bagWidthCm,
+    form.recycledRollCount,
+    form.recycledWidthCm,
     form.lengthRestockQty,
   ]);
 
   useEffect(() => {
     if (!slitPreview) return;
-    setForm((prev) => ({
-      ...prev,
-      pieceCount: slitPreview.pieceCount || "",
-      pieceWeightKg: slitPreview.pieceWeightKg ?? "",
-      outputQty: String(slitPreview.usableMeters ?? ""),
-    }));
+    setForm((prev) => ({ ...prev, outputQty: String(slitPreview.lengthM ?? "") }));
   }, [slitPreview]);
 
   const rejectedLive = useMemo(() => {
     if (!isQc || inputQty == null || form.passedQty === "") return null;
     return Math.max(0, Number(inputQty) - Number(form.passedQty || 0));
   }, [isQc, inputQty, form.passedQty]);
-
-  const handleBagsPlan = useMemo(() => {
-    if (stage.stageType !== "HANDLE_MAKING_PASTING") return null;
-    const bags = Number(form.outputQty) || 0;
-    const bpm = Number(context?.bagSpec?.bagsPerMeter) || 0;
-    const hpb = Number(context?.bagSpec?.handlesPerBag) || 2;
-    const side = Number(context?.bagSpec?.sideGlueKgPerBag) || 0;
-    const bottom = Number(context?.bagSpec?.bottomGlueKgPerBag) || 0;
-    return {
-      metersNeeded: bpm > 0 ? bags / bpm : null,
-      ropePcs: bags * hpb,
-      sideKg: bags * side,
-      bottomKg: bags * bottom,
-      maxFromMeters:
-        bpm > 0 && inputQty != null ? Math.floor(Number(inputQty) * bpm) : null,
-    };
-  }, [stage.stageType, form.outputQty, context?.bagSpec, inputQty]);
 
   function patch(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -252,11 +233,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
     }
     if (stage.stageType === "SLITTING") {
       if (!form.machineId) next.machineId = "Slitting machine required";
-      if (!form.cutWidthMm || Number(form.cutWidthMm) <= 0)
-        next.cutWidthMm = "Cut width required";
-      if (slitPreview?.widthRemainderMeters > 0 && !form.remainderAction) {
-        next.remainderAction = "Choose waste or restock for width leftover";
-      }
+      if (slitPreview?.error) next.recycledRollCount = slitPreview.error;
     }
     if (stage.stageType === "PRINTING") {
       if (!form.outputQty || Number(form.outputQty) <= 0)
@@ -272,6 +249,14 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
     if (stage.stageType === "HANDLE_MAKING_PASTING") {
       if (!form.outputQty || Number(form.outputQty) <= 0)
         next.outputQty = "Bags produced required";
+      Object.assign(
+        next,
+        validateHandleConsumptions(
+          form,
+          context?.perBagConsumption,
+          form.outputQty,
+        ),
+      );
     }
     if (stage.stageType === "PACKING") {
       if (!form.outputQty || Number(form.outputQty) <= 0)
@@ -327,7 +312,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       Number(form.outputQty) > Number(selectedPaperStock)
     ) {
       const ok = window.confirm(
-        `Issued ${form.outputQty} m exceeds stock (${selectedPaperStock} m). Continue anyway?`,
+        `Issued ${form.outputQty} m exceeds factory stock (${selectedPaperStock} m). Continue anyway?`,
       );
       if (!ok) return;
     }
@@ -340,14 +325,13 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
         outputQty: isQc ? form.passedQty : form.outputQty,
         proofUrls: form.proofUrls,
         remarks: form.remarks,
-        cutWidthMm: form.cutWidthMm || undefined,
-        pieceCount: form.pieceCount || undefined,
-        pieceWeightKg: form.pieceWeightKg || undefined,
-        remainderAction: form.remainderAction || undefined,
-        remainderQty: slitPreview?.widthRemainderMeters || undefined,
         lengthRestockQty: form.lengthRestockQty || undefined,
-        glueSideQty: form.glueSideQty || undefined,
-        glueBottomQty: form.glueBottomQty || undefined,
+        ...(stage.stageType === "SLITTING"
+          ? { recycledRollCount: Number(form.recycledRollCount) || 0, recycledWidthCm: form.recycledWidthCm || undefined }
+          : {}),
+        ...(stage.stageType === "HANDLE_MAKING_PASTING"
+          ? handleConsumptionPayload(form)
+          : {}),
         cartonMaterialId: form.cartonMaterialId || undefined,
         qc: isQc
           ? {
@@ -358,11 +342,12 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
           : undefined,
         nextStage: isPrintQc ? nextStage || undefined : undefined,
       };
-      await api.post(
+      const { data } = await api.post(
         `/production/orders/${orderId}/stages/${stage.id}/record`,
         payload,
       );
       toast.success("Stage recorded");
+      toastStockWarnings(toast, data?.stockWarnings);
       onDone();
     } catch (e) {
       toast.error(getApiErrorMessage(e));
@@ -391,15 +376,16 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             label="Paper material"
             required
             error={errors.materialId}
-            hint="Paper stock only — pick the roll material to issue."
+            hint="Paper rolls — issued from factory stock."
           >
             <SearchableSelect
+              loading={lookupsLoading}
               value={form.materialId}
               onValueChange={(v) => patch("materialId", v)}
               options={paperMaterials.map((m) => ({
                 value: m.id,
                 label: `${m.name} · ${widthMm(m) ?? "?"}mm (${m.code})`,
-                description: `Stock: ${stockById[m.id] ?? 0} m`,
+                description: factoryStockLabel(m),
               }))}
               placeholder="Select paper material"
               searchPlaceholder="Search paper..."
@@ -410,7 +396,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             label="Meters issued"
             required
             error={errors.outputQty}
-            hint="Length taken from stock into this order."
+            hint="Length taken from factory stock into this order."
           >
             <Input
               type="number"
@@ -421,9 +407,11 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             />
             {form.materialId && (
               <p className="text-xs text-muted-foreground mt-1">
-                Available stock for this paper:{" "}
+                Factory stock for this paper:{" "}
                 <strong>
-                  {selectedPaperStock != null ? `${selectedPaperStock} m` : "—"}
+                  {selectedPaperStock != null
+                    ? formatQuantity(selectedPaperStock, "METER")
+                    : "—"}
                 </strong>
               </p>
             )}
@@ -440,6 +428,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             hint="Required — which slitters did this cut."
           >
             <SearchableSelect
+              loading={lookupsLoading}
               value={form.machineId}
               onValueChange={(v) => patch("machineId", v)}
               options={machines.map((m) => ({
@@ -452,55 +441,56 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
               error={!!errors.machineId}
             />
           </FormField>
-          <FormField
-            label="Cut width (mm)"
-            required
-            error={errors.cutWidthMm}
-            hint="Target strip width (prefilled from bag width). Editable."
-          >
-            <Input
-              type="number"
-              min="1"
-              value={form.cutWidthMm}
-              onChange={(e) => patch("cutWidthMm", e.target.value)}
-            />
-          </FormField>
           {context?.paperMaterial && (
             <p className="text-xs text-muted-foreground">
-              Parent paper: {context.paperMaterial.name} · width{" "}
-              {widthMm(context.paperMaterial) ?? "—"} mm · input{" "}
+              Roll: {context.paperMaterial.name} ({context.paperMaterial.barCode}) · bags need{" "}
+              {context.bagWidthCm ?? "—"} cm · leftover {slitPreview?.leftoverCm ?? "—"} cm · input{" "}
               {inputQty ?? "—"} m
             </p>
           )}
-          {slitPreview && (
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Recycled rolls" error={errors.recycledRollCount}>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={form.recycledRollCount}
+                onChange={(e) => patch("recycledRollCount", e.target.value)}
+              />
+            </FormField>
+            <FormField label="Width each (cm)" hint={`${SLIT.RECYCLE_STRIP_MIN_CM}–${SLIT.RECYCLE_STRIP_MAX_CM} cm`}>
+              <Input
+                type="number"
+                min={SLIT.RECYCLE_STRIP_MIN_CM}
+                max={SLIT.RECYCLE_STRIP_MAX_CM}
+                step="0.1"
+                disabled={!(Number(form.recycledRollCount) > 0)}
+                value={form.recycledWidthCm}
+                onChange={(e) => patch("recycledWidthCm", e.target.value)}
+              />
+            </FormField>
+          </div>
+          {slitPreview && !slitPreview.error && (
             <div className="rounded-md border px-3 py-2 text-sm space-y-1">
               <p>
-                Pieces across width: <strong>{slitPreview.pieceCount}</strong>
+                Bags: <strong>{context?.bagWidthCm} cm × {Number(slitPreview.lengthM.toFixed(2))} m</strong>
               </p>
+              {Number(form.recycledRollCount) > 0 && (
+                <p>
+                  Recycled: <strong>{form.recycledRollCount} × {form.recycledWidthCm} cm</strong>
+                  {slitPreview.stripWeightKg != null && ` (${formatWeight(slitPreview.stripWeightKg, "kg")} each)`} — added
+                  to factory stock as {context?.paperMaterial?.barCode}-1, -2…
+                </p>
+              )}
               <p>
-                Gross usable: {inputQty} × {slitPreview.pieceCount} ={" "}
-                <strong>
-                  {(Number(inputQty || 0) * slitPreview.pieceCount).toFixed(2)}{" "}
-                  m
-                </strong>
-              </p>
-              <p>
-                Width leftover:{" "}
-                <strong>{slitPreview.widthRemainderMm} mm</strong> strip ×{" "}
-                {inputQty} m (={" "}
-                {Number(slitPreview.widthRemainderMeters || 0).toFixed(2)} m)
-              </p>
-              <p>
-                After length restock → next stage input:{" "}
-                <strong>
-                  {Number(slitPreview.usableMeters || 0).toFixed(2)} m
-                </strong>
+                Waste: <strong>{slitPreview.wasteWidthCm} cm</strong>
+                {slitPreview.wasteKg != null && ` (${formatWeight(slitPreview.wasteKg, "kg")})`}
               </p>
             </div>
           )}
           <FormField
             label="Length restock (m)"
-            hint="Optional: return unused cut-strip length to stock. Reduces usable meters."
+            hint="Optional: unused length returned to the roll. Reduces the slit length."
           >
             <Input
               type="number"
@@ -510,31 +500,6 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
               onChange={(e) => patch("lengthRestockQty", e.target.value)}
             />
           </FormField>
-          {slitPreview?.widthRemainderMeters > 0 && (
-            <FormField
-              label="Width leftover action"
-              required
-              error={errors.remainderAction}
-              hint="Leftover width strip — you choose restock or waste (not auto)."
-            >
-              <Select
-                value={form.remainderAction}
-                onValueChange={(v) => patch("remainderAction", v)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Waste or Restock" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="RESTOCK">
-                    Restock leftover width strip
-                  </SelectItem>
-                  <SelectItem value="WASTE">
-                    Mark leftover width as waste
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </FormField>
-          )}
         </>
       )}
 
@@ -584,6 +549,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
           {defectTypes.length > 0 && (
             <FormField label="Defect type" hint="Optional reason for rejects.">
               <SearchableSelect
+                loading={lookupsLoading}
                 value={form.defectTypeId}
                 onValueChange={(v) => patch("defectTypeId", v)}
                 options={defectTypes.map((d) => ({
@@ -633,32 +599,6 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
 
       {stage.stageType === "HANDLE_MAKING_PASTING" && (
         <>
-          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm space-y-1">
-            {context?.handleCapacity && (
-              <p>
-                Max from rope + meters:{" "}
-                <strong>
-                  {Math.floor(context.handleCapacity.capacityBags)}
-                </strong>{" "}
-                bags
-              </p>
-            )}
-            {context?.gluePlan && (
-              <>
-                <p>
-                  Bags / meter (spec): {context.gluePlan.bagsPerMeter ?? "—"}
-                </p>
-                <p>Handles / bag: {context.gluePlan.handlesPerBag}</p>
-              </>
-            )}
-            {handleBagsPlan && (
-              <p className="text-muted-foreground">
-                For entered bags → rope ~{handleBagsPlan.ropePcs} pcs · side
-                glue ~{handleBagsPlan.sideKg.toFixed(4)} kg · bottom ~
-                {handleBagsPlan.bottomKg.toFixed(4)} kg
-              </p>
-            )}
-          </div>
           <FormField
             label="Bags produced"
             required
@@ -672,40 +612,51 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
               onChange={(e) => patch("outputQty", e.target.value)}
             />
           </FormField>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FormField
-              label="Side glue (kg)"
-              hint="Prefilled from bag spec × bags. Editable."
-            >
-              <Input
-                type="number"
-                min="0"
-                step="0.0001"
-                value={form.glueSideQty}
-                onChange={(e) => patch("glueSideQty", e.target.value)}
-              />
-              {glueMaterials.length > 0 && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Stock:{" "}
-                  {glueMaterials
-                    .map((g) => `${g.name} ${stockById[g.id] ?? "?"}kg`)
-                    .join(" · ")}
-                </p>
-              )}
-            </FormField>
-            <FormField
-              label="Bottom glue (kg)"
-              hint="Prefilled from bag spec × bags. Editable."
-            >
-              <Input
-                type="number"
-                min="0"
-                step="0.0001"
-                value={form.glueBottomQty}
-                onChange={(e) => patch("glueBottomQty", e.target.value)}
-              />
-            </FormField>
-          </div>
+          {HANDLE_CONSUMPTIONS.map((c) => {
+            const planned = plannedConsumption(
+              context?.perBagConsumption,
+              c.perBagKey,
+              form.outputQty,
+            );
+            return (
+              <FormField
+                key={c.kind}
+                label={`${c.label} used (${UNIT_LABELS[c.unit]})`}
+                error={errors[c.materialField] || errors[c.qtyField]}
+                hint={
+                  planned != null
+                    ? `Planned for ${form.outputQty} bags: ${formatQuantity(planned, c.unit)}. Leave blank to use it.`
+                    : "Enter bags produced to see the planned amount."
+                }
+              >
+                <div className="grid gap-2 sm:grid-cols-[1fr_9rem]">
+                  <SearchableSelect
+                    loading={lookupsLoading}
+                    value={form[c.materialField]}
+                    onValueChange={(v) => patch(c.materialField, v)}
+                    options={catalogMaterialOptions(
+                      c.materialType === "ROPE" ? ropeMaterials : glueMaterials,
+                    )}
+                    placeholder={`Which ${c.label.toLowerCase()}?`}
+                    searchPlaceholder="Search supplier..."
+                    error={!!errors[c.materialField]}
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder={
+                      planned != null
+                        ? formatQuantity(planned, c.unit)
+                        : "Planned"
+                    }
+                    value={form[c.qtyField]}
+                    onChange={(e) => patch(c.qtyField, e.target.value)}
+                  />
+                </div>
+              </FormField>
+            );
+          })}
         </>
       )}
 
@@ -728,16 +679,13 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
             label="Carton type"
             required
             error={errors.cartonMaterialId}
-            hint="Deducts this carton from inventory."
+            hint="Deducts this carton from factory stock."
           >
             <SearchableSelect
+              loading={lookupsLoading}
               value={form.cartonMaterialId}
               onValueChange={(v) => patch("cartonMaterialId", v)}
-              options={cartonMaterials.map((m) => ({
-                value: m.id,
-                label: `${m.name} (${m.code})`,
-                description: `Stock: ${stockById[m.id] ?? "—"}`,
-              }))}
+              options={catalogMaterialOptions(cartonMaterials)}
               placeholder="Select carton"
               searchPlaceholder="Search carton type..."
               error={!!errors.cartonMaterialId}
@@ -765,6 +713,7 @@ function StageRecordForm({ orderId, stage, context, onDone, onCancel }) {
       {machines.length > 0 && stage.stageType !== "SLITTING" && (
         <FormField label="Machine" hint="Optional machine used.">
           <SearchableSelect
+            loading={lookupsLoading}
             value={form.machineId}
             onValueChange={(v) => patch("machineId", v)}
             options={machines.map((m) => ({
@@ -943,6 +892,9 @@ export default function ProductionOrderDetailPage() {
               <p>
                 Paper / meter waste:{" "}
                 <strong>{materialSummary.wasteMeters.toFixed(2)} m</strong>
+              </p>
+              <p>
+                Slitting waste: <strong>{materialSummary.slitWasteKg.toFixed(2)} kg</strong>
               </p>
               <p>
                 Bags made: <strong>{materialSummary.usedBags}</strong>
@@ -1200,35 +1152,33 @@ export default function ProductionOrderDetailPage() {
                 </div>
               </div>
 
-              {(previewStage.cutWidthMm != null ||
-                previewStage.pieceCount != null ||
-                previewStage.lengthRestockQty != null) && (
+              {previewStage.stageType === "SLITTING" && previewStage.bagWidthCm != null && (
                 <div className="space-y-1.5 p-3 rounded-lg border bg-muted/20">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Slitting Details
                   </p>
-                  {previewStage.cutWidthMm != null && (
-                    <p>
-                      Cut Width: <strong>{previewStage.cutWidthMm} mm</strong>
-                    </p>
-                  )}
-                  {previewStage.pieceCount != null && (
-                    <p>
-                      Pieces Across Width:{" "}
-                      <strong>{previewStage.pieceCount}</strong>
-                    </p>
-                  )}
+                  <p>
+                    Bag width: <strong>{Number(previewStage.bagWidthCm)} cm</strong>
+                  </p>
+                  <p>
+                    Recycled rolls:{" "}
+                    <strong>
+                      {previewStage.recycledRollCount
+                        ? `${previewStage.recycledRollCount} × ${Number(previewStage.recycledWidthCm)} cm`
+                        : "none"}
+                    </strong>
+                  </p>
+                  <p>
+                    Waste:{" "}
+                    <strong>
+                      {Number(previewStage.slitWasteWidthCm)} cm
+                      {previewStage.slitWasteKg != null && ` (${Number(previewStage.slitWasteKg)} kg)`}
+                    </strong>
+                  </p>
                   {previewStage.lengthRestockQty != null && (
                     <p>
                       Length Restock:{" "}
                       <strong>{previewStage.lengthRestockQty} m</strong>
-                    </p>
-                  )}
-                  {previewStage.remainderAction && (
-                    <p>
-                      Width Leftover:{" "}
-                      <strong>{previewStage.remainderQty}</strong> →{" "}
-                      {previewStage.remainderAction}
                     </p>
                   )}
                 </div>

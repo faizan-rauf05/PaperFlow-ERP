@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import {
   Plus,
-  Trash2,
   FileText,
   CheckCircle2,
   XCircle,
@@ -13,13 +12,10 @@ import {
   Loader2,
   Eye,
   Edit,
-  Send,
-  Upload,
   LogOut,
   Building,
   UserCheck,
   FileDown,
-  Sparkles,
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,21 +29,15 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { FormField } from "@/components/ui/form-field";
 import { CustomerQuoteSection } from "@/components/orders/customer-quote-section";
 import { OrderRowActions } from "@/components/orders/order-row-actions";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
 import { cn, formatDateTime } from "@/lib/utils";
 import { formatKWD } from "@/lib/currency";
+import { bagSizeLabel } from "@/lib/order-labels";
 import { getOrderLineProgressRows } from "@/lib/order-progress";
+import { EDITABLE_ORDER_STATUSES } from "@/lib/validations/sales-order";
 
 const ORDER_STATUS_CONFIG = {
   DRAFT: { label: "Draft", cls: "bg-gray-500/10 text-gray-700 dark:text-gray-300 border-gray-400/40" },
@@ -55,6 +45,7 @@ const ORDER_STATUS_CONFIG = {
   APPROVED: { label: "Approved", cls: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 font-semibold" },
   PENDING_CUSTOMER_APPROVAL: { label: "Quote Sent", cls: "bg-violet-500/15 text-violet-800 dark:text-violet-300 border-violet-500/40 font-semibold" },
   CUSTOMER_APPROVED: { label: "Customer Approved", cls: "bg-teal-500/15 text-teal-800 dark:text-teal-300 border-teal-500/40 font-semibold" },
+  AWAITING_MATERIALS: { label: "Awaiting Materials", cls: "bg-orange-500/15 text-orange-800 dark:text-orange-300 border-orange-500/40 font-semibold" },
   READY_FOR_WORK: { label: "Ready for Work", cls: "bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-500/40 font-semibold" },
   PICKED: { label: "Picked", cls: "bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border-indigo-500/40 font-semibold" },
   IN_PROGRESS: { label: "In Progress", cls: "bg-purple-500/15 text-purple-800 dark:text-purple-300 border-purple-500/40 font-semibold" },
@@ -63,64 +54,14 @@ const ORDER_STATUS_CONFIG = {
   CANCELLED: { label: "Cancelled", cls: "bg-gray-500/20 text-gray-500 border-gray-500/30" },
 };
 
-const PAPER_TYPES = [
-  { value: "VIRGIN", label: "Virgin Paper" },
-  { value: "RECYCLED", label: "Recycled Paper" },
-];
-
-const PAPER_COLORS = [
-  { value: "WHITE", label: "White" },
-  { value: "BROWN", label: "Brown" },
-];
-
-const COLOR_COUNTS = [
-  { value: 0, label: "0 (Plain - No Print)" },
-  { value: 1, label: "1 Color" },
-  { value: 2, label: "2 Colors" },
-  { value: 3, label: "3 Colors" },
-  { value: 4, label: "4 Colors" },
-  { value: 5, label: "5+ Colors" },
-];
-
-const emptyLine = {
-  widthCm: "",
-  heightCm: "",
-  baseCm: "",
-  quantity: "",
-  withHandle: true,
-  paperType: "VIRGIN",
-  paperColor: "WHITE",
-  colorCount: 0,
-  unitPrice: "",
-  lineTotal: "",
-  referenceFiles: [],
-};
-
 export default function SalesDashboardPage() {
   const router = useRouter();
-  const { data: session } = useSession();
 
   const [orders, setOrders] = useState([]);
-  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [viewFilter, setViewFilter] = useState("active"); // "active" | "cancelled" | "archived"
-
-  // Order Create / Edit Modal State
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [uploadingLineIndex, setUploadingLineIndex] = useState(null);
-
-  // Form Fields
-  const [customerId, setCustomerId] = useState("");
-  const [priority, setPriority] = useState("NORMAL");
-  const [deliveryDate, setDeliveryDate] = useState("");
-  const [notes, setNotes] = useState("");
-  const [discount, setDiscount] = useState("0");
-  const [lines, setLines] = useState([]); // Empty by default
-  const [originalSnapshot, setOriginalSnapshot] = useState(null);
 
   // Inspection Modal State
   const [inspectOrder, setInspectOrder] = useState(null);
@@ -128,13 +69,8 @@ export default function SalesDashboardPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [ordersRes, custRes] = await Promise.all([
-        api.get("/orders"),
-        api.get("/customers").catch(() => ({ data: { customers: [] } })),
-      ]);
-
-      setOrders(ordersRes.data.orders || []);
-      setCustomers(custRes.data.customers || []);
+      const { data } = await api.get("/orders");
+      setOrders(data.orders || []);
     } catch (e) {
       toast.error(getApiErrorMessage(e));
     } finally {
@@ -161,225 +97,6 @@ export default function SalesDashboardPage() {
   async function handleLogout() {
     await api.post("/auth/logout");
     router.push("/login");
-  }
-
-  // Open Create Dialog
-  function openCreateOrder() {
-    setEditingOrder(null);
-    setOriginalSnapshot(null);
-    setCustomerId(customers[0]?.id || "");
-    setPriority("NORMAL");
-    setDeliveryDate("");
-    setNotes("");
-    setDiscount("0");
-    setLines([]); // No default lines
-    setDialogOpen(true);
-  }
-
-  // Open Edit Dialog
-  function openEditOrder(order) {
-    setEditingOrder(order);
-
-    const nextCustomerId = order.customerId || "";
-    const nextPriority = order.priority || "NORMAL";
-    const nextDeliveryDate = order.deliveryDate ? order.deliveryDate.split("T")[0] : "";
-    const nextNotes = order.notes || "";
-    const nextDiscount = order.discount ? parseFloat(order.discount).toFixed(2) : "0.00";
-    const nextLines =
-      Array.isArray(order.lines) && order.lines.length > 0
-        ? order.lines.map((l) => ({
-            widthCm: l.widthCm ? String(l.widthCm) : "",
-            heightCm: l.heightCm ? String(l.heightCm) : "",
-            baseCm: l.baseCm ? String(l.baseCm) : "",
-            quantity: l.quantity ? String(l.quantity) : "",
-            withHandle: Boolean(l.withHandle),
-            paperType: l.paperType || "VIRGIN",
-            paperColor: l.paperColor || "WHITE",
-            colorCount: l.colorCount != null ? Number(l.colorCount) : 0,
-            unitPrice: l.unitPrice ? parseFloat(l.unitPrice).toFixed(2) : "",
-            lineTotal: l.lineTotal ? parseFloat(l.lineTotal).toFixed(2) : "",
-            referenceFiles: Array.isArray(l.referenceFiles)
-              ? l.referenceFiles
-              : l.fileUrl
-                ? [{ url: l.fileUrl, name: l.fileName || "Reference File" }]
-                : [],
-          }))
-        : [];
-
-    setCustomerId(nextCustomerId);
-    setPriority(nextPriority);
-    setDeliveryDate(nextDeliveryDate);
-    setNotes(nextNotes);
-    setDiscount(nextDiscount);
-    setLines(nextLines);
-    setOriginalSnapshot(
-      JSON.stringify({
-        customerId: nextCustomerId,
-        priority: nextPriority,
-        deliveryDate: nextDeliveryDate,
-        notes: nextNotes,
-        discount: nextDiscount,
-        lines: nextLines,
-      }),
-    );
-
-    setDialogOpen(true);
-  }
-
-  function addLine() {
-    setLines((prev) => [...prev, { ...emptyLine }]);
-  }
-
-  function removeLine(idx) {
-    setLines((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function updateLine(idx, field, value) {
-    setLines((prev) => {
-      const copy = [...prev];
-      const updated = { ...copy[idx], [field]: value };
-
-      // Auto calculation: lineTotal = qty * unitPrice or unitPrice = lineTotal / qty
-      if (field === "quantity" || field === "unitPrice") {
-        const qty = parseFloat(field === "quantity" ? value : updated.quantity) || 0;
-        const uPrice = parseFloat(field === "unitPrice" ? value : updated.unitPrice) || 0;
-        if (qty > 0 && uPrice > 0) {
-          updated.lineTotal = (qty * uPrice).toFixed(2);
-        }
-      } else if (field === "lineTotal") {
-        const total = parseFloat(value) || 0;
-        const qty = parseFloat(updated.quantity) || 0;
-        if (qty > 0 && total > 0) {
-          updated.unitPrice = (total / qty).toFixed(2);
-        }
-      }
-
-      copy[idx] = updated;
-      return copy;
-    });
-  }
-
-  const subtotal = lines.reduce((acc, l) => acc + (parseFloat(l.lineTotal) || 0), 0);
-  const discountVal = parseFloat(discount) || 0;
-  const proposedTotal = Math.max(subtotal - discountVal, 0);
-
-  // Whether anything actually changed since this order was opened for
-  // editing — used to stop "Submit for Approval" from re-submitting an
-  // order that's already awaiting review with zero edits.
-  const isDirty = useMemo(() => {
-    if (!originalSnapshot) return true;
-    return (
-      JSON.stringify({ customerId, priority, deliveryDate, notes, discount, lines }) !==
-      originalSnapshot
-    );
-  }, [originalSnapshot, customerId, priority, deliveryDate, notes, discount, lines]);
-
-  const alreadyAwaitingApproval =
-    !!editingOrder &&
-    ["PENDING_APPROVAL", "APPROVED"].includes(editingOrder.status) &&
-    !isDirty;
-
-  // File upload handler for reference files (up to 5 per line)
-  async function handleFileUpload(lineIndex, files) {
-    if (!files || files.length === 0) return;
-    const currentFiles = lines[lineIndex].referenceFiles || [];
-    if (currentFiles.length + files.length > 5) {
-      toast.error("Maximum 5 reference files allowed per order line");
-      return;
-    }
-
-    setUploadingLineIndex(lineIndex);
-    try {
-      const uploadedList = [...currentFiles];
-      for (const file of Array.from(files)) {
-        const fd = new FormData();
-        fd.append("file", file);
-        const { data } = await api.post("/uploads", fd, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        uploadedList.push({
-          url: data.photoUrl,
-          name: file.name || "Design Reference",
-        });
-      }
-
-      updateLine(lineIndex, "referenceFiles", uploadedList);
-      toast.success("Reference file(s) attached");
-    } catch (e) {
-      toast.error(getApiErrorMessage(e));
-    } finally {
-      setUploadingLineIndex(null);
-    }
-  }
-
-  function removeReferenceFile(lineIndex, fileIdx) {
-    const currentFiles = lines[lineIndex].referenceFiles || [];
-    const filtered = currentFiles.filter((_, i) => i !== fileIdx);
-    updateLine(lineIndex, "referenceFiles", filtered);
-  }
-
-  // Submit Sales Order
-  async function handleSaveOrder(targetStatus = "PENDING_APPROVAL") {
-    if (!customerId) {
-      toast.error("Please select a customer");
-      return;
-    }
-    if (lines.length === 0) {
-      toast.error("Add at least one order line item");
-      return;
-    }
-
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i];
-      if (!l.widthCm || !l.heightCm || !l.baseCm) {
-        toast.error(`Line #${i + 1}: Enter width, height, and base in cm`);
-        return;
-      }
-      if (!l.quantity || parseFloat(l.quantity) <= 0) {
-        toast.error(`Line #${i + 1}: Enter a valid quantity`);
-        return;
-      }
-    }
-
-    setSaving(true);
-    try {
-      const payload = {
-        customerId,
-        salesRepId: session?.user?.id || undefined,
-        priority,
-        deliveryDate: deliveryDate || undefined,
-        notes: notes || undefined,
-        subtotal,
-        discount: discountVal,
-        total: proposedTotal,
-        proposedTotal,
-        lines,
-        status: targetStatus,
-      };
-
-      if (editingOrder) {
-        await api.put(`/orders/${editingOrder.id}`, payload);
-        toast.success(
-          targetStatus === "PENDING_APPROVAL"
-            ? "Order updated and submitted for manager approval"
-            : "Order draft saved",
-        );
-      } else {
-        await api.post("/orders", payload);
-        toast.success(
-          targetStatus === "PENDING_APPROVAL"
-            ? "Order proposal submitted for manager approval!"
-            : "Order saved as draft",
-        );
-      }
-
-      setDialogOpen(false);
-      loadData();
-    } catch (e) {
-      toast.error(getApiErrorMessage(e));
-    } finally {
-      setSaving(false);
-    }
   }
 
   // Three-way partition: every order falls into exactly one — archived takes
@@ -415,8 +132,10 @@ export default function SalesDashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={openCreateOrder} className="shrink-0">
-            <Plus className="h-4 w-4 mr-2" /> New Order Proposal
+          <Button asChild className="shrink-0">
+            <Link href="/dashboard/sales/orders/new">
+              <Plus className="h-4 w-4 mr-2" /> New Order Proposal
+            </Link>
           </Button>
           <Button variant="ghost" size="icon" onClick={handleLogout} title="Sign Out">
             <LogOut className="h-4 w-4 text-muted-foreground hover:text-foreground" />
@@ -572,7 +291,7 @@ export default function SalesDashboardPage() {
                       <td className="py-3.5 px-4 text-xs text-muted-foreground">
                         {o.lines?.length || 0} line(s) ·{" "}
                         {o.lines?.[0]
-                          ? `${o.lines[0].widthCm}x${o.lines[0].heightCm}x${o.lines[0].baseCm}cm (${o.lines[0].paperColor || "White"} ${o.lines[0].paperType || "Virgin"})`
+                          ? `${bagSizeLabel(o.lines[0])} (${o.lines[0].paperColor || "White"} ${o.lines[0].paperType || "Virgin"})`
                           : "Custom Paper Bag"}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono font-semibold text-foreground">
@@ -608,14 +327,16 @@ export default function SalesDashboardPage() {
                         >
                           <Eye className="h-3.5 w-3.5 mr-1" /> View
                         </Button>
-                        {["DRAFT", "REJECTED", "PENDING_APPROVAL", "APPROVED"].includes(o.status) && (
+                        {EDITABLE_ORDER_STATUSES.includes(o.status) && (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => openEditOrder(o)}
+                            asChild
                             className="h-8 text-xs border-primary/40 text-primary hover:bg-primary/10"
                           >
-                            <Edit className="h-3.5 w-3.5 mr-1" /> Edit
+                            <Link href={`/dashboard/sales/orders/${o.id}/edit`}>
+                              <Edit className="h-3.5 w-3.5 mr-1" /> Edit
+                            </Link>
                           </Button>
                         )}
                         <OrderRowActions order={o} onUpdated={updateOrderInList} />
@@ -628,387 +349,6 @@ export default function SalesDashboardPage() {
           </table>
         </CardContent>
       </Card>
-
-      {/* Create / Edit Order Modal */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              {editingOrder ? `Edit Order (${editingOrder.orderNo})` : "Create New Paper Bag Proposal"}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-5 py-2">
-            {/* Top Info Grid */}
-            <div className="space-y-3">
-              <h3 className="font-semibold text-sm flex items-center gap-2">
-                <Building className="h-4 w-4 text-primary" /> Order Details
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-muted/40 rounded-lg border">
-              <FormField label="Customer" required className="min-w-0">
-                <Select value={customerId} onValueChange={setCustomerId}>
-                  <SelectTrigger className="w-full bg-background">
-                    <SelectValue placeholder="Select customer..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormField>
-
-              {/* Sales Representative (Read-only for Sales Dashboard) */}
-              <FormField label="Sales Representative" className="min-w-0">
-                <Input
-                  value={session?.user?.name || "Sales Representative"}
-                  readOnly
-                  className="bg-muted font-medium cursor-not-allowed truncate"
-                />
-              </FormField>
-
-              <FormField label="Order Priority" className="min-w-0">
-                <Select value={priority} onValueChange={setPriority}>
-                  <SelectTrigger className="w-full bg-background">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="LOW">Low</SelectItem>
-                    <SelectItem value="NORMAL">Normal</SelectItem>
-                    <SelectItem value="HIGH">High</SelectItem>
-                    <SelectItem value="URGENT">Urgent ⚡</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
-              </div>
-            </div>
-
-            {/* Order Lines Builder */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sm flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" /> Order Line Items & Specifications
-                </h3>
-                <Button type="button" variant="outline" size="sm" onClick={addLine} className="text-xs">
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Line Item
-                </Button>
-              </div>
-
-              {lines.length === 0 ? (
-                <div className="p-8 border border-dashed rounded-lg text-center space-y-2 bg-muted/20">
-                  <p className="text-sm text-muted-foreground">
-                    No order line items added yet.
-                  </p>
-                  <Button type="button" variant="outline" size="sm" onClick={addLine} className="text-xs">
-                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Order Line Item
-                  </Button>
-                </div>
-              ) : (
-                lines.map((line, idx) => (
-                  <div key={idx} className="p-4 border rounded-lg bg-card space-y-3 relative shadow-2xs">
-                    <div className="flex items-center justify-between border-b pb-2">
-                      <span className="font-semibold text-xs text-primary font-mono">
-                        Line #{idx + 1}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeLine(idx)}
-                        className="h-7 text-xs text-destructive hover:bg-destructive/10"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
-                      </Button>
-                    </div>
-
-                    {/* Dimensions in cm (Step = 1) */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <FormField label="Width (cm)" required>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={line.widthCm}
-                          onChange={(e) => updateLine(idx, "widthCm", e.target.value)}
-                          placeholder="e.g. 30"
-                        />
-                      </FormField>
-                      <FormField label="Height (cm)" required>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={line.heightCm}
-                          onChange={(e) => updateLine(idx, "heightCm", e.target.value)}
-                          placeholder="e.g. 40"
-                        />
-                      </FormField>
-                      <FormField label="Gusset / Base (cm)" required>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={line.baseCm}
-                          onChange={(e) => updateLine(idx, "baseCm", e.target.value)}
-                          placeholder="e.g. 12"
-                        />
-                      </FormField>
-                    </div>
-
-                    {/* Qty, Paper Type, Paper Color, Color Count */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <FormField label="Quantity (Bags)" required>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={line.quantity}
-                          onChange={(e) => updateLine(idx, "quantity", e.target.value)}
-                          placeholder="e.g. 50000"
-                        />
-                      </FormField>
-
-                      <FormField label="Paper Type" className="min-w-0">
-                        <Select
-                          value={line.paperType}
-                          onValueChange={(v) => updateLine(idx, "paperType", v)}
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PAPER_TYPES.map((p) => (
-                              <SelectItem key={p.value} value={p.value}>
-                                {p.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </FormField>
-
-                      <FormField label="Paper Color" className="min-w-0">
-                        <Select
-                          value={line.paperColor}
-                          onValueChange={(v) => updateLine(idx, "paperColor", v)}
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PAPER_COLORS.map((c) => (
-                              <SelectItem key={c.value} value={c.value}>
-                                {c.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </FormField>
-
-                      <FormField label="Color Count" className="min-w-0">
-                        <Select
-                          value={String(line.colorCount)}
-                          onValueChange={(v) => updateLine(idx, "colorCount", Number(v))}
-                        >
-                          <SelectTrigger className="w-full h-9 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {COLOR_COUNTS.map((c) => (
-                              <SelectItem key={c.value} value={String(c.value)}>
-                                {c.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </FormField>
-                    </div>
-
-                    {/* Handle Option (Radio Choice) */}
-                    <div className="pt-1">
-                      <label className="text-xs font-medium text-muted-foreground block mb-1">
-                        Handle Option
-                      </label>
-                      <div className="flex items-center gap-4 text-xs font-medium">
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="radio"
-                            name={`handle-${idx}`}
-                            checked={line.withHandle === true}
-                            onChange={() => updateLine(idx, "withHandle", true)}
-                            className="accent-primary"
-                          />
-                          <span>With Handle</span>
-                        </label>
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="radio"
-                            name={`handle-${idx}`}
-                            checked={line.withHandle === false}
-                            onChange={() => updateLine(idx, "withHandle", false)}
-                            className="accent-primary"
-                          />
-                          <span>Without Handle</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Pricing per line (Step = 0.01) */}
-                    <div className="grid grid-cols-2 gap-3 pt-2 border-t">
-                      <FormField label="Unit Price (KWD / bag)">
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.unitPrice}
-                          onChange={(e) => updateLine(idx, "unitPrice", e.target.value)}
-                          placeholder="0.00"
-                        />
-                      </FormField>
-
-                      <FormField label="Line Total (KWD)">
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.lineTotal}
-                          onChange={(e) => updateLine(idx, "lineTotal", e.target.value)}
-                          placeholder="0.00"
-                        />
-                      </FormField>
-                    </div>
-
-                    {/* Reference / Design Files Upload */}
-                    <div className="pt-1">
-                      <label className="text-xs font-medium text-muted-foreground block mb-1">
-                        Reference / Design Files (Max 5 uploaded images or PDFs)
-                      </label>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {(line.referenceFiles || []).map((f, fileIdx) => (
-                          <div
-                            key={fileIdx}
-                            className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs border"
-                          >
-                            <a
-                              href={f.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-primary hover:underline max-w-[120px] truncate"
-                            >
-                              {f.name || `File ${fileIdx + 1}`}
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => removeReferenceFile(idx, fileIdx)}
-                              className="text-muted-foreground hover:text-destructive ml-1"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-
-                        {(line.referenceFiles || []).length < 5 && (
-                          <label className="cursor-pointer border border-dashed border-primary/50 bg-primary/5 hover:bg-primary/10 rounded px-2.5 py-1 text-xs text-primary font-medium flex items-center gap-1">
-                            <Upload className="h-3 w-3" />
-                            {uploadingLineIndex === idx ? "Uploading..." : "Attach File"}
-                            <input
-                              type="file"
-                              multiple
-                              accept="image/*,application/pdf"
-                              onChange={(e) => handleFileUpload(idx, e.target.files)}
-                              className="hidden"
-                              disabled={uploadingLineIndex === idx}
-                            />
-                          </label>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Commercial Pricing Summary */}
-            <div className="p-4 border rounded-lg bg-muted/40 space-y-3">
-              <h4 className="font-semibold text-sm">Commercial Proposal Pricing</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <span className="text-xs text-muted-foreground">Subtotal Sum</span>
-                  <p className="font-mono text-lg font-bold">{formatKWD(subtotal)}</p>
-                </div>
-                <FormField label="Discount (KWD)">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={discount}
-                    onChange={(e) => setDiscount(e.target.value)}
-                    placeholder="0.00"
-                  />
-                </FormField>
-                <div>
-                  <span className="text-xs text-muted-foreground font-semibold text-primary">
-                    Proposed Commercial Total
-                  </span>
-                  <p className="font-mono text-xl font-bold text-primary">{formatKWD(proposedTotal)}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Notes & Delivery Date */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField label="Expected Delivery Date">
-                <Input
-                  type="date"
-                  value={deliveryDate}
-                  onChange={(e) => setDeliveryDate(e.target.value)}
-                />
-              </FormField>
-              <FormField label="Special Order Notes / Client Instructions">
-                <Input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Special packing requirement..."
-                />
-              </FormField>
-            </div>
-          </div>
-
-          <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleSaveOrder("DRAFT")}
-              disabled={saving}
-            >
-              Save as Draft
-            </Button>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" onClick={() => setDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => handleSaveOrder("PENDING_APPROVAL")}
-                disabled={saving || alreadyAwaitingApproval}
-                title={
-                  alreadyAwaitingApproval
-                    ? "No changes to submit — this order is already awaiting approval"
-                    : undefined
-                }
-              >
-                {saving ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4 mr-2" />
-                )}
-                {alreadyAwaitingApproval ? "Awaiting Approval" : "Submit for Approval"}
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Inspection & Approval History Modal */}
       <Dialog open={!!inspectOrder} onOpenChange={() => setInspectOrder(null)}>
@@ -1049,7 +389,7 @@ export default function SalesDashboardPage() {
                       <div key={i} className="p-3 text-xs space-y-1.5">
                         <div className="flex items-center justify-between font-semibold">
                           <span>
-                            Line #{l.lineNo || i + 1}: {l.widthCm || (l.widthMm ? l.widthMm / 10 : 30)}cm (W) × {l.heightCm || (l.heightMm ? l.heightMm / 10 : 40)}cm (H) × {l.baseCm || (l.baseMm ? l.baseMm / 10 : 12)}cm (Base)
+                            Line #{l.lineNo || i + 1}: {bagSizeLabel(l)} (H × W × B)
                           </span>
                           <span className="font-mono text-foreground font-bold">
                             {Number(l.quantity || l.plannedQty).toLocaleString()} bags
@@ -1156,7 +496,7 @@ export default function SalesDashboardPage() {
                   )}
                 </div>
 
-                <CustomerQuoteSection order={inspectOrder} onUpdate={applyOrderUpdate} />
+                <CustomerQuoteSection order={inspectOrder} onUpdate={applyOrderUpdate} canSendToProduction={false} />
               </div>
 
               <DialogFooter>

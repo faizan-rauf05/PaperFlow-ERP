@@ -5,6 +5,15 @@ import { getTaskDisplayStatus } from "./status-badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
 import { Upload } from "lucide-react";
+import { UNIT_LABELS, formatQuantity } from "@/lib/material-catalog";
+import { MATERIAL_SUGGESTION_CONSTANTS as C } from "@/lib/material-constants";
+import { formatWeight } from "@/lib/paper-sizing";
+import {
+  HANDLE_CONSUMPTIONS,
+  catalogMaterialOptions,
+  factoryStockLabel,
+  plannedConsumption,
+} from "@/components/production/stage-materials";
 
 function fieldInputClass(hasError) {
   return cn(workerStyles.formInput, hasError && workerStyles.inputError);
@@ -45,27 +54,25 @@ export function StageForm({
   remarks,
   setRemarks,
   // Slitting
-  cutWidthMm,
-  setCutWidthMm,
+  recycledRollCount,
+  setRecycledRollCount,
+  recycledWidthCm,
+  setRecycledWidthCm,
   lengthRestockQty,
   setLengthRestockQty,
-  remainderAction,
-  setRemainderAction,
   slitPreview,
+  bagWidthCm,
   inputQty,
   // Packing
   cartonMaterialId,
   setCartonMaterialId,
   cartonMaterials,
   // Handle making/pasting
-  plannedSideGlue,
-  plannedBottomGlue,
-  sideGlueKg,
-  setSideGlueKg,
-  bottomGlueKg,
-  setBottomGlueKg,
-  handleRopePcs,
-  setHandleRopePcs,
+  perBagConsumption,
+  glueMaterials,
+  ropeMaterials,
+  handleConsumption = {},
+  setHandleConsumptionField,
   // Downtime
   downtimeOpen,
   setDowntimeOpen,
@@ -173,7 +180,7 @@ export function StageForm({
                   options={(materials || []).map((m) => ({
                     value: m.id,
                     label: `${m.name} · ${widthMm(m) ?? "?"}mm (${m.code})`,
-                    description: `Stock: ${stockById?.[m.id] ?? 0} m`,
+                    description: factoryStockLabel(m),
                   }))}
                   placeholder="Choose paper material…"
                   searchPlaceholder="Search material…"
@@ -186,8 +193,8 @@ export function StageForm({
                 ) : (
                   <span className={workerStyles.hintText}>
                     {materialId
-                      ? `Available stock: ${selectedMaterialStock != null ? `${selectedMaterialStock} m` : "—"}`
-                      : "Meters issued from stock into this order"}
+                      ? `Factory stock: ${selectedMaterialStock != null ? formatQuantity(selectedMaterialStock, "METER") : "—"}`
+                      : "Meters issued from factory stock into this order"}
                   </span>
                 )}
               </div>
@@ -262,57 +269,71 @@ export function StageForm({
                   )}
                 </div>
 
-                <div className={workerStyles.formField}>
-                  <label className={workerStyles.formLabel}>
-                    Cut width (mm) *
-                  </label>
-                  <input
-                    className={fieldInputClass(!!errors.cutWidthMm)}
-                    type="number"
-                    min="1"
-                    value={cutWidthMm}
-                    onChange={(e) => {
-                      setCutWidthMm(e.target.value);
-                      clearError?.("cutWidthMm");
-                    }}
-                  />
-                  {errors.cutWidthMm ? (
-                    <span className={workerStyles.fieldError} role="alert">
-                      {errors.cutWidthMm}
-                    </span>
-                  ) : (
-                    <span className={workerStyles.hintText}>
-                      Target strip width — prefilled from bag width
-                    </span>
-                  )}
-                </div>
-
                 {inheritedMaterial && (
                   <p className={workerStyles.hintText}>
-                    Parent paper: {inheritedMaterial.name} · width{" "}
-                    {widthMm(inheritedMaterial) ?? "—"} mm · input{" "}
-                    {inputQty ?? "—"} m
+                    Roll: {inheritedMaterial.name} ({inheritedMaterial.barCode}) · bags need{" "}
+                    {bagWidthCm ?? "—"} cm · leftover{" "}
+                    {slitPreview?.leftoverCm ?? "—"} cm · input {inputQty ?? "—"} m
                   </p>
                 )}
 
-                {slitPreview && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className={workerStyles.formField}>
+                    <label className={workerStyles.formLabel}>Recycled rolls</label>
+                    <input
+                      className={fieldInputClass(!!errors.recycledRollCount)}
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={recycledRollCount}
+                      onChange={(e) => {
+                        setRecycledRollCount(e.target.value);
+                        clearError?.("recycledRollCount");
+                      }}
+                    />
+                  </div>
+                  <div className={workerStyles.formField}>
+                    <label className={workerStyles.formLabel}>Width each (cm)</label>
+                    <input
+                      className={fieldInputClass(!!errors.recycledRollCount)}
+                      type="number"
+                      min={C.RECYCLE_STRIP_MIN_CM}
+                      max={C.RECYCLE_STRIP_MAX_CM}
+                      step="0.1"
+                      disabled={!(Number(recycledRollCount) > 0)}
+                      value={recycledWidthCm}
+                      onChange={(e) => {
+                        setRecycledWidthCm(e.target.value);
+                        clearError?.("recycledRollCount");
+                      }}
+                    />
+                  </div>
+                </div>
+                {errors.recycledRollCount ? (
+                  <span className={workerStyles.fieldError} role="alert">
+                    {errors.recycledRollCount}
+                  </span>
+                ) : (
+                  <span className={workerStyles.hintText}>
+                    Prefilled from the plan: leftover width cut into {C.RECYCLE_STRIP_MIN_CM}–{C.RECYCLE_STRIP_MAX_CM} cm rolls for handle making.
+                  </span>
+                )}
+
+                {slitPreview && !slitPreview.error && (
                   <div className="rounded-md border px-3 py-2 text-sm space-y-1">
                     <p>
-                      Pieces across width:{" "}
-                      <strong>{slitPreview.pieceCount}</strong>
+                      Bags: <strong>{bagWidthCm} cm × {Number(slitPreview.lengthM.toFixed(2))} m</strong>
                     </p>
+                    {Number(recycledRollCount) > 0 && (
+                      <p>
+                        Recycled: <strong>{recycledRollCount} × {recycledWidthCm} cm</strong>
+                        {slitPreview.stripWeightKg != null && ` (${formatWeight(slitPreview.stripWeightKg, "kg")} each)`} — added to
+                        factory stock as {inheritedMaterial?.barCode}-1, -2…
+                      </p>
+                    )}
                     <p>
-                      Width leftover:{" "}
-                      <strong>{slitPreview.widthRemainderMm} mm</strong> strip{" "}
-                      (≈{" "}
-                      {Number(slitPreview.widthRemainderMeters || 0).toFixed(2)}{" "}
-                      m)
-                    </p>
-                    <p>
-                      Usable meters (next stage input):{" "}
-                      <strong>
-                        {Number(slitPreview.usableMeters || 0).toFixed(2)} m
-                      </strong>
+                      Waste: <strong>{slitPreview.wasteWidthCm} cm</strong>
+                      {slitPreview.wasteKg != null && ` (${formatWeight(slitPreview.wasteKg, "kg")})`}
                     </p>
                   </div>
                 )}
@@ -333,38 +354,10 @@ export function StageForm({
                     }}
                   />
                   <span className={workerStyles.hintText}>
-                    Optional: return unused cut-strip length to stock
+                    Optional: unused length returned to the roll
                   </span>
                 </div>
 
-                {slitPreview?.widthRemainderMeters > 0 && (
-                  <div className={workerStyles.formField}>
-                    <label className={workerStyles.formLabel}>
-                      Width leftover action *
-                    </label>
-                    <select
-                      className={fieldInputClass(!!errors.remainderAction)}
-                      value={remainderAction}
-                      onChange={(e) => {
-                        setRemainderAction(e.target.value);
-                        clearError?.("remainderAction");
-                      }}
-                    >
-                      <option value="">Waste or Restock…</option>
-                      <option value="RESTOCK">
-                        Restock leftover width strip
-                      </option>
-                      <option value="WASTE">
-                        Mark leftover width as waste
-                      </option>
-                    </select>
-                    {errors.remainderAction && (
-                      <span className={workerStyles.fieldError} role="alert">
-                        {errors.remainderAction}
-                      </span>
-                    )}
-                  </div>
-                )}
               </>
             )}
 
@@ -377,11 +370,7 @@ export function StageForm({
                     setCartonMaterialId(v);
                     clearError?.("cartonMaterialId");
                   }}
-                  options={(cartonMaterials || []).map((m) => ({
-                    value: m.id,
-                    label: `${m.name} (${m.code})`,
-                    description: `Stock: ${stockById?.[m.id] ?? "—"}`,
-                  }))}
+                  options={catalogMaterialOptions(cartonMaterials)}
                   placeholder="Select carton…"
                   searchPlaceholder="Search carton type…"
                   error={!!errors.cartonMaterialId}
@@ -476,80 +465,64 @@ export function StageForm({
               </div>
             )}
 
-            {isHandleMaking && (
-              <>
-                <div className={workerStyles.formField}>
-                  <label className={workerStyles.formLabel}>
-                    Side glue used (kg)
-                  </label>
-                  <input
-                    className={fieldInputClass(!!errors.sideGlueKg)}
-                    type="number"
-                    min="0"
-                    step="0.0001"
-                    placeholder={
-                      plannedSideGlue ? `Planned: ${plannedSideGlue}` : ""
-                    }
-                    value={sideGlueKg}
-                    onChange={(e) => {
-                      setSideGlueKg(e.target.value);
-                      clearError?.("sideGlueKg");
-                    }}
-                  />
-                  {plannedSideGlue && (
-                    <span className={workerStyles.hintText}>
-                      Planned: {plannedSideGlue} kg
-                    </span>
-                  )}
-                </div>
-
-                <div className={workerStyles.formField}>
-                  <label className={workerStyles.formLabel}>
-                    Bottom glue used (kg)
-                  </label>
-                  <input
-                    className={fieldInputClass(!!errors.bottomGlueKg)}
-                    type="number"
-                    min="0"
-                    step="0.0001"
-                    placeholder={
-                      plannedBottomGlue ? `Planned: ${plannedBottomGlue}` : ""
-                    }
-                    value={bottomGlueKg}
-                    onChange={(e) => {
-                      setBottomGlueKg(e.target.value);
-                      clearError?.("bottomGlueKg");
-                    }}
-                  />
-                  {plannedBottomGlue && (
-                    <span className={workerStyles.hintText}>
-                      Planned: {plannedBottomGlue} kg
-                    </span>
-                  )}
-                </div>
-
-                <div className={workerStyles.formField}>
-                  <label className={workerStyles.formLabel}>
-                    Handle rope used (PCS)
-                  </label>
-                  <input
-                    className={fieldInputClass(!!errors.handleRopePcs)}
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="Defaults to produced + defective"
-                    value={handleRopePcs}
-                    onChange={(e) => {
-                      setHandleRopePcs(e.target.value);
-                      clearError?.("handleRopePcs");
-                    }}
-                  />
-                  <span className={workerStyles.hintText}>
-                    Rope consumed from handle stock
-                  </span>
-                </div>
-              </>
-            )}
+            {isHandleMaking &&
+              HANDLE_CONSUMPTIONS.map((c) => {
+                const planned = plannedConsumption(
+                  perBagConsumption,
+                  c.perBagKey,
+                  outputQty,
+                );
+                const options = catalogMaterialOptions(
+                  c.materialType === "ROPE" ? ropeMaterials : glueMaterials,
+                );
+                const qtyError = errors[c.qtyField];
+                const materialError = errors[c.materialField];
+                return (
+                  <div key={c.kind} className={workerStyles.formField}>
+                    <label className={workerStyles.formLabel}>
+                      {c.label} used ({UNIT_LABELS[c.unit]})
+                    </label>
+                    <SearchableSelect
+                      value={handleConsumption[c.materialField] || ""}
+                      onValueChange={(v) => {
+                        setHandleConsumptionField?.(c.materialField, v);
+                        clearError?.(c.materialField);
+                      }}
+                      options={options}
+                      placeholder={`Which ${c.label.toLowerCase()}?`}
+                      searchPlaceholder="Search supplier…"
+                      error={!!materialError}
+                    />
+                    <input
+                      className={`${fieldInputClass(!!qtyError)} mt-2`}
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder={
+                        planned != null
+                          ? `Planned: ${formatQuantity(planned, c.unit)}`
+                          : "Defaults to planned"
+                      }
+                      value={handleConsumption[c.qtyField] || ""}
+                      onChange={(e) => {
+                        setHandleConsumptionField?.(c.qtyField, e.target.value);
+                        clearError?.(c.qtyField);
+                      }}
+                    />
+                    {materialError || qtyError ? (
+                      <span className={workerStyles.fieldError} role="alert">
+                        {materialError || qtyError}
+                      </span>
+                    ) : (
+                      <span className={workerStyles.hintText}>
+                        {planned != null
+                          ? `Planned for ${outputQty} bags: ${formatQuantity(planned, c.unit)} — leave blank to use it`
+                          : "Enter bags produced to see the planned amount"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
 
             {/* <div className={workerStyles.formField}>
               <label className={workerStyles.formLabel}>

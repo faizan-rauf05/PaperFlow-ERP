@@ -15,6 +15,8 @@ export async function GET(request) {
     const cliches = await searchCliches({
       query: searchParams.get("search") || undefined,
       customerId: searchParams.get("customerId") || undefined,
+      includeShared: searchParams.get("includeShared") === "1",
+      activeOnly: searchParams.get("activeOnly") === "1",
       take: takeParam ? parseInt(takeParam, 10) : undefined,
     });
 

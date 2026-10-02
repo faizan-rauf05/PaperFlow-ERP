@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { FactoryGlueAlert } from '@/components/inventory/factory-glue-alert'
 
 // Primary metrics: the numbers an admin needs at a glance — output, demand,
 // revenue, and anything that needs action right now.
@@ -267,6 +268,8 @@ export default function AdminDashboard() {
           Synced just now
         </div>
       </div>
+
+      <FactoryGlueAlert />
 
       {/* Primary KPIs */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">

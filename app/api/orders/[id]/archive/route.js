@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireAuth } from "@/lib/apiAuth";
+import { requireSalesOrAbove } from "@/lib/apiAuth";
 import { setOrderArchived } from "@/lib/services/order-workflow.service";
 import { serializeModel } from "@/lib/serialize";
 
 export async function POST(request, { params }) {
   try {
-    const authResult = await requireAuth();
+    const authResult = await requireSalesOrAbove();
     if (authResult.error) {
       return NextResponse.json(authResult.error.body, { status: authResult.error.status });
     }

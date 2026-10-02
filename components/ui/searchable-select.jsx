@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +32,7 @@ export function SearchableSelect({
   className,
   error = false,
   modal = true,
+  loading = false,
 }) {
   const [open, setOpen] = React.useState(false);
 
@@ -82,9 +83,13 @@ export function SearchableSelect({
           )}
         >
           <span className="truncate">
-            {selectedOption ? selectedOption.label : placeholder}
+            {selectedOption ? selectedOption.label : loading ? "Loading…" : placeholder}
           </span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          {loading ? (
+            <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin opacity-60" />
+          ) : (
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -94,9 +99,16 @@ export function SearchableSelect({
         <Command>
           <CommandInput placeholder={searchPlaceholder} className="h-9" />
           <CommandList className="max-h-60 overflow-y-auto p-1">
-            <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
-              {emptyText}
-            </CommandEmpty>
+            {loading && normalizedOptions.length === 0 ? (
+              // Options still arriving — say so instead of a misleading "no results".
+              <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+              </div>
+            ) : (
+              <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
+                {emptyText}
+              </CommandEmpty>
+            )}
             <CommandGroup>
               {normalizedOptions.map((opt) => (
                 <CommandItem

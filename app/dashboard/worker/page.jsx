@@ -5,11 +5,19 @@ import { useRouter } from "next/navigation";
 import { LogOut, Factory, Hand, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import api, { getApiErrorMessage } from "@/lib/api/client";
-import { computeSlittingPreview } from "@/lib/slitting-math";
+import { computeSlitting } from "@/lib/slitting-math";
 import { workerStyles } from "./worker-dashboard.styles";
 import { TaskList } from "./components/task-list";
 import { StageForm } from "./components/stage-form";
 import { Button } from "@/components/ui/button";
+import {
+  factoryStock,
+  handleConsumptionPayload,
+  initialHandleConsumptions,
+  sortByFactoryStock,
+  toastStockWarnings,
+  validateHandleConsumptions,
+} from "@/components/production/stage-materials";
 
 function formatTimer(seconds) {
   const m = Math.floor(seconds / 60);
@@ -30,6 +38,8 @@ export default function WorkerMobileDashboard() {
 
   const [paperMaterials, setPaperMaterials] = useState([]);
   const [cartonMaterials, setCartonMaterials] = useState([]);
+  const [glueMaterials, setGlueMaterials] = useState([]);
+  const [ropeMaterials, setRopeMaterials] = useState([]);
   const [stockById, setStockById] = useState({});
   const [machines, setMachines] = useState([]);
 
@@ -45,17 +55,15 @@ export default function WorkerMobileDashboard() {
   const [nextStage, setNextStage] = useState("");
 
   // Slitting
-  const [cutWidthMm, setCutWidthMm] = useState("");
+  const [recycledRollCount, setRecycledRollCount] = useState("");
+  const [recycledWidthCm, setRecycledWidthCm] = useState("");
   const [lengthRestockQty, setLengthRestockQty] = useState("0");
-  const [remainderAction, setRemainderAction] = useState("");
 
   // Packing
   const [cartonMaterialId, setCartonMaterialId] = useState("");
 
-  // Handle making/pasting
-  const [sideGlueKg, setSideGlueKg] = useState("");
-  const [bottomGlueKg, setBottomGlueKg] = useState("");
-  const [handleRopePcs, setHandleRopePcs] = useState("");
+  // Handle making/pasting: glue/rope qty + which supplier's material was used
+  const [handleConsumption, setHandleConsumption] = useState({});
 
   const [proofPhotoUrl, setProofPhotoUrl] = useState("");
   const [uploadingProof, setUploadingProof] = useState(false);
@@ -120,39 +128,28 @@ export default function WorkerMobileDashboard() {
         }
       }
 
-      const [recordRes, matsRes, stockRes, machRes] = await Promise.all([
+      const [recordRes, matsRes, machRes] = await Promise.all([
         api.get(`/production/orders/${orderId}/stages/${task.id}/record`),
         api.get("/materials").catch(() => ({ data: { materials: [] } })),
-        api
-          .get("/inventory/current-stock")
-          .catch(() => ({ data: { stock: [] } })),
         api.get("/machines").catch(() => ({ data: { machines: [] } })),
       ]);
 
       const ctx = recordRes.data.context || {};
       const stg = ctx.stage || task;
-      const sideConsumption = stg.consumptions?.find(
-        (c) => c.consumptionKind === "GLUE_SIDE",
-      );
-      const bottomConsumption = stg.consumptions?.find(
-        (c) => c.consumptionKind === "GLUE_BOTTOM",
-      );
 
+      // Production draws from factory stock — pickers list stocked materials first.
       const allMaterials = matsRes.data.materials || [];
-      setPaperMaterials(
-        allMaterials.filter((m) => m.materialType === "PAPER_ROLL"),
-      );
-      setCartonMaterials(
-        allMaterials.filter((m) => m.materialType === "CARTON"),
-      );
+      const byType = (type) =>
+        sortByFactoryStock(allMaterials.filter((m) => m.materialType === type));
+      const glues = byType("GLUE");
+      const ropes = byType("ROPE");
+      setPaperMaterials(byType("PAPER_ROLL"));
+      setCartonMaterials(byType("CARTON"));
+      setGlueMaterials(glues);
+      setRopeMaterials(ropes);
 
       const stockMap = {};
-      for (const row of stockRes.data.stock ||
-        stockRes.data.materials ||
-        stockRes.data.stocks ||
-        []) {
-        stockMap[row.id] = Number(row.currentStock ?? row.stock ?? 0);
-      }
+      for (const m of allMaterials) stockMap[m.id] = factoryStock(m);
       setStockById(stockMap);
 
       setMachines(
@@ -173,33 +170,26 @@ export default function WorkerMobileDashboard() {
       setWasteQty(stg.wasteQty != null ? String(stg.wasteQty) : "");
       setRemarks(stg.remarks || "");
 
-      setCutWidthMm(
-        stg.cutWidthMm != null
-          ? String(stg.cutWidthMm)
-          : ctx.suggestedCutWidthMm != null
-            ? String(ctx.suggestedCutWidthMm)
-            : "",
+      // Recycled rolls: as recorded, else the plan for this roll and bag width
+      const recorded = stg.recycledRollCount != null;
+      setRecycledRollCount(
+        String(recorded ? stg.recycledRollCount : (ctx.slitPlan?.stripCount ?? 0)),
+      );
+      setRecycledWidthCm(
+        recorded
+          ? stg.recycledWidthCm != null ? String(Number(stg.recycledWidthCm)) : ""
+          : ctx.slitPlan?.stripCount ? String(ctx.slitPlan.stripWidthCm) : "",
       );
       setLengthRestockQty(
         stg.lengthRestockQty != null ? String(stg.lengthRestockQty) : "0",
       );
-      setRemainderAction(stg.remainderAction || "");
 
-      setSideGlueKg(
-        sideConsumption?.actualQty != null
-          ? String(sideConsumption.actualQty)
-          : ctx?.gluePlan?.sideKg != null
-            ? String(ctx.gluePlan.sideKg)
-            : "",
+      setHandleConsumption(
+        initialHandleConsumptions(stg.consumptions || task.consumptions, {
+          GLUE: glues,
+          ROPE: ropes,
+        }),
       );
-      setBottomGlueKg(
-        bottomConsumption?.actualQty != null
-          ? String(bottomConsumption.actualQty)
-          : ctx?.gluePlan?.bottomKg != null
-            ? String(ctx.gluePlan.bottomKg)
-            : "",
-      );
-      setHandleRopePcs("");
       setProofPhotoUrl(
         Array.isArray(stg.proofUrls) ? stg.proofUrls[0] || "" : "",
       );
@@ -227,27 +217,28 @@ export default function WorkerMobileDashboard() {
 
   const slitPreview = useMemo(() => {
     if (!isSlitting) return null;
-    return computeSlittingPreview({
+    return computeSlitting({
       inputMeters: inputQty,
-      parentWidthMm:
-        context?.paperMaterial?.paperWidthCm != null
-          ? Number(context.paperMaterial.paperWidthCm) * 10
-          : undefined,
-      cutWidthMm,
-      gsm: context?.paperMaterial?.gsm,
       lengthRestockMeters: lengthRestockQty,
+      parentWidthCm: context?.paperMaterial?.paperWidthCm,
+      bagWidthCm: context?.bagWidthCm,
+      gsm: context?.paperMaterial?.gsm,
+      stripCount: Number(recycledRollCount) || 0,
+      stripWidthCm: recycledWidthCm,
     });
   }, [
     isSlitting,
     inputQty,
     context?.paperMaterial,
-    cutWidthMm,
+    context?.bagWidthCm,
+    recycledRollCount,
+    recycledWidthCm,
     lengthRestockQty,
   ]);
 
   useEffect(() => {
     if (!slitPreview) return;
-    setOutputQty(String(slitPreview.usableMeters ?? ""));
+    setOutputQty(String(slitPreview.lengthM ?? ""));
   }, [slitPreview]);
 
   function clearError(field) {
@@ -265,11 +256,7 @@ export default function WorkerMobileDashboard() {
     }
     if (isSlitting) {
       if (!machineId) next.machineId = "Slitting machine required";
-      if (!cutWidthMm || Number(cutWidthMm) <= 0)
-        next.cutWidthMm = "Cut width required";
-      if (slitPreview?.widthRemainderMeters > 0 && !remainderAction) {
-        next.remainderAction = "Choose waste or restock for width leftover";
-      }
+      if (slitPreview?.error) next.recycledRollCount = slitPreview.error;
     }
     if (isPrinting) {
       if (!outputQty || Number(outputQty) <= 0)
@@ -278,6 +265,14 @@ export default function WorkerMobileDashboard() {
     if (isHandleMaking) {
       if (!outputQty || Number(outputQty) <= 0)
         next.outputQty = "Bags produced required";
+      Object.assign(
+        next,
+        validateHandleConsumptions(
+          handleConsumption,
+          context?.perBagConsumption,
+          outputQty,
+        ),
+      );
     }
     if (isPacking) {
       if (!outputQty || Number(outputQty) <= 0)
@@ -362,31 +357,22 @@ export default function WorkerMobileDashboard() {
         wasteQty: wasteQty || undefined,
         proofUrls: proofUrls.length > 0 ? proofUrls : undefined,
         remarks: remarks || undefined,
-        cutWidthMm: isSlitting ? cutWidthMm || undefined : undefined,
-        remainderAction: isSlitting ? remainderAction || undefined : undefined,
-        remainderQty: isSlitting
-          ? slitPreview?.widthRemainderMeters || undefined
-          : undefined,
         lengthRestockQty: isSlitting
           ? lengthRestockQty || undefined
           : undefined,
-        pieceCount: isSlitting
-          ? slitPreview?.pieceCount || undefined
-          : undefined,
-        pieceWeightKg: isSlitting
-          ? (slitPreview?.pieceWeightKg ?? undefined)
-          : undefined,
+        recycledRollCount: isSlitting ? Number(recycledRollCount) || 0 : undefined,
+        recycledWidthCm: isSlitting ? recycledWidthCm || undefined : undefined,
         cartonMaterialId: isPacking ? cartonMaterialId || undefined : undefined,
-        glueSideQty: isHandleMaking ? sideGlueKg || undefined : undefined,
-        glueBottomQty: isHandleMaking ? bottomGlueKg || undefined : undefined,
+        ...(isHandleMaking ? handleConsumptionPayload(handleConsumption) : {}),
         nextStage: isPrintQc ? nextStage || undefined : undefined,
       };
 
-      await api.post(
+      const { data } = await api.post(
         `/production/orders/${orderId}/stages/${selectedTask.id}/record`,
         payload,
       );
       toast.success("Stage recorded successfully!");
+      toastStockWarnings(toast, data?.stockWarnings);
       setSelectedTask(null);
       setContext(null);
       loadData();
@@ -477,13 +463,14 @@ export default function WorkerMobileDashboard() {
               setWasteQty={setWasteQty}
               remarks={remarks}
               setRemarks={setRemarks}
-              cutWidthMm={cutWidthMm}
-              setCutWidthMm={setCutWidthMm}
+              recycledRollCount={recycledRollCount}
+              setRecycledRollCount={setRecycledRollCount}
+              recycledWidthCm={recycledWidthCm}
+              setRecycledWidthCm={setRecycledWidthCm}
               lengthRestockQty={lengthRestockQty}
               setLengthRestockQty={setLengthRestockQty}
-              remainderAction={remainderAction}
-              setRemainderAction={setRemainderAction}
               slitPreview={slitPreview}
+              bagWidthCm={context?.bagWidthCm}
               inputQty={inputQty}
               cartonMaterialId={cartonMaterialId}
               setCartonMaterialId={setCartonMaterialId}
@@ -492,14 +479,13 @@ export default function WorkerMobileDashboard() {
               setDowntimeOpen={setDowntimeOpen}
               downtimeReason={downtimeReason}
               setDowntimeReason={setDowntimeReason}
-              plannedSideGlue={context?.gluePlan?.sideKg}
-              plannedBottomGlue={context?.gluePlan?.bottomKg}
-              sideGlueKg={sideGlueKg}
-              setSideGlueKg={setSideGlueKg}
-              bottomGlueKg={bottomGlueKg}
-              setBottomGlueKg={setBottomGlueKg}
-              handleRopePcs={handleRopePcs}
-              setHandleRopePcs={setHandleRopePcs}
+              perBagConsumption={context?.perBagConsumption}
+              glueMaterials={glueMaterials}
+              ropeMaterials={ropeMaterials}
+              handleConsumption={handleConsumption}
+              setHandleConsumptionField={(field, value) =>
+                setHandleConsumption((prev) => ({ ...prev, [field]: value }))
+              }
               proofPhotoUrl={proofPhotoUrl}
               uploadingProof={uploadingProof}
               onProofUpload={handleProofUpload}

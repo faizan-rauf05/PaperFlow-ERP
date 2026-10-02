@@ -30,7 +30,7 @@ export async function POST(request, { params }) {
     const { id, stageId } = await params;
     const body = await request.json();
 
-    const order = await recordStage({
+    const { order, stockWarnings } = await recordStage({
       orderId: id,
       stageId,
       userId: authResult.session.user.id,
@@ -46,7 +46,7 @@ export async function POST(request, { params }) {
       newValue: { orderId: id, outputQty: body.outputQty },
     });
 
-    return NextResponse.json({ order: serializeModel(order) });
+    return NextResponse.json({ order: serializeModel(order), stockWarnings });
   } catch (error) {
     console.error("POST stage record error:", error);
     return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
